@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 
 package org.springframework.integration.handler;
 
+import static org.mockito.Mockito.mock;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -26,6 +28,7 @@ import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.runners.MockitoJUnitRunner;
 
+import org.springframework.beans.factory.BeanFactory;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.integration.context.IntegrationObjectSupport;
 import org.springframework.integration.core.MessageProducer;
@@ -82,8 +85,9 @@ public class MessageHandlerChainTests {
 		chain.setBeanName("testChain");
 		chain.setHandlers(handlers);
 		chain.setOutputChannel(outputChannel);
+		chain.setBeanFactory(mock(BeanFactory.class));
 		chain.handleMessage(message);
-		Mockito.verify(outputChannel).send(Mockito.eq(message), Mockito.eq(-1L));
+		Mockito.verify(outputChannel).send(Mockito.eq(message));
 	}
 
 	@Test(expected = IllegalArgumentException.class)
@@ -96,6 +100,7 @@ public class MessageHandlerChainTests {
 		chain.setBeanName("testChain");
 		chain.setHandlers(handlers);
 		chain.setOutputChannel(outputChannel);
+		chain.setBeanFactory(mock(BeanFactory.class));
 		chain.afterPropertiesSet();
 	}
 
@@ -108,6 +113,7 @@ public class MessageHandlerChainTests {
 		MessageHandlerChain chain = new MessageHandlerChain();
 		chain.setBeanName("testChain");
 		chain.setHandlers(handlers);
+		chain.setBeanFactory(mock(BeanFactory.class));
 		chain.handleMessage(message);
 	}
 
@@ -121,6 +127,7 @@ public class MessageHandlerChainTests {
 		MessageHandlerChain chain = new MessageHandlerChain();
 		chain.setBeanName("testChain");
 		chain.setHandlers(handlers);
+		chain.setBeanFactory(mock(BeanFactory.class));
 		chain.handleMessage(message);
 		Mockito.verify(outputChannel).send(Mockito.any(Message.class));
 	}
@@ -163,7 +170,7 @@ public class MessageHandlerChainTests {
 
 		private final MessageHandler messageHandler;
 
-		public ProducingHandlerStub(MessageHandler handler) {
+		ProducingHandlerStub(MessageHandler handler) {
 			this.messageHandler = handler;
 		}
 
@@ -171,6 +178,11 @@ public class MessageHandlerChainTests {
 		public void setOutputChannel(MessageChannel channel) {
 			this.output = channel;
 
+		}
+
+		@Override
+		public MessageChannel getOutputChannel() {
+			return this.output;
 		}
 
 		@Override

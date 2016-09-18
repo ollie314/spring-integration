@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package org.springframework.integration.http.inbound;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertThat;
 import static org.mockito.Mockito.mock;
 
 import java.io.IOException;
@@ -26,26 +27,32 @@ import java.io.PrintWriter;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
+import org.hamcrest.Matchers;
 import org.junit.Test;
 
 import org.springframework.beans.factory.BeanFactory;
+import org.springframework.expression.common.LiteralExpression;
 import org.springframework.http.HttpInputMessage;
 import org.springframework.http.HttpOutputMessage;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.AbstractHttpMessageConverter;
 import org.springframework.http.converter.ByteArrayHttpMessageConverter;
 import org.springframework.http.converter.HttpMessageConverter;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.http.converter.HttpMessageNotWritableException;
-import org.springframework.messaging.Message;
 import org.springframework.integration.channel.DirectChannel;
 import org.springframework.integration.channel.QueueChannel;
 import org.springframework.integration.handler.AbstractReplyProducingMessageHandler;
 import org.springframework.integration.http.AbstractHttpInboundTests;
+import org.springframework.integration.http.HttpHeaders;
 import org.springframework.integration.http.converter.SerializingHttpMessageConverter;
 import org.springframework.integration.support.MessageBuilder;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.support.GenericMessage;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.util.LinkedMultiValueMap;
@@ -69,6 +76,8 @@ public class HttpRequestHandlingMessagingGatewayTests extends AbstractHttpInboun
 		gateway.setBeanFactory(mock(BeanFactory.class));
 		gateway.setRequestChannel(requestChannel);
 		gateway.afterPropertiesSet();
+		gateway.start();
+
 		MockHttpServletRequest request = new MockHttpServletRequest();
 		request.setMethod("GET");
 		request.setParameter("foo", "bar");
@@ -90,13 +99,11 @@ public class HttpRequestHandlingMessagingGatewayTests extends AbstractHttpInboun
 		gateway.setRequestPayloadType(String.class);
 		gateway.setRequestChannel(requestChannel);
 		gateway.afterPropertiesSet();
+		gateway.start();
+
 		MockHttpServletRequest request = new MockHttpServletRequest();
 		request.setMethod("POST");
-
-		//request.setContentType("text/plain"); //Works in Spring 3.1.2.RELEASE but NOT in 3.0.7.RELEASE
-		//Instead do:
-		request.addHeader("Content-Type", "text/plain");
-
+		request.setContentType("text/plain");
 		request.setContent("hello".getBytes());
 		MockHttpServletResponse response = new MockHttpServletResponse();
 		gateway.handleRequest(request, response);
@@ -108,6 +115,15 @@ public class HttpRequestHandlingMessagingGatewayTests extends AbstractHttpInboun
 
 	@Test
 	public void stringExpectedWithReply() throws Exception {
+		stringExpectedWithReplyGuts(true);
+	}
+
+	@Test
+	public void stringExpectedWithReplyNoContentType() throws Exception {
+		stringExpectedWithReplyGuts(false);
+	}
+
+	private void stringExpectedWithReplyGuts(boolean contentType) throws Exception {
 		DirectChannel requestChannel = new DirectChannel();
 		requestChannel.subscribe(new AbstractReplyProducingMessageHandler() {
 			@Override
@@ -116,18 +132,19 @@ public class HttpRequestHandlingMessagingGatewayTests extends AbstractHttpInboun
 			}
 		});
 		HttpRequestHandlingMessagingGateway gateway = new HttpRequestHandlingMessagingGateway(true);
+		gateway.setStatusCodeExpression(new LiteralExpression("foo"));
 		gateway.setBeanFactory(mock(BeanFactory.class));
 		gateway.setRequestPayloadType(String.class);
 		gateway.setRequestChannel(requestChannel);
 		gateway.afterPropertiesSet();
+		gateway.start();
+
 		MockHttpServletRequest request = new MockHttpServletRequest();
 		request.setMethod("POST");
 		request.addHeader("Accept", "x-application/octet-stream");
-
-		//request.setContentType("text/plain"); //Works in Spring 3.1.2.RELEASE but NOT in 3.0.7.RELEASE
-		//Instead do:
-		request.addHeader("Content-Type", "text/plain");
-
+		if (contentType) {
+			request.setContentType("text/plain");
+		}
 		request.setContent("hello".getBytes());
 		MockHttpServletResponse response = new MockHttpServletResponse();
 		gateway.handleRequest(request, response);
@@ -148,13 +165,11 @@ public class HttpRequestHandlingMessagingGatewayTests extends AbstractHttpInboun
 		gateway.setRequestPayloadType(String.class);
 		gateway.setRequestChannel(requestChannel);
 		gateway.afterPropertiesSet();
+		gateway.start();
+
 		MockHttpServletRequest request = new MockHttpServletRequest();
 		request.setMethod("POST");
-
-		//request.setContentType("text/plain"); //Works in Spring 3.1.2.RELEASE but NOT in 3.0.7.RELEASE
-		//Instead do:
-		request.addHeader("Content-Type", "text/plain");
-
+		request.setContentType("text/plain");
 		request.setContent("hello".getBytes());
 		MockHttpServletResponse response = new MockHttpServletResponse();
 		gateway.handleRequest(request, response);
@@ -177,6 +192,8 @@ public class HttpRequestHandlingMessagingGatewayTests extends AbstractHttpInboun
 		gateway.setConvertExceptions(true);
 		gateway.setMessageConverters(Arrays.<HttpMessageConverter<?>>asList(new TestHttpMessageConverter()));
 		gateway.afterPropertiesSet();
+		gateway.start();
+
 		MockHttpServletRequest request = new MockHttpServletRequest();
 		request.addHeader("Accept", "application/x-java-serialized-object");
 		request.setMethod("GET");
@@ -193,6 +210,8 @@ public class HttpRequestHandlingMessagingGatewayTests extends AbstractHttpInboun
 		gateway.setBeanFactory(mock(BeanFactory.class));
 		gateway.setRequestChannel(channel);
 		gateway.afterPropertiesSet();
+		gateway.start();
+
 		MockHttpServletRequest request = new MockHttpServletRequest("GET", "/test");
 		request.setParameter("foo", "123");
 		request.addParameter("bar", "456");
@@ -226,13 +245,11 @@ public class HttpRequestHandlingMessagingGatewayTests extends AbstractHttpInboun
 		converters.add(new SerializingHttpMessageConverter());
 		gateway.setMessageConverters(converters);
 		gateway.afterPropertiesSet();
+		gateway.start();
 
 		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/test");
 
-		//request.setContentType("application/x-java-serialized-object"); //Works in Spring 3.1.2.RELEASE but NOT in 3.0.7.RELEASE
-		//Instead do:
-		request.addHeader("Content-Type", "application/x-java-serialized-object");
-
+		request.setContentType("application/x-java-serialized-object");
 		TestBean testBean = new TestBean();
 		testBean.setName("T. Bean");
 		testBean.setAge(42);
@@ -277,6 +294,7 @@ public class HttpRequestHandlingMessagingGatewayTests extends AbstractHttpInboun
 		gateway.setBeanFactory(mock(BeanFactory.class));
 		gateway.setMessageConverters(messageConverters);
 		gateway.setRequestChannel(requestChannel);
+		gateway.start();
 
 		final MockHttpServletRequest request = new MockHttpServletRequest();
 		request.setMethod("GET");
@@ -293,6 +311,99 @@ public class HttpRequestHandlingMessagingGatewayTests extends AbstractHttpInboun
 		assertEquals("Exptecting only 1 content type being set.", Integer.valueOf(1), Integer.valueOf(contentTypes.size()));
 		assertEquals("text/plain", contentTypes.get(0));
 	}
+
+	@Test
+	public void timeoutDefault() throws Exception {
+		QueueChannel requestChannel = new QueueChannel();
+		HttpRequestHandlingMessagingGateway gateway = new HttpRequestHandlingMessagingGateway(true);
+		gateway.setBeanFactory(mock(BeanFactory.class));
+		gateway.setRequestChannel(requestChannel);
+		gateway.setReplyTimeout(0);
+		gateway.afterPropertiesSet();
+		gateway.start();
+		MockHttpServletRequest request = new MockHttpServletRequest();
+		request.setMethod("GET");
+		MockHttpServletResponse response = new MockHttpServletResponse();
+		gateway.handleRequest(request, response);
+		Message<?> message = requestChannel.receive(0);
+		assertNotNull(message);
+		assertEquals(500, response.getStatus());
+	}
+
+	@Test
+	public void timeoutStatusExpression() throws Exception {
+		QueueChannel requestChannel = new QueueChannel();
+		HttpRequestHandlingMessagingGateway gateway = new HttpRequestHandlingMessagingGateway(true);
+		gateway.setBeanFactory(mock(BeanFactory.class));
+		gateway.setRequestChannel(requestChannel);
+		gateway.setReplyTimeout(0);
+		gateway.setStatusCodeExpression(new LiteralExpression("501"));
+		gateway.afterPropertiesSet();
+		gateway.start();
+
+		MockHttpServletRequest request = new MockHttpServletRequest();
+		request.setMethod("GET");
+		MockHttpServletResponse response = new MockHttpServletResponse();
+		gateway.handleRequest(request, response);
+		Message<?> message = requestChannel.receive(0);
+		assertNotNull(message);
+		assertEquals(501, response.getStatus());
+	}
+
+	@Test
+	public void timeoutErrorFlow() throws Exception {
+		QueueChannel requestChannel = new QueueChannel();
+		HttpRequestHandlingMessagingGateway gateway = new HttpRequestHandlingMessagingGateway(true);
+		gateway.setBeanFactory(mock(BeanFactory.class));
+		gateway.setRequestChannel(requestChannel);
+		gateway.setReplyTimeout(0);
+		DirectChannel errorChannel = new DirectChannel();
+		errorChannel.subscribe(new AbstractReplyProducingMessageHandler() {
+
+			@Override
+			protected Object handleRequestMessage(Message<?> requestMessage) {
+				return new GenericMessage<String>("foo",
+						Collections.<String, Object>singletonMap(HttpHeaders.STATUS_CODE, HttpStatus.GATEWAY_TIMEOUT));
+			}
+
+		});
+		gateway.setErrorChannel(errorChannel);
+		gateway.afterPropertiesSet();
+		gateway.start();
+
+		MockHttpServletRequest request = new MockHttpServletRequest();
+		request.setMethod("GET");
+		MockHttpServletResponse response = new MockHttpServletResponse();
+		gateway.handleRequest(request, response);
+		Message<?> message = requestChannel.receive(0);
+		assertNotNull(message);
+		assertEquals(504, response.getStatus());
+	}
+
+	@Test
+	public void timeoutErrorFlowTimeout() throws Exception {
+		QueueChannel requestChannel = new QueueChannel();
+		HttpRequestHandlingMessagingGateway gateway = new HttpRequestHandlingMessagingGateway(true);
+		gateway.setBeanFactory(mock(BeanFactory.class));
+		gateway.setRequestChannel(requestChannel);
+		gateway.setReplyTimeout(0);
+		QueueChannel errorChannel = new QueueChannel();
+		gateway.setErrorChannel(errorChannel);
+		gateway.setStatusCodeExpression(new LiteralExpression("501"));
+		gateway.afterPropertiesSet();
+		gateway.start();
+
+		MockHttpServletRequest request = new MockHttpServletRequest();
+		request.setMethod("GET");
+		MockHttpServletResponse response = new MockHttpServletResponse();
+		gateway.handleRequest(request, response);
+		Message<?> message = requestChannel.receive(0);
+		assertNotNull(message);
+		assertEquals(501, response.getStatus());
+		assertThat(response.getContentAsString(), Matchers.containsString("from error channel"));
+	}
+
+
 
 	private class ContentTypeCheckingMockHttpServletResponse extends MockHttpServletResponse {
 
@@ -316,7 +427,7 @@ public class HttpRequestHandlingMessagingGatewayTests extends AbstractHttpInboun
 
 	private static class TestHttpMessageConverter extends AbstractHttpMessageConverter<Exception> {
 
-		public TestHttpMessageConverter() {
+		TestHttpMessageConverter() {
 			setSupportedMediaTypes(Arrays.asList(MediaType.ALL));
 		}
 

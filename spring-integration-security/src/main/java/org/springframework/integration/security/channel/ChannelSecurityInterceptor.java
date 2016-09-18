@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2010 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,21 +20,26 @@ import java.lang.reflect.Method;
 
 import org.aopalliance.intercept.MethodInterceptor;
 import org.aopalliance.intercept.MethodInvocation;
+
 import org.springframework.security.access.SecurityMetadataSource;
 import org.springframework.security.access.intercept.AbstractSecurityInterceptor;
 import org.springframework.security.access.intercept.InterceptorStatusToken;
 import org.springframework.util.Assert;
- 
+
 /**
  * An AOP interceptor that enforces authorization for MessageChannel send and/or receive calls.
- * 
+ *
  * @author Mark Fisher
  * @author Oleg Zhurakousky
+ * @see SecuredChannel
  */
-public class ChannelSecurityInterceptor extends AbstractSecurityInterceptor implements MethodInterceptor {
+public final class ChannelSecurityInterceptor extends AbstractSecurityInterceptor implements MethodInterceptor {
 
 	private final ChannelSecurityMetadataSource securityMetadataSource;
 
+	public ChannelSecurityInterceptor() {
+		this(new ChannelSecurityMetadataSource());
+	}
 
 	public ChannelSecurityInterceptor(ChannelSecurityMetadataSource securityMetadataSource) {
 		Assert.notNull(securityMetadataSource, "securityMetadataSource must not be null");
@@ -67,7 +72,6 @@ public class ChannelSecurityInterceptor extends AbstractSecurityInterceptor impl
 		}
 		return returnValue;
 	}
-
 
 	@Override
 	public SecurityMetadataSource obtainSecurityMetadataSource() {

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.ftp.config;
 
 import static org.junit.Assert.assertEquals;
@@ -39,13 +40,16 @@ import org.springframework.integration.file.filters.SimplePatternFileListFilter;
 import org.springframework.integration.file.remote.gateway.AbstractRemoteFileOutboundGateway.Command;
 import org.springframework.integration.file.remote.gateway.AbstractRemoteFileOutboundGateway.Option;
 import org.springframework.integration.file.remote.session.CachingSessionFactory;
+import org.springframework.integration.file.support.FileExistsMode;
 import org.springframework.integration.ftp.gateway.FtpOutboundGateway;
+import org.springframework.integration.ftp.session.FtpRemoteFileTemplate;
 import org.springframework.integration.handler.ExpressionEvaluatingMessageProcessor;
 import org.springframework.integration.handler.advice.AbstractRequestHandlerAdvice;
 import org.springframework.integration.support.MessageBuilder;
 import org.springframework.integration.test.util.TestUtils;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.support.GenericMessage;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 import org.springframework.util.ReflectionUtils;
@@ -60,6 +64,7 @@ import org.springframework.util.ReflectionUtils;
  */
 @ContextConfiguration
 @RunWith(SpringJUnit4ClassRunner.class)
+@DirtiesContext
 public class FtpOutboundGatewayParserTests {
 
 	@Autowired
@@ -90,7 +95,7 @@ public class FtpOutboundGatewayParserTests {
 		assertNotNull(TestUtils.getPropertyValue(gateway, "remoteFileTemplate.sessionFactory"));
 		assertNotNull(TestUtils.getPropertyValue(gateway, "outputChannel"));
 		assertEquals("local-test-dir", TestUtils.getPropertyValue(gateway, "localDirectoryExpression.literalValue"));
-		assertFalse((Boolean) TestUtils.getPropertyValue(gateway, "autoCreateLocalDirectory"));
+		assertFalse(TestUtils.getPropertyValue(gateway, "autoCreateLocalDirectory", Boolean.class));
 		assertNotNull(TestUtils.getPropertyValue(gateway, "filter"));
 		assertEquals(Command.LS, TestUtils.getPropertyValue(gateway, "command"));
 
@@ -102,7 +107,9 @@ public class FtpOutboundGatewayParserTests {
 		Long sendTimeout = TestUtils.getPropertyValue(gateway, "messagingTemplate.sendTimeout", Long.class);
 		assertEquals(Long.valueOf(777), sendTimeout);
 		assertTrue(TestUtils.getPropertyValue(gateway, "requiresReply", Boolean.class));
-		assertThat(TestUtils.getPropertyValue(gateway, "mputFilter"), Matchers.instanceOf(RegexPatternFileListFilter.class));
+		assertThat(TestUtils.getPropertyValue(gateway, "mputFilter"),
+				Matchers.instanceOf(RegexPatternFileListFilter.class));
+		assertEquals(FileExistsMode.APPEND, TestUtils.getPropertyValue(gateway, "fileExistsMode"));
 	}
 
 	@Test
@@ -111,10 +118,13 @@ public class FtpOutboundGatewayParserTests {
 				"handler", FtpOutboundGateway.class);
 		assertEquals("X", TestUtils.getPropertyValue(gateway, "remoteFileTemplate.remoteFileSeparator"));
 		assertNotNull(TestUtils.getPropertyValue(gateway, "remoteFileTemplate.sessionFactory"));
-		assertTrue(TestUtils.getPropertyValue(gateway, "remoteFileTemplate.sessionFactory") instanceof CachingSessionFactory);
+		assertThat(TestUtils.getPropertyValue(gateway, "remoteFileTemplate.sessionFactory"),
+				Matchers.instanceOf(CachingSessionFactory.class));
+		assertEquals(FtpRemoteFileTemplate.ExistsMode.NLST,
+				TestUtils.getPropertyValue(gateway, "remoteFileTemplate.existsMode"));
 		assertNotNull(TestUtils.getPropertyValue(gateway, "outputChannel"));
 		assertEquals("local-test-dir", TestUtils.getPropertyValue(gateway, "localDirectoryExpression.literalValue"));
-		assertFalse((Boolean) TestUtils.getPropertyValue(gateway, "autoCreateLocalDirectory"));
+		assertFalse(TestUtils.getPropertyValue(gateway, "autoCreateLocalDirectory", Boolean.class));
 		assertEquals(Command.GET, TestUtils.getPropertyValue(gateway, "command"));
 		@SuppressWarnings("unchecked")
 		Set<String> options = TestUtils.getPropertyValue(gateway, "options", Set.class);

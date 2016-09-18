@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2010 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,37 +17,49 @@
 package org.springframework.integration.endpoint;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertTrue;
+import static org.mockito.Mockito.mock;
+
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.Test;
 
+import org.springframework.beans.factory.BeanFactory;
 import org.springframework.integration.channel.DirectChannel;
 import org.springframework.integration.channel.PublishSubscribeChannel;
 import org.springframework.integration.handler.ServiceActivatingHandler;
-import org.springframework.messaging.support.GenericMessage;
 import org.springframework.integration.test.util.TestUtils;
+import org.springframework.integration.test.util.TestUtils.TestApplicationContext;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageDeliveryException;
 import org.springframework.messaging.MessageHandler;
 import org.springframework.messaging.MessagingException;
 import org.springframework.messaging.support.ErrorMessage;
+import org.springframework.messaging.support.GenericMessage;
 
 /**
  * @author Oleg Zhurakousky
  * @author Mark Fisher
+ * @author Gary Russell
+ * @author Kris Jacyna
  * @since 2.0.1
  */
 public class MessageProducerSupportTests {
 
-	@Test(expected=MessageDeliveryException.class)
+	@Test(expected = MessageDeliveryException.class)
 	public void validateExceptionIfNoErrorChannel() {
 		DirectChannel outChannel = new DirectChannel();
 
 		outChannel.subscribe(new MessageHandler() {
+			@Override
 			public void handleMessage(Message<?> message) throws MessagingException {
 				throw new RuntimeException("problems");
 			}
 		});
-		MessageProducerSupport mps = new MessageProducerSupport() {};
+		MessageProducerSupport mps = new MessageProducerSupport() { };
 		mps.setOutputChannel(outChannel);
 		mps.setBeanFactory(TestUtils.createTestApplicationContext());
 		mps.afterPropertiesSet();
@@ -55,21 +67,23 @@ public class MessageProducerSupportTests {
 		mps.sendMessage(new GenericMessage<String>("hello"));
 	}
 
-	@Test(expected=MessageDeliveryException.class)
+	@Test(expected = MessageDeliveryException.class)
 	public void validateExceptionIfSendToErrorChannelFails() {
 		DirectChannel outChannel = new DirectChannel();
 		outChannel.subscribe(new MessageHandler() {
+			@Override
 			public void handleMessage(Message<?> message) throws MessagingException {
 				throw new RuntimeException("problems");
 			}
 		});
 		PublishSubscribeChannel errorChannel = new PublishSubscribeChannel();
 		errorChannel.subscribe(new MessageHandler() {
+			@Override
 			public void handleMessage(Message<?> message) throws MessagingException {
 				throw new RuntimeException("ooops");
 			}
 		});
-		MessageProducerSupport mps = new MessageProducerSupport() {};
+		MessageProducerSupport mps = new MessageProducerSupport() { };
 		mps.setOutputChannel(outChannel);
 		mps.setErrorChannel(errorChannel);
 		mps.setBeanFactory(TestUtils.createTestApplicationContext());
@@ -82,6 +96,7 @@ public class MessageProducerSupportTests {
 	public void validateSuccessfulErrorFlowDoesNotThrowErrors() {
 		DirectChannel outChannel = new DirectChannel();
 		outChannel.subscribe(new MessageHandler() {
+			@Override
 			public void handleMessage(Message<?> message) throws MessagingException {
 				throw new RuntimeException("problems");
 			}
@@ -89,9 +104,10 @@ public class MessageProducerSupportTests {
 		PublishSubscribeChannel errorChannel = new PublishSubscribeChannel();
 		SuccessfulErrorService errorService = new SuccessfulErrorService();
 		ServiceActivatingHandler handler  = new ServiceActivatingHandler(errorService);
+		handler.setBeanFactory(mock(BeanFactory.class));
 		handler.afterPropertiesSet();
 		errorChannel.subscribe(handler);
-		MessageProducerSupport mps = new MessageProducerSupport() {};
+		MessageProducerSupport mps = new MessageProducerSupport() { };
 		mps.setOutputChannel(outChannel);
 		mps.setErrorChannel(errorChannel);
 		mps.setBeanFactory(TestUtils.createTestApplicationContext());
@@ -106,6 +122,36 @@ public class MessageProducerSupportTests {
 		assertEquals(message, exception.getFailedMessage());
 	}
 
+	@Test
+	public void testWithChannelName() {
+		DirectChannel outChannel = new DirectChannel();
+		MessageProducerSupport mps = new MessageProducerSupport() { };
+		mps.setOutputChannelName("foo");
+		TestApplicationContext testApplicationContext = TestUtils.createTestApplicationContext();
+		testApplicationContext.registerBean("foo", outChannel);
+		testApplicationContext.refresh();
+		mps.setBeanFactory(testApplicationContext);
+		mps.afterPropertiesSet();
+		mps.start();
+		assertSame(outChannel, mps.getOutputChannel());
+	}
+
+	@Test
+	public void customDoStop() {
+		final CustomEndpoint endpoint = new CustomEndpoint();
+		assertEquals(0, endpoint.getCount());
+		assertTrue(endpoint.isStopped());
+		endpoint.start();
+		assertFalse(endpoint.isStopped());
+		endpoint.stop(new Runnable() {
+			@Override
+			public void run() {
+				// Do nothing
+			}
+		});
+		assertEquals(1, endpoint.getCount());
+		assertTrue(endpoint.isStopped());
+	}
 
 	private static class SuccessfulErrorService {
 
@@ -115,6 +161,37 @@ public class MessageProducerSupportTests {
 		public void handleErrorMessage(Message<?> errorMessage) {
 			this.lastMessage = errorMessage;
 		}
+	}
+
+	private static class CustomEndpoint extends AbstractEndpoint {
+
+		private final AtomicInteger count = new AtomicInteger(0);
+		private final AtomicBoolean stopped = new AtomicBoolean(true);
+
+		public int getCount() {
+			return this.count.get();
+		}
+
+		public boolean isStopped() {
+			return this.stopped.get();
+		}
+
+		@Override
+		protected void doStop(final Runnable callback) {
+			this.count.incrementAndGet();
+			super.doStop(callback);
+		}
+
+		@Override
+		protected void doStart() {
+			this.stopped.set(false);
+		}
+
+		@Override
+		protected void doStop() {
+			this.stopped.set(true);
+		}
+
 	}
 
 }

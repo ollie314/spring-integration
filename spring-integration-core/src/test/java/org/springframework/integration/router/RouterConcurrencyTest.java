@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.router;
 
 import static org.junit.Assert.assertEquals;
@@ -36,9 +37,9 @@ import org.mockito.stubbing.Answer;
 
 import org.springframework.beans.factory.BeanFactory;
 import org.springframework.core.convert.ConversionService;
+import org.springframework.integration.support.utils.IntegrationUtils;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
-import org.springframework.integration.context.IntegrationContextUtils;
 
 /**
  * @author Gary Russell
@@ -78,13 +79,14 @@ public class RouterConcurrencyTest {
 		BeanFactory beanFactory = mock(BeanFactory.class);
 		doAnswer(new Answer<Boolean>() {
 
+			@Override
 			public Boolean answer(InvocationOnMock invocation) throws Throwable {
 				if (beanCounter.getAndIncrement() < 2) {
 					semaphore.tryAcquire(4, TimeUnit.SECONDS);
 				}
 				return false;
 			}
-		}).when(beanFactory).containsBean(IntegrationContextUtils.INTEGRATION_CONVERSION_SERVICE_BEAN_NAME);
+		}).when(beanFactory).containsBean(IntegrationUtils.INTEGRATION_CONVERSION_SERVICE_BEAN_NAME);
 		router.setBeanFactory(beanFactory);
 
 		ExecutorService exec = Executors.newFixedThreadPool(2);
@@ -92,6 +94,7 @@ public class RouterConcurrencyTest {
 				new ArrayList<ConversionService>());
 		Runnable runnable = new Runnable() {
 
+			@Override
 			public void run() {
 				ConversionService requiredConversionService = router.getRequiredConversionService();
 				returns.add(requiredConversionService);

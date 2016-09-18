@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,28 +23,98 @@ import java.util.List;
 import org.apache.commons.net.ftp.FTPFile;
 
 import org.springframework.integration.file.remote.AbstractFileInfo;
+import org.springframework.integration.file.remote.MessageSessionCallback;
 import org.springframework.integration.file.remote.RemoteFileTemplate;
 import org.springframework.integration.file.remote.gateway.AbstractRemoteFileOutboundGateway;
 import org.springframework.integration.file.remote.session.SessionFactory;
 import org.springframework.integration.ftp.session.FtpFileInfo;
+import org.springframework.integration.ftp.session.FtpRemoteFileTemplate;
 
 /**
  * Outbound Gateway for performing remote file operations via FTP/FTPS.
  *
  * @author Gary Russell
+ * @author Artem Bilan
  * @since 2.1
  */
 public class FtpOutboundGateway extends AbstractRemoteFileOutboundGateway<FTPFile> {
 
-	public FtpOutboundGateway(SessionFactory<FTPFile> sessionFactory, String command,
-			String expression) {
-		super(sessionFactory, command, expression);
+	/**
+	 * Construct an instance using the provided session factory and callback for
+	 * performing operations on the session.
+	 * @param sessionFactory the session factory.
+	 * @param messageSessionCallback the callback.
+	 */
+	public FtpOutboundGateway(SessionFactory<FTPFile> sessionFactory,
+			MessageSessionCallback<FTPFile, ?> messageSessionCallback) {
+		this(new FtpRemoteFileTemplate(sessionFactory), messageSessionCallback);
+		((FtpRemoteFileTemplate) this.remoteFileTemplate).setExistsMode(FtpRemoteFileTemplate.ExistsMode.NLST);
 	}
 
-	private FtpOutboundGateway(RemoteFileTemplate<FTPFile> remoteFileTemplate, String command, String expression) {
+	/**
+	 * Construct an instance with the supplied remote file template and callback
+	 * for performing operations on the session.
+	 * @param remoteFileTemplate the remote file template.
+	 * @param messageSessionCallback the callback.
+	 */
+	public FtpOutboundGateway(RemoteFileTemplate<FTPFile> remoteFileTemplate,
+			MessageSessionCallback<FTPFile, ?> messageSessionCallback) {
+		super(remoteFileTemplate, messageSessionCallback);
+	}
+
+	/**
+	 * Construct an instance with the supplied session factory, a command ('ls', 'get'
+	 * etc), and an expression to determine the filename.
+	 * @param sessionFactory the session factory.
+	 * @param command the command.
+	 * @param expression the filename expression.
+	 */
+	public FtpOutboundGateway(SessionFactory<FTPFile> sessionFactory, String command, String expression) {
+		this(new FtpRemoteFileTemplate(sessionFactory), command, expression);
+		((FtpRemoteFileTemplate) this.remoteFileTemplate).setExistsMode(FtpRemoteFileTemplate.ExistsMode.NLST);
+	}
+
+	/**
+	 * Construct an instance with the supplied remote file template, a command ('ls',
+	 * 'get' etc), and an expression to determine the filename.
+	 * @param remoteFileTemplate the remote file template.
+	 * @param command the command.
+	 * @param expression the filename expression.
+	 */
+	public FtpOutboundGateway(RemoteFileTemplate<FTPFile> remoteFileTemplate, String command, String expression) {
 		super(remoteFileTemplate, command, expression);
 	}
 
+	/**
+	 * Construct an instance with the supplied session factory, a command ('ls', 'get'
+	 * etc).
+	 * <p> The {@code remoteDirectory} expression is {@code null} assuming to use
+	 * the {@code workingDirectory} from the FTP Client.
+	 * @param sessionFactory the session factory.
+	 * @param command the command.
+	 * @since 4.3
+	 */
+	public FtpOutboundGateway(SessionFactory<FTPFile> sessionFactory, String command) {
+		this(sessionFactory, command, null);
+	}
+
+	/**
+	 * Construct an instance with the supplied remote file template, a command ('ls',
+	 * 'get' etc).
+	 * <p> The {@code remoteDirectory} expression is {@code null} assuming to use
+	 * the {@code workingDirectory} from the FTP Client.
+	 * @param remoteFileTemplate the remote file template.
+	 * @param command the command.
+	 * @since 4.3
+	 */
+	public FtpOutboundGateway(RemoteFileTemplate<FTPFile> remoteFileTemplate, String command) {
+		this(remoteFileTemplate, command, null);
+	}
+
+	@Override
+	public String getComponentType() {
+		return "ftp:outbound-gateway";
+	}
 
 	@Override
 	protected boolean isDirectory(FTPFile file) {
@@ -78,7 +148,6 @@ public class FtpOutboundGateway extends AbstractRemoteFileOutboundGateway<FTPFil
 			canonicalFiles.add(new FtpFileInfo(file));
 		}
 		return canonicalFiles;
-
 	}
 
 	@Override
@@ -86,6 +155,5 @@ public class FtpOutboundGateway extends AbstractRemoteFileOutboundGateway<FTPFil
 		file.setName(directory + file.getName());
 		return file;
 	}
-
 
 }

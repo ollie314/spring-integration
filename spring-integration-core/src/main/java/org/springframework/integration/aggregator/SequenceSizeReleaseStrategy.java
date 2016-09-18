@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,9 @@
 
 package org.springframework.integration.aggregator;
 
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.List;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -38,12 +36,14 @@ import org.springframework.messaging.Message;
  * @author Dave Syer
  * @author Iwein Fuld
  * @author Oleg Zhurakousky
+ * @author Artem Bilan
+ * @author Enrique Rodríguez
  */
 public class SequenceSizeReleaseStrategy implements ReleaseStrategy {
 
 	private static final Log logger = LogFactory.getLog(SequenceSizeReleaseStrategy.class);
 
-	private volatile Comparator<Message<?>> comparator = new SequenceNumberComparator();
+	private final Comparator<Message<?>> comparator = new SequenceNumberComparator();
 
 	private volatile boolean releasePartialSequences;
 
@@ -56,9 +56,9 @@ public class SequenceSizeReleaseStrategy implements ReleaseStrategy {
 	}
 
 	/**
-	 * Flag that determines if partial sequences are allowed. If true then as soon as enough messages arrive that can be
-	 * ordered they will be released, provided they all have sequence numbers greater than those already released.
-	 *
+	 * Flag that determines if partial sequences are allowed. If true then as soon as
+	 * enough messages arrive that can be ordered they will be released, provided they
+	 * all have sequence numbers greater than those already released.
 	 * @param releasePartialSequences true when partial sequences should be released.
 	 */
 	public void setReleasePartialSequences(boolean releasePartialSequences) {
@@ -70,33 +70,29 @@ public class SequenceSizeReleaseStrategy implements ReleaseStrategy {
 
 		boolean canRelease = false;
 
-		Collection<Message<?>> messages = messageGroup.getMessages();
-
-		if (releasePartialSequences && !messages.isEmpty()) {
-
+		int size = messageGroup.size();
+		if (this.releasePartialSequences && size > 0) {
 			if (logger.isTraceEnabled()) {
 				logger.trace("Considering partial release of group [" + messageGroup + "]");
 			}
-			List<Message<?>> sorted = new ArrayList<Message<?>>(messages);
-			Collections.sort(sorted, comparator);
+			Collection<Message<?>> messages = messageGroup.getMessages();
+			Message<?> minMessage = Collections.min(messages, this.comparator);
 
-			int nextSequenceNumber = new IntegrationMessageHeaderAccessor(sorted.get(0)).getSequenceNumber();
+			int nextSequenceNumber = new IntegrationMessageHeaderAccessor(minMessage).getSequenceNumber();
 			int lastReleasedMessageSequence = messageGroup.getLastReleasedMessageSequenceNumber();
 
-			if (nextSequenceNumber - lastReleasedMessageSequence == 1){
-				canRelease = true;;
+			if (nextSequenceNumber - lastReleasedMessageSequence == 1) {
+				canRelease = true;
 			}
 		}
 		else {
-			int size = messages.size();
-
-			if (size == 0){
+			if (size == 0) {
 				canRelease = true;
 			}
 			else {
-				int sequenceSize = new IntegrationMessageHeaderAccessor(messageGroup.getOne()).getSequenceSize();
+				int sequenceSize = messageGroup.getSequenceSize();
 				// If there is no sequence then it must be incomplete....
-				if (sequenceSize == size){
+				if (sequenceSize == size) {
 					canRelease = true;
 				}
 			}

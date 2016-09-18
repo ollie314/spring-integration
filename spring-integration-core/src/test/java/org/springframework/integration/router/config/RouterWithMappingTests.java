@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,14 +16,18 @@
 
 package org.springframework.integration.router.config;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.context.Lifecycle;
+import org.springframework.integration.endpoint.AbstractEndpoint;
 import org.springframework.integration.router.AbstractMappingMessageRouter;
 import org.springframework.integration.support.MessageBuilder;
 import org.springframework.messaging.Message;
@@ -68,6 +72,12 @@ public class RouterWithMappingTests {
 	@Autowired
 	private PollableChannel defaultChannelForPojo;
 
+	@Autowired
+	private AbstractEndpoint pojoRouterEndpoint;
+
+	@Autowired
+	private TestRouter testBean;
+
 	@Test
 	public void expressionRouter() {
 		Message<?> message1 = MessageBuilder.withPayload(new TestBean("foo")).build();
@@ -110,13 +120,19 @@ public class RouterWithMappingTests {
 		assertNotNull(defaultChannelForPojo.receive(0));
 		assertNull(fooChannelForPojo.receive(0));
 		assertNull(barChannelForPojo.receive(0));
+
+		assertTrue(this.testBean.isRunning());
+		this.pojoRouterEndpoint.stop();
+		assertFalse(this.testBean.isRunning());
+		this.pojoRouterEndpoint.start();
+		assertTrue(this.testBean.isRunning());
 	}
 
 	private static class TestBean {
 
 		private final String name;
 
-		public TestBean(String name) {
+		TestBean(String name) {
 			this.name = name;
 		}
 
@@ -126,12 +142,30 @@ public class RouterWithMappingTests {
 	}
 
 
-	@SuppressWarnings("unused")
-	private static class TestRouter {
+	private static class TestRouter implements Lifecycle {
 
+		private boolean running;
+
+		@SuppressWarnings("unused")
 		public String route(TestBean bean) {
 			return bean.getName();
 		}
+
+		@Override
+		public void start() {
+			this.running = true;
+		}
+
+		@Override
+		public void stop() {
+			this.running = false;
+		}
+
+		@Override
+		public boolean isRunning() {
+			return this.running;
+		}
+
 	}
 
 }

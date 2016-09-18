@@ -1,32 +1,49 @@
-package org.springframework.integration.monitor;
+/*
+ * Copyright 2011-2016 the original author or authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
-import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.is;
-import static org.junit.Assert.assertThat;
+package org.springframework.integration.monitor;
 
 import org.aopalliance.intercept.MethodInterceptor;
 import org.aopalliance.intercept.MethodInvocation;
 import org.junit.Before;
 import org.junit.Test;
-import org.springframework.aop.framework.Advised;
+
 import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.aop.support.NameMatchMethodPointcutAdvisor;
-import org.springframework.beans.factory.support.DefaultListableBeanFactory;
+import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
+import org.springframework.context.support.GenericApplicationContext;
+import org.springframework.integration.channel.NullChannel;
+import org.springframework.integration.support.MessageBuilder;
+import org.springframework.integration.test.util.TestUtils;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
-import org.springframework.messaging.MessagingException;
-import org.springframework.integration.channel.NullChannel;
 import org.springframework.messaging.MessageHandler;
-import org.springframework.integration.monitor.IntegrationMBeanExporter;
-import org.springframework.integration.support.MessageBuilder;
+import org.springframework.messaging.MessagingException;
 import org.springframework.util.ClassUtils;
 
 /**
  * @author Tareq Abedrabbo
  * @author Dave Syer
+ * @author Gary Russell
+ * @author Artem Bilan
  * @since 2.0.4
  */
 public class MessageMetricsAdviceTests {
+
+	private ConfigurableListableBeanFactory beanFactory;
 
 	private IntegrationMBeanExporter mBeanExporter;
 
@@ -36,25 +53,16 @@ public class MessageMetricsAdviceTests {
 
 	@Before
 	public void setUp() throws Exception {
-		channel = new NullChannel();
-		mBeanExporter = new IntegrationMBeanExporter();
-		mBeanExporter.setBeanFactory(new DefaultListableBeanFactory());
-		mBeanExporter.setBeanClassLoader(ClassUtils.getDefaultClassLoader());
-		mBeanExporter.afterPropertiesSet();
-		handler = new DummyHandler();
-	}
-
-	@Test
-	public void adviceExportedHandler() throws Exception {
-		Advised advised = (Advised) mBeanExporter.postProcessAfterInitialization(handler, "test");
-
-		DummyInterceptor interceptor = new DummyInterceptor();
-		advised.addAdvice(interceptor);
-
-		assertThat(advised.getAdvisors().length, equalTo(2));
-
-		((MessageHandler) advised).handleMessage(MessageBuilder.withPayload("test").build());
-		assertThat(interceptor.invoked, is(true));
+		GenericApplicationContext applicationContext = TestUtils.createTestApplicationContext();
+		this.beanFactory = applicationContext.getBeanFactory();
+		this.channel = new NullChannel();
+		this.mBeanExporter = new IntegrationMBeanExporter();
+		this.mBeanExporter.setApplicationContext(applicationContext);
+		this.mBeanExporter.setBeanFactory(this.beanFactory);
+		this.mBeanExporter.setBeanClassLoader(ClassUtils.getDefaultClassLoader());
+		this.mBeanExporter.afterPropertiesSet();
+		this.handler = new DummyHandler();
+		applicationContext.refresh();
 	}
 
 	@Test
@@ -64,25 +72,16 @@ public class MessageMetricsAdviceTests {
 		NameMatchMethodPointcutAdvisor advisor = new NameMatchMethodPointcutAdvisor(interceptor);
 		advisor.addMethodName("handleMessage");
 
-		ProxyFactory factory = new ProxyFactory(handler);
+		ProxyFactory factory = new ProxyFactory(this.handler);
 		factory.addAdvisor(advisor);
 		MessageHandler advised = (MessageHandler) factory.getProxy();
 
-		MessageHandler exported = (MessageHandler) mBeanExporter.postProcessAfterInitialization(advised, "test");
+		this.beanFactory.registerSingleton("test", advised);
+		this.beanFactory.initializeBean(advised, "test");
+
+		mBeanExporter.afterSingletonsInstantiated();
+		MessageHandler exported = this.beanFactory.getBean("test", MessageHandler.class);
 		exported.handleMessage(MessageBuilder.withPayload("test").build());
-	}
-
-	@Test
-	public void adviceExportedChannel() throws Exception {
-		Advised advised = (Advised) mBeanExporter.postProcessAfterInitialization(channel, "testChannel");
-
-		DummyInterceptor interceptor = new DummyInterceptor();
-		advised.addAdvice(interceptor);
-
-		assertThat(advised.getAdvisors().length, equalTo(2));
-
-		((MessageChannel) advised).send(MessageBuilder.withPayload("test").build());
-		assertThat(interceptor.invoked, is(true));
 	}
 
 	@Test
@@ -96,7 +95,11 @@ public class MessageMetricsAdviceTests {
 		factory.addAdvisor(advisor);
 		MessageChannel advised = (MessageChannel) factory.getProxy();
 
-		MessageChannel exported = (MessageChannel) mBeanExporter.postProcessAfterInitialization(advised, "test");
+		this.beanFactory.registerSingleton("test", advised);
+		this.beanFactory.initializeBean(advised, "test");
+
+		mBeanExporter.afterSingletonsInstantiated();
+		MessageChannel exported = this.beanFactory.getBean("test", MessageChannel.class);
 		exported.send(MessageBuilder.withPayload("test").build());
 	}
 
@@ -105,15 +108,18 @@ public class MessageMetricsAdviceTests {
 		@SuppressWarnings("unused")
 		boolean invoked = false;
 
+		@Override
 		public void handleMessage(Message<?> message) throws MessagingException {
 			invoked = true;
 		}
+
 	}
 
 	private static class DummyInterceptor implements MethodInterceptor {
 
 		boolean invoked = false;
 
+		@Override
 		public Object invoke(MethodInvocation invocation) throws Throwable {
 			invoked = true;
 			return invocation.proceed();
@@ -123,5 +129,7 @@ public class MessageMetricsAdviceTests {
 		public String toString() {
 			return super.toString() + "{" + "invoked=" + invoked + '}';
 		}
+
 	}
+
 }

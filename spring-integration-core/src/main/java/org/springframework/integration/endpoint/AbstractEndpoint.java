@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2010 the original author or authors.
+ * Copyright 2002-2014 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package org.springframework.integration.endpoint;
 
+import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
 import org.springframework.context.SmartLifecycle;
@@ -24,15 +25,17 @@ import org.springframework.scheduling.TaskScheduler;
 
 /**
  * The base class for Message Endpoint implementations.
- * 
+ *
  * <p>This class implements Lifecycle and provides an {@link #autoStartup}
  * property. If <code>true</code>, the endpoint will start automatically upon
  * initialization. Otherwise, it will require an explicit invocation of its
  * {@link #start()} method. The default value is <code>true</code>.
  * To require explicit startup, provide a value of <code>false</code>
  * to the {@link #setAutoStartup(boolean)} method.
- * 
+ *
  * @author Mark Fisher
+ * @author Kris Jacyna
+ * @author Gary Russell
  */
 public abstract class AbstractEndpoint extends IntegrationObjectSupport implements SmartLifecycle {
 
@@ -42,7 +45,9 @@ public abstract class AbstractEndpoint extends IntegrationObjectSupport implemen
 
 	private volatile boolean running;
 
-	private final ReentrantLock lifecycleLock = new ReentrantLock();
+	protected final ReentrantLock lifecycleLock = new ReentrantLock();
+
+	protected final Condition lifecycleCondition = this.lifecycleLock.newCondition();
 
 
 	public void setAutoStartup(boolean autoStartup) {
@@ -53,20 +58,24 @@ public abstract class AbstractEndpoint extends IntegrationObjectSupport implemen
 		this.phase = phase;
 	}
 
+	@Override
 	public void setTaskScheduler(TaskScheduler taskScheduler) {
 		super.setTaskScheduler(taskScheduler);
 	}
 
 	// SmartLifecycle implementation
 
+	@Override
 	public final boolean isAutoStartup() {
 		return this.autoStartup;
 	}
 
+	@Override
 	public final int getPhase() {
 		return this.phase;
 	}
 
+	@Override
 	public final boolean isRunning() {
 		this.lifecycleLock.lock();
 		try {
@@ -77,11 +86,12 @@ public abstract class AbstractEndpoint extends IntegrationObjectSupport implemen
 		}
 	}
 
+	@Override
 	public final void start() {
 		this.lifecycleLock.lock();
 		try {
 			if (!this.running) {
-				this.doStart();
+				doStart();
 				this.running = true;
 				if (logger.isInfoEnabled()) {
 					logger.info("started " + this);
@@ -93,11 +103,12 @@ public abstract class AbstractEndpoint extends IntegrationObjectSupport implemen
 		}
 	}
 
+	@Override
 	public final void stop() {
 		this.lifecycleLock.lock();
 		try {
 			if (this.running) {
-				this.doStop();
+				doStop();
 				this.running = false;
 				if (logger.isInfoEnabled()) {
 					logger.info("stopped " + this);
@@ -109,15 +120,30 @@ public abstract class AbstractEndpoint extends IntegrationObjectSupport implemen
 		}
 	}
 
+	@Override
 	public final void stop(Runnable callback) {
 		this.lifecycleLock.lock();
 		try {
-			this.stop();
-			callback.run();
+			if (this.running) {
+				doStop(callback);
+				this.running = false;
+				if (logger.isInfoEnabled()) {
+					logger.info("stopped " + this);
+				}
+			}
 		}
 		finally {
 			this.lifecycleLock.unlock();
 		}
+	}
+
+	/**
+	 * Stop the component and invoke callback.
+	 * @param callback the Runnable to invoke.
+	 */
+	protected void doStop(Runnable callback) {
+		doStop();
+		callback.run();
 	}
 
 	/**

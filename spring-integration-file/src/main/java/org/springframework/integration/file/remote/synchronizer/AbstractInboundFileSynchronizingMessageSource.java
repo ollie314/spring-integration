@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,19 +18,20 @@ package org.springframework.integration.file.remote.synchronizer;
 
 import java.io.File;
 import java.io.FileNotFoundException;
+import java.io.IOException;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.regex.Pattern;
 
-import org.springframework.integration.core.MessageSource;
-import org.springframework.integration.endpoint.MessageProducerSupport;
+import org.springframework.beans.factory.BeanInitializationException;
+import org.springframework.context.Lifecycle;
+import org.springframework.integration.endpoint.AbstractFetchLimitingMessageSource;
 import org.springframework.integration.file.FileReadingMessageSource;
 import org.springframework.integration.file.filters.AcceptOnceFileListFilter;
 import org.springframework.integration.file.filters.CompositeFileListFilter;
 import org.springframework.integration.file.filters.FileListFilter;
 import org.springframework.integration.file.filters.RegexPatternFileListFilter;
 import org.springframework.messaging.Message;
-import org.springframework.messaging.MessagingException;
 import org.springframework.util.Assert;
 
 /**
@@ -55,8 +56,10 @@ import org.springframework.util.Assert;
  * @author Oleg Zhurakousky
  * @author Gary Russell
  */
-public abstract class AbstractInboundFileSynchronizingMessageSource<F> extends MessageProducerSupport
-	implements MessageSource<File> {
+public abstract class AbstractInboundFileSynchronizingMessageSource<F>
+		extends AbstractFetchLimitingMessageSource<File> implements Lifecycle {
+
+	private volatile boolean running;
 
 	/**
 	 * Should the endpoint attempt to create the local directory? True by default.
@@ -86,10 +89,11 @@ public abstract class AbstractInboundFileSynchronizingMessageSource<F> extends M
 		this(synchronizer, null);
 	}
 
-	public AbstractInboundFileSynchronizingMessageSource(AbstractInboundFileSynchronizer<F> synchronizer, Comparator<File> comparator) {
+	public AbstractInboundFileSynchronizingMessageSource(AbstractInboundFileSynchronizer<F> synchronizer,
+			Comparator<File> comparator) {
 		Assert.notNull(synchronizer, "synchronizer must not be null");
 		this.synchronizer = synchronizer;
-		if (comparator == null){
+		if (comparator == null) {
 			this.fileSource = new FileReadingMessageSource();
 		}
 		else {
@@ -122,7 +126,8 @@ public abstract class AbstractInboundFileSynchronizingMessageSource<F> extends M
 	}
 
 	@Override
-	protected void onInit() {
+	public void afterPropertiesSet() throws Exception {
+		super.afterPropertiesSet();
 		Assert.notNull(this.localDirectory, "localDirectory must not be null");
 		try {
 			if (!this.localDirectory.exists()) {
@@ -138,6 +143,9 @@ public abstract class AbstractInboundFileSynchronizingMessageSource<F> extends M
 			}
 			this.fileSource.setDirectory(this.localDirectory);
 			this.fileSource.setFilter(this.buildFilter());
+			if (this.getBeanFactory() != null) {
+				this.fileSource.setBeanFactory(this.getBeanFactory());
+			}
 			this.fileSource.afterPropertiesSet();
 			this.synchronizer.afterPropertiesSet();
 		}
@@ -145,29 +153,49 @@ public abstract class AbstractInboundFileSynchronizingMessageSource<F> extends M
 			throw e;
 		}
 		catch (Exception e) {
-			throw new MessagingException(
-					"Failure during initialization of MessageSource for: " + this.getComponentType(), e);
+			throw new BeanInitializationException("Failure during initialization of MessageSource for: "
+					+ this.getClass(), e);
 		}
+	}
+
+	@Override
+	public void start() {
+		this.running = true;
+	}
+
+	@Override
+	public void stop() {
+		this.running = false;
+		try {
+			this.synchronizer.close();
+		}
+		catch (IOException e) {
+			logger.error("Error closing synchronizer", e);
+		}
+	}
+
+	@Override
+	public boolean isRunning() {
+		return this.running;
 	}
 
 	/**
 	 * Polls from the file source. If the result is not null, it will be returned.
 	 * If the result is null, it attempts to sync up with the remote directory to populate the file source.
+	 * At most, maxFetchSize files will be fetched.
 	 * Then, it polls the file source again and returns the result, whether or not it is null.
+	 * @param maxFetchSize the maximum files to fetch.
 	 */
 	@Override
-	public final Message<File> receive() {
-		Assert.state(this.fileSource != null, "fileSource must not be null");
-		Assert.state(this.synchronizer != null, "synchronizer must not be null");
+	public final Message<File> doReceive(int maxFetchSize) {
 		Message<File> message = this.fileSource.receive();
 		if (message == null) {
-			this.synchronizer.synchronizeToLocalDirectory(this.localDirectory);
+			this.synchronizer.synchronizeToLocalDirectory(this.localDirectory, maxFetchSize);
 			message = this.fileSource.receive();
 		}
 		return message;
 	}
 
-	@SuppressWarnings("unchecked")
 	private FileListFilter<File> buildFilter() {
 		Pattern completePattern = Pattern.compile("^.*(?<!" + this.synchronizer.getTemporaryFileSuffix() + ")$");
 		return new CompositeFileListFilter<File>(Arrays.asList(

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2010 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,18 +16,20 @@
 
 package org.springframework.integration.xmpp.outbound;
 
+import org.jivesoftware.smack.AbstractXMPPConnection;
 import org.jivesoftware.smack.XMPPConnection;
 import org.jivesoftware.smack.packet.Presence;
 
-import org.springframework.messaging.Message;
 import org.springframework.integration.xmpp.core.AbstractXmppConnectionAwareMessageHandler;
+import org.springframework.messaging.Message;
 import org.springframework.util.Assert;
 
 /**
- * MessageHandler that publishes updated Presence values for a given XMPP connection. 
+ * MessageHandler that publishes updated Presence values for a given XMPP connection.
  *
  * @author Josh Long
  * @author Oleg Zhurakousky
+ * @author Artem Bilan
  * @since 2.0
  */
 public class PresenceSendingMessageHandler extends AbstractXmppConnectionAwareMessageHandler  {
@@ -40,17 +42,21 @@ public class PresenceSendingMessageHandler extends AbstractXmppConnectionAwareMe
 		super(xmppConnection);
 	}
 
+	@Override
+	public String getComponentType() {
+		return "xmpp:presence-outbound-channel-adapter";
+	}
 
 	@Override
 	protected void handleMessageInternal(Message<?> message) throws Exception {
-		Assert.isTrue(this.initialized, this.getComponentName() + " must be initialized");
+		Assert.state(this.initialized, this.getComponentName() + " must be initialized");
 		Object payload = message.getPayload();
-		Assert.isTrue(payload instanceof Presence,
+		Assert.state(payload instanceof Presence,
 				"Payload must be of type 'org.jivesoftware.smack.packet.Presence', was: " + payload.getClass().getName());
-		if (!this.xmppConnection.isConnected()) {
-			this.xmppConnection.connect();
+		if (!this.xmppConnection.isConnected() && this.xmppConnection instanceof AbstractXMPPConnection) {
+			((AbstractXMPPConnection) this.xmppConnection).connect();
 		}
-		this.xmppConnection.sendPacket((Presence) payload);
+		this.xmppConnection.sendStanza((Presence) payload);
 	}
 
 }

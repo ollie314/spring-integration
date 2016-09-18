@@ -1,18 +1,19 @@
 /*
- * Copyright 2007-2014 the original author or authors
+ * Copyright 2007-2016 the original author or authors.
  *
- *     Licensed under the Apache License, Version 2.0 (the "License");
- *     you may not use this file except in compliance with the License.
- *     You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
- *     Unless required by applicable law or agreed to in writing, software
- *     distributed under the License is distributed on an "AS IS" BASIS,
- *     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *     See the License for the specific language governing permissions and
- *     limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
+
 package org.springframework.integration.mongodb.inbound;
 
 import java.util.List;
@@ -87,7 +88,7 @@ public class MongoDbMessageSource extends IntegrationObjectSupport
 	 * @param mongoDbFactory The mongodb factory.
 	 * @param queryExpression The query expression.
 	 */
-	public MongoDbMessageSource(MongoDbFactory mongoDbFactory, Expression queryExpression){
+	public MongoDbMessageSource(MongoDbFactory mongoDbFactory, Expression queryExpression) {
 		Assert.notNull(mongoDbFactory, "'mongoDbFactory' must not be null");
 		Assert.notNull(queryExpression, "'queryExpression' must not be null");
 
@@ -105,7 +106,7 @@ public class MongoDbMessageSource extends IntegrationObjectSupport
 	 * @param mongoTemplate The mongo template.
 	 * @param queryExpression The query expression.
 	 */
-	public MongoDbMessageSource(MongoOperations mongoTemplate, Expression queryExpression){
+	public MongoDbMessageSource(MongoOperations mongoTemplate, Expression queryExpression) {
 		Assert.notNull(mongoTemplate, "'mongoTemplate' must not be null");
 		Assert.notNull(queryExpression, "'queryExpression' must not be null");
 
@@ -166,11 +167,16 @@ public class MongoDbMessageSource extends IntegrationObjectSupport
 	}
 
 	@Override
+	public String getComponentType() {
+		return "mongo:inbound-channel-adapter";
+	}
+
+	@Override
 	protected void onInit() throws Exception {
 		this.evaluationContext =
 					ExpressionUtils.createStandardEvaluationContext(this.getBeanFactory());
 
-		if (this.mongoTemplate == null){
+		if (this.mongoTemplate == null) {
 			this.mongoTemplate = new MongoTemplate(this.mongoDbFactory, this.mongoConverter);
 		}
 		this.initialized = true;
@@ -194,18 +200,18 @@ public class MongoDbMessageSource extends IntegrationObjectSupport
 		Assert.notNull(collectionName, "'collectionNameExpression' must not evaluate to null");
 
 		Object result = null;
-		if (this.expectSingleResult){
+		if (this.expectSingleResult) {
 			result = this.mongoTemplate.
 					findOne(query, this.entityClass, collectionName);
 		}
 		else {
 			List<?> results = this.mongoTemplate.
 					find(query, this.entityClass, collectionName);
-			if (!CollectionUtils.isEmpty(results)){
+			if (!CollectionUtils.isEmpty(results)) {
 				result = results;
 			}
 		}
-		if (result != null){
+		if (result != null) {
 			message = this.getMessageBuilderFactory().withPayload(result)
 					.setHeader(MongoHeaders.COLLECTION_NAME, collectionName)
 					.build();

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,6 +38,7 @@ import org.springframework.util.Assert;
  * @author Oleg Zhurakousky
  * @author Dave Syer
  * @author Gary Russell
+ * @author Artem Bilan
  */
 public final class MessageBuilder<T> extends AbstractIntegrationMessageBuilder<T> {
 
@@ -62,6 +63,16 @@ public final class MessageBuilder<T> extends AbstractIntegrationMessageBuilder<T
 		}
 	}
 
+	@Override
+	public T getPayload() {
+		return this.payload;
+	}
+
+	@Override
+	public Map<String, Object> getHeaders() {
+		return this.headerAccessor.toMap();
+	}
+
 	/**
 	 * Create a builder for a new {@link Message} instance pre-populated with all of the headers copied from the
 	 * provided message. The payload of the provided Message will also be used as the payload for the new message.
@@ -72,8 +83,7 @@ public final class MessageBuilder<T> extends AbstractIntegrationMessageBuilder<T
 	 */
 	public static <T> MessageBuilder<T> fromMessage(Message<T> message) {
 		Assert.notNull(message, "message must not be null");
-		MessageBuilder<T> builder = new MessageBuilder<T>(message.getPayload(), message);
-		return builder;
+		return new MessageBuilder<T>(message.getPayload(), message);
 	}
 
 	/**
@@ -84,8 +94,7 @@ public final class MessageBuilder<T> extends AbstractIntegrationMessageBuilder<T
 	 * @return A MessageBuilder.
 	 */
 	public static <T> MessageBuilder<T> withPayload(T payload) {
-		MessageBuilder<T> builder = new MessageBuilder<T>(payload, null);
-		return builder;
+		return new MessageBuilder<T>(payload, null);
 	}
 
 	/**
@@ -264,6 +273,21 @@ public final class MessageBuilder<T> extends AbstractIntegrationMessageBuilder<T
 		super.setPriority(priority);
 		return this;
 	}
+
+	/**
+	 * Specify a list of headers which should be considered as read only
+	 * and prohibited from being populated in the message.
+	 * @param readOnlyHeaders the list of headers for {@code readOnly} mode.
+	 * Defaults to {@link MessageHeaders#ID} and {@link MessageHeaders#TIMESTAMP}.
+	 * @since 4.3.2
+	 * @see IntegrationMessageHeaderAccessor#isReadOnly(String)
+	 */
+	public MessageBuilder<T> readOnlyHeaders(String... readOnlyHeaders) {
+		this.headerAccessor.setReadOnlyHeaders(readOnlyHeaders);
+		return this;
+	}
+
+
 
 	@Override
 	@SuppressWarnings("unchecked")

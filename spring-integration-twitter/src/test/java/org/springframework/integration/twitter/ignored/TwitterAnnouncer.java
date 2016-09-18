@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2010 the original author or authors.
+ * Copyright 2002-2014 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,35 +16,57 @@
 
 package org.springframework.integration.twitter.ignored;
 
-import org.springframework.messaging.Message;
+import java.util.Collection;
+
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+
 import org.springframework.integration.history.MessageHistory;
+import org.springframework.messaging.Message;
 import org.springframework.social.twitter.api.DirectMessage;
 import org.springframework.social.twitter.api.Tweet;
 import org.springframework.stereotype.Component;
 
+/**
+ * @author Oleg Zhurakousky
+ * @author Mark Fisher
+ * @author Gary Russell
+ *
+ */
 @Component
 public class TwitterAnnouncer {
 
+	private final Log logger = LogFactory.getLog(getClass());
+
 	public void dm(DirectMessage directMessage) {
-		System.out.println("A direct message has been received from " +
+		logger.info("A direct message has been received from " +
 				directMessage.getSender().getScreenName() + " with text " + directMessage.getText());
 	}
 
 	public void search(Message<?> search) {
 		MessageHistory history = MessageHistory.read(search);
-		System.out.println(history);
 		Tweet tweet = (Tweet) search.getPayload();
-		System.out.println("A search item was received " +
+		logger.info("A search item was received " +
 				tweet.getCreatedAt() + " with text " + tweet.getText());
 	}
 
 	public void mention(Tweet s) {
-		System.out.println("A tweet mentioning (or replying) to you was received having text "
+		logger.info("A tweet mentioning (or replying) to you was received having text "
 				+ s.getFromUser() + "-" +  s.getText() + " from " + s.getSource());
 	}
 
+	public void searchResult(Collection<Tweet> tweets) {
+		if (tweets.size() == 0) {
+			logger.info("No results");
+		}
+		for (Tweet s : tweets) {
+			logger.info("Search result: "
+					+ s.getFromUser() + "-" +  s.getText() + " from " + s.getSource());
+		}
+	}
+
 	public void updates(Tweet t) {
-		System.out.println("Received timeline update: " + t.getText() + " from " + t.getSource());
+		logger.info("Received timeline update: " + t.getText() + " from " + t.getSource());
 	}
 
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,21 +19,25 @@ package org.springframework.integration.sftp.config;
 import static org.junit.Assert.assertEquals;
 
 import org.junit.Test;
-import org.springframework.context.ApplicationContext;
+
 import org.springframework.context.support.ClassPathXmlApplicationContext;
 import org.springframework.integration.endpoint.SourcePollingChannelAdapter;
 
 /**
  * @author Oleg Zhurakousky
  * @author Gunnar Hillert
+ * @author Gary Russell
  */
 public class SftpMessageHistoryTests {
 
 	@Test
-	public void testMessageHistoryCompliance(){
-		ApplicationContext ac = new ClassPathXmlApplicationContext("MessageHistory-context.xml", SftpMessageHistoryTests.class);
+	public void testMessageHistoryCompliance() {
+		ClassPathXmlApplicationContext ac = new ClassPathXmlApplicationContext("MessageHistory-context.xml",
+				SftpMessageHistoryTests.class);
 		SourcePollingChannelAdapter spca = ac.getBean("sftpAdapter", SourcePollingChannelAdapter.class);
 		assertEquals("sftpAdapter", spca.getComponentName());
 		assertEquals("sftp:inbound-channel-adapter", spca.getComponentType());
+		ac.close();
 	}
+
 }

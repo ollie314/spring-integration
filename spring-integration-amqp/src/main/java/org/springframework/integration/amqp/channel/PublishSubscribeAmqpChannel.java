@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,6 +28,7 @@ import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.rabbit.connection.ConnectionListener;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.rabbit.listener.SimpleMessageListenerContainer;
+import org.springframework.integration.amqp.support.AmqpHeaderMapper;
 import org.springframework.integration.dispatcher.AbstractDispatcher;
 import org.springframework.integration.dispatcher.BroadcastingDispatcher;
 
@@ -46,8 +47,33 @@ public class PublishSubscribeAmqpChannel extends AbstractSubscribableAmqpChannel
 
 	private volatile boolean initialized;
 
-	public PublishSubscribeAmqpChannel(String channelName, SimpleMessageListenerContainer container, AmqpTemplate amqpTemplate) {
+	/**
+	 * Construct an instance with the supplied name, container and template; default header
+	 * mappers will be used if the message is mapped.
+	 * @param channelName the channel name.
+	 * @param container the container.
+	 * @param amqpTemplate the template.
+	 * @see #setExtractPayload(boolean)
+	 */
+	public PublishSubscribeAmqpChannel(String channelName, SimpleMessageListenerContainer container,
+			AmqpTemplate amqpTemplate) {
 		super(channelName, container, amqpTemplate, true);
+	}
+
+	/**
+	 * Construct an instance with the supplied name, container and template; default header
+	 * mappers will be used if the message is mapped.
+	 * @param channelName the channel name.
+	 * @param container the container.
+	 * @param amqpTemplate the template
+	 * @param outboundMapper the outbound mapper.
+	 * @param inboundMapper the inbound mapper.
+	 * @see #setExtractPayload(boolean)
+	 * @since 4.3
+	 */
+	public PublishSubscribeAmqpChannel(String channelName, SimpleMessageListenerContainer container,
+			AmqpTemplate amqpTemplate, AmqpHeaderMapper outboundMapper, AmqpHeaderMapper inboundMapper) {
+		super(channelName, container, amqpTemplate, true, outboundMapper, inboundMapper);
 	}
 
 
@@ -56,7 +82,6 @@ public class PublishSubscribeAmqpChannel extends AbstractSubscribableAmqpChannel
 	 * FanoutExchange will be declared implicitly, and its name will be the same
 	 * as the channel name prefixed by "si.fanout.". In either case, an effectively
 	 * anonymous Queue will be declared automatically.
-	 *
 	 * @param exchange The fanout exchange.
 	 */
 	public void setExchange(FanoutExchange exchange) {
@@ -64,7 +89,7 @@ public class PublishSubscribeAmqpChannel extends AbstractSubscribableAmqpChannel
 	}
 
 	@Override
-	protected Queue initializeQueue(AmqpAdmin admin, String channelName) {
+	protected String obtainQueueName(AmqpAdmin admin, String channelName) {
 		if (this.exchange == null) {
 			String exchangeName = "si.fanout." + channelName;
 			this.exchange = new FanoutExchange(exchangeName);
@@ -80,7 +105,7 @@ public class PublishSubscribeAmqpChannel extends AbstractSubscribableAmqpChannel
 			}
 		}
 		this.initialized = true;
-		return this.queue;
+		return this.queue.getName();
 	}
 
 	private void doDeclares() {
@@ -99,7 +124,9 @@ public class PublishSubscribeAmqpChannel extends AbstractSubscribableAmqpChannel
 
 	@Override
 	protected AbstractDispatcher createDispatcher() {
-		return new BroadcastingDispatcher(true);
+		BroadcastingDispatcher broadcastingDispatcher = new BroadcastingDispatcher(true);
+		broadcastingDispatcher.setBeanFactory(this.getBeanFactory());
+		return broadcastingDispatcher;
 	}
 
 	@Override

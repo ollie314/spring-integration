@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2010 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,9 @@ import java.util.Comparator;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+
+import org.springframework.beans.factory.BeanFactory;
+import org.springframework.beans.factory.BeanFactoryAware;
 import org.springframework.beans.factory.FactoryBean;
 import org.springframework.integration.file.DirectoryScanner;
 import org.springframework.integration.file.FileReadingMessageSource;
@@ -31,9 +34,13 @@ import org.springframework.integration.file.locking.AbstractFileLockerFilter;
 /**
  * @author Mark Fisher
  * @author Iwein Fuld
+ * @author Gary Russell
+ * @author Artem Bilan
+ *
  * @since 1.0.3
  */
-public class FileReadingMessageSourceFactoryBean implements FactoryBean<FileReadingMessageSource> {
+public class FileReadingMessageSourceFactoryBean implements FactoryBean<FileReadingMessageSource>,
+		BeanFactoryAware {
 
 	private static Log logger = LogFactory.getLog(FileReadingMessageSourceFactoryBean.class);
 
@@ -49,11 +56,17 @@ public class FileReadingMessageSourceFactoryBean implements FactoryBean<FileRead
 
 	private volatile DirectoryScanner scanner;
 
+	private boolean useWatchService;
+
+	private FileReadingMessageSource.WatchEventType[] watchEvents;
+
 	private volatile Boolean scanEachPoll;
 
 	private volatile Boolean autoCreateDirectory;
 
 	private volatile Integer queueSize;
+
+	private volatile BeanFactory beanFactory;
 
 	private final Object initializationMonitor = new Object();
 
@@ -68,6 +81,14 @@ public class FileReadingMessageSourceFactoryBean implements FactoryBean<FileRead
 
 	public void setScanner(DirectoryScanner scanner) {
 		this.scanner = scanner;
+	}
+
+	public void setUseWatchService(boolean useWatchService) {
+		this.useWatchService = useWatchService;
+	}
+
+	public void setWatchEvents(FileReadingMessageSource.WatchEventType... watchEvents) {
+		this.watchEvents = watchEvents;
 	}
 
 	public void setFilter(FileListFilter<File> filter) {
@@ -93,6 +114,12 @@ public class FileReadingMessageSourceFactoryBean implements FactoryBean<FileRead
 		this.locker = locker;
 	}
 
+	@Override
+	public void setBeanFactory(BeanFactory beanFactory) {
+		this.beanFactory = beanFactory;
+	}
+
+	@Override
 	public FileReadingMessageSource getObject() throws Exception {
 		if (this.source == null) {
 			initSource();
@@ -100,15 +127,17 @@ public class FileReadingMessageSourceFactoryBean implements FactoryBean<FileRead
 		return this.source;
 	}
 
+	@Override
 	public Class<?> getObjectType() {
 		return FileReadingMessageSource.class;
 	}
 
+	@Override
 	public boolean isSingleton() {
 		return true;
 	}
 
-	private void initSource() {
+	private void initSource() throws Exception {
 		synchronized (this.initializationMonitor) {
 			if (this.source != null) {
 				return;
@@ -122,7 +151,7 @@ public class FileReadingMessageSourceFactoryBean implements FactoryBean<FileRead
 				this.source = new FileReadingMessageSource(this.comparator);
 			}
 			else if (queueSizeSet) {
-				this.source = new FileReadingMessageSource(queueSize);
+				this.source = new FileReadingMessageSource(this.queueSize);
 			}
 			else {
 				this.source = new FileReadingMessageSource();
@@ -130,6 +159,12 @@ public class FileReadingMessageSourceFactoryBean implements FactoryBean<FileRead
 			this.source.setDirectory(this.directory);
 			if (this.scanner != null) {
 				this.source.setScanner(this.scanner);
+			}
+			else {
+				this.source.setUseWatchService(this.useWatchService);
+				if (this.watchEvents != null) {
+					this.source.setWatchEvents(this.watchEvents);
+				}
 			}
 			if (this.filter != null) {
 				if (this.locker == null) {
@@ -140,14 +175,24 @@ public class FileReadingMessageSourceFactoryBean implements FactoryBean<FileRead
 					compositeFileListFilter.addFilter(this.filter);
 					compositeFileListFilter.addFilter(this.locker);
 					this.source.setFilter(compositeFileListFilter);
-					this.source.setLocker(locker);
+					this.source.setLocker(this.locker);
 				}
+			}
+			else if (this.locker != null) {
+				CompositeFileListFilter<File> compositeFileListFilter = new CompositeFileListFilter<File>();
+				compositeFileListFilter.addFilter(new FileListFilterFactoryBean().getObject());
+				compositeFileListFilter.addFilter(this.locker);
+				this.source.setFilter(compositeFileListFilter);
+				this.source.setLocker(this.locker);
 			}
 			if (this.scanEachPoll != null) {
 				this.source.setScanEachPoll(this.scanEachPoll);
 			}
 			if (this.autoCreateDirectory != null) {
 				this.source.setAutoCreateDirectory(this.autoCreateDirectory);
+			}
+			if (this.beanFactory != null) {
+				this.source.setBeanFactory(this.beanFactory);
 			}
 			this.source.afterPropertiesSet();
 		}

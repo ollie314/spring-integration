@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,10 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.ftp.session;
 
 import java.io.IOException;
-import java.net.SocketException;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -26,7 +26,6 @@ import org.apache.commons.net.ftp.FTPClientConfig;
 import org.apache.commons.net.ftp.FTPFile;
 import org.apache.commons.net.ftp.FTPReply;
 
-import org.springframework.integration.file.remote.session.Session;
 import org.springframework.integration.file.remote.session.SessionFactory;
 import org.springframework.messaging.MessagingException;
 import org.springframework.util.Assert;
@@ -40,8 +39,6 @@ import org.springframework.util.Assert;
  * @since 2.0
  */
 public abstract class AbstractFtpSessionFactory<T extends FTPClient> implements SessionFactory<FTPFile> {
-
-	public static final String DEFAULT_REMOTE_WORKING_DIRECTORY = "/";
 
 	private final Log logger = LogFactory.getLog(this.getClass());
 
@@ -62,6 +59,12 @@ public abstract class AbstractFtpSessionFactory<T extends FTPClient> implements 
 	protected int fileType = FTP.BINARY_FILE_TYPE;
 
 	protected String controlEncoding = FTP.DEFAULT_CONTROL_ENCODING;
+
+	private Integer connectTimeout;
+
+	private Integer defaultTimeout;
+
+	private Integer dataTimeout;
 
 
 	/**
@@ -133,8 +136,32 @@ public abstract class AbstractFtpSessionFactory<T extends FTPClient> implements 
 		this.clientMode = clientMode;
 	}
 
+	/**
+	 * Set the connect timeout for the socket.
+	 * @param connectTimeout the timeout
+	 */
+	public void setConnectTimeout(int connectTimeout) {
+		 this.connectTimeout = connectTimeout;
+	}
+
+	/**
+	 * Set the (socket option) timeout on the command socket.
+	 * @param defaultTimeout the timeout.
+	 */
+	public void setDefaultTimeout(int defaultTimeout) {
+		this.defaultTimeout = defaultTimeout;
+	}
+
+	/**
+	 * Set the (socket option) timeout on the data connection.
+	 * @param dataTimeout the timeout.
+	 */
+	public void setDataTimeout(int dataTimeout) {
+		this.dataTimeout = dataTimeout;
+	}
+
 	@Override
-	public Session<FTPFile> getSession() {
+	public FtpSession getSession() {
 		try {
 			return new FtpSession(this.createClient());
 		}
@@ -143,11 +170,20 @@ public abstract class AbstractFtpSessionFactory<T extends FTPClient> implements 
 		}
 	}
 
-	private T createClient() throws SocketException, IOException {
+	private T createClient() throws IOException {
 		final T client = this.createClientInstance();
 		Assert.notNull(client, "client must not be null");
 		client.configure(this.config);
 		Assert.hasText(this.username, "username is required");
+		if (this.connectTimeout != null) {
+			client.setConnectTimeout(this.connectTimeout);
+		}
+		if (this.defaultTimeout != null) {
+			client.setDefaultTimeout(this.defaultTimeout);
+		}
+		if (this.dataTimeout != null) {
+			client.setDataTimeout(this.dataTimeout);
+		}
 
 		this.postProcessClientBeforeConnect(client);
 
@@ -156,22 +192,22 @@ public abstract class AbstractFtpSessionFactory<T extends FTPClient> implements 
 
 		if (!FTPReply.isPositiveCompletion(client.getReplyCode())) {
 			throw new MessagingException("Connecting to server [" +
-					host + ":" + port + "] failed. Please check the connection.");
+					this.host + ":" + this.port + "] failed. Please check the connection.");
 		}
-		logger.debug("Connected to server [" + host + ":" + port + "]");
+		this.logger.debug("Connected to server [" + this.host + ":" + this.port + "]");
 
 		// Login
-		if (!client.login(username, password)) {
-			throw new IllegalStateException("Login failed. The respponse from the server is: " +
+		if (!client.login(this.username, this.password)) {
+			throw new IllegalStateException("Login failed. The response from the server is: " +
 					client.getReplyString());
 		}
 
 		this.postProcessClientAfterConnect(client);
 
 		this.updateClientMode(client);
-		client.setFileType(fileType);
-		client.setBufferSize(bufferSize);
-		client.setControlEncoding(controlEncoding);
+		client.setFileType(this.fileType);
+		client.setBufferSize(this.bufferSize);
+		client.setControlEncoding(this.controlEncoding);
 		return client;
 	}
 

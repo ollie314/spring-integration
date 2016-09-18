@@ -1,125 +1,155 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
- * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
- * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
- * specific language governing permissions and limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package org.springframework.integration.store;
 
 import java.util.Collection;
 import java.util.Collections;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.LinkedBlockingQueue;
+import java.util.Iterator;
+import java.util.LinkedHashSet;
 
 import org.springframework.integration.IntegrationMessageHeaderAccessor;
 import org.springframework.messaging.Message;
+import org.springframework.util.Assert;
 
 /**
- * Represents a mutable group of correlated messages that is bound to a certain {@link MessageStore} and group id. The
- * group will grow during its lifetime, when messages are <code>add</code>ed to it. This MessageGroup is thread safe.
+ * Represents a mutable group of correlated messages that is bound to a certain {@link MessageStore} and group id.
+ * The group will grow during its lifetime, when messages are <code>add</code>ed to it.
+ * This MessageGroup is thread safe.
  *
  * @author Iwein Fuld
  * @author Oleg Zhurakousky
  * @author Dave Syer
  * @author Gary Russell
+ * @author Artem Bilan
+ *
  * @since 2.0
  */
 public class SimpleMessageGroup implements MessageGroup {
 
 	private final Object groupId;
 
-	public final BlockingQueue<Message<?>> messages = new LinkedBlockingQueue<Message<?>>();
-
-	private volatile int lastReleasedMessageSequence;
+	private final Collection<Message<?>> messages;
 
 	private final long timestamp;
+
+	private volatile int lastReleasedMessageSequence;
 
 	private volatile long lastModified;
 
 	private volatile boolean complete;
 
 	public SimpleMessageGroup(Object groupId) {
-		this(Collections.<Message<?>> emptyList(), groupId, System.currentTimeMillis(), false);
+		this(Collections.<Message<?>>emptyList(), groupId);
 	}
 
 	public SimpleMessageGroup(Collection<? extends Message<?>> messages, Object groupId) {
 		this(messages, groupId, System.currentTimeMillis(), false);
 	}
 
-	public SimpleMessageGroup(Collection<? extends Message<?>> messages, Object groupId, long timestamp, boolean complete) {
+	public SimpleMessageGroup(MessageGroup messageGroup) {
+		this(messageGroup.getMessages(), messageGroup.getGroupId(), messageGroup.getTimestamp(),
+				messageGroup.isComplete());
+	}
+
+	public SimpleMessageGroup(Collection<? extends Message<?>> messages, Object groupId, long timestamp,
+	                          boolean complete) {
+		this(new LinkedHashSet<Message<?>>(), messages, groupId, timestamp, complete);
+	}
+
+	SimpleMessageGroup(Collection<Message<?>> internalStore, Collection<? extends Message<?>> messages, Object groupId,
+	                   long timestamp, boolean complete) {
+		Assert.notNull(internalStore, "'internalStore' must not be null");
+		Assert.notNull(messages, "'messages' must not be null");
+		this.messages = internalStore;
 		this.groupId = groupId;
 		this.timestamp = timestamp;
 		this.complete = complete;
 		for (Message<?> message : messages) {
-			if (message != null){ //see INT-2666
+			if (message != null) { //see INT-2666
 				addMessage(message);
 			}
 		}
 	}
 
-	public SimpleMessageGroup(MessageGroup messageGroup) {
-		this(messageGroup.getMessages(), messageGroup.getGroupId(), messageGroup.getTimestamp(), messageGroup.isComplete());
-	}
-
+	@Override
 	public long getTimestamp() {
-		return timestamp;
+		return this.timestamp;
 	}
 
-	public void setLastModified(long lastModified){
+	@Override
+	public void setLastModified(long lastModified) {
 		this.lastModified = lastModified;
 	}
 
+	@Override
 	public long getLastModified() {
-		return lastModified;
+		return this.lastModified;
 	}
 
+	@Override
 	public boolean canAdd(Message<?> message) {
 		return true;
 	}
 
-	public void add(Message<?> message) {
-		addMessage(message);
+	@Override
+	public void add(Message<?> messageToAdd) {
+		addMessage(messageToAdd);
 	}
 
-	public void remove(Message<?> message) {
-		messages.remove(message);
+	@Override
+	public boolean remove(Message<?> message) {
+		return this.messages.remove(message);
 	}
 
+	@Override
 	public int getLastReleasedMessageSequenceNumber() {
-		return lastReleasedMessageSequence;
+		return this.lastReleasedMessageSequence;
 	}
 
 	private boolean addMessage(Message<?> message) {
-		return this.messages.offer(message);
+		return this.messages.add(message);
 	}
 
+	@Override
 	public Collection<Message<?>> getMessages() {
-		return Collections.unmodifiableCollection(messages);
+		return Collections.unmodifiableCollection(this.messages);
 	}
 
-	public void setLastReleasedMessageSequenceNumber(int sequenceNumber){
+	@Override
+	public void setLastReleasedMessageSequenceNumber(int sequenceNumber) {
 		this.lastReleasedMessageSequence = sequenceNumber;
 	}
 
+	@Override
 	public Object getGroupId() {
-		return groupId;
+		return this.groupId;
 	}
 
+	@Override
 	public boolean isComplete() {
 		return this.complete;
 	}
 
+	@Override
 	public void complete() {
 		this.complete = true;
 	}
 
+	@Override
 	public int getSequenceSize() {
 		if (size() == 0) {
 			return 0;
@@ -127,26 +157,32 @@ public class SimpleMessageGroup implements MessageGroup {
 		return new IntegrationMessageHeaderAccessor(getOne()).getSequenceSize();
 	}
 
+	@Override
 	public int size() {
 		return this.messages.size();
 	}
 
+	@Override
 	public Message<?> getOne() {
-		Message<?> one = messages.peek();
-		return one;
+		synchronized (this.messages) {
+			Iterator<Message<?>> iterator = this.messages.iterator();
+			return iterator.hasNext() ? iterator.next() : null;
+		}
 	}
 
-	public void clear(){
+	@Override
+	public void clear() {
 		this.messages.clear();
 	}
 
 	@Override
 	public String toString() {
 		return "SimpleMessageGroup{" +
-				"groupId=" + groupId +
-				", messages=" + messages +
-				", timestamp=" + timestamp +
-				", lastModified=" + lastModified +
+				"groupId=" + this.groupId +
+				", messages=" + this.messages +
+				", timestamp=" + this.timestamp +
+				", lastModified=" + this.lastModified +
 				'}';
 	}
+
 }

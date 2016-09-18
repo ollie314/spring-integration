@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,31 +17,36 @@
 package org.springframework.integration.handler;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNotSame;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.mock;
 
+import java.util.Calendar;
 import java.util.Date;
+import java.util.Queue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.Mockito;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
 
+import org.springframework.beans.DirectFieldAccessor;
 import org.springframework.beans.factory.BeanFactory;
 import org.springframework.context.event.ContextRefreshedEvent;
 import org.springframework.context.support.StaticApplicationContext;
 import org.springframework.expression.Expression;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
-import org.springframework.messaging.MessageHandlingException;
 import org.springframework.integration.channel.DirectChannel;
 import org.springframework.integration.channel.MessagePublishingErrorHandler;
+import org.springframework.integration.channel.QueueChannel;
 import org.springframework.integration.context.IntegrationContextUtils;
-import org.springframework.messaging.support.GenericMessage;
 import org.springframework.integration.store.MessageGroup;
 import org.springframework.integration.store.MessageGroupStore;
 import org.springframework.integration.store.SimpleMessageStore;
@@ -50,6 +55,8 @@ import org.springframework.integration.test.util.TestUtils;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageDeliveryException;
 import org.springframework.messaging.MessageHandler;
+import org.springframework.messaging.MessageHandlingException;
+import org.springframework.messaging.support.GenericMessage;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 
 /**
@@ -88,6 +95,11 @@ public class DelayHandlerTests {
 		output.subscribe(resultHandler);
 	}
 
+	@After
+	public void tearDown() {
+		taskScheduler.destroy();
+	}
+
 	private void setDelayExpression() {
 		Expression expression = new SpelExpressionParser().parseExpression("headers.delay");
 		this.delayHandler.setDelayExpression(expression);
@@ -113,7 +125,7 @@ public class DelayHandlerTests {
 		this.startDelayerHandler();
 		Message<?> message = MessageBuilder.withPayload("test").build();
 		input.send(message);
-		this.waitForLatch(1000);
+		waitForLatch(10000);
 		assertSame(message.getPayload(), resultHandler.lastMessage.getPayload());
 		assertNotSame(Thread.currentThread(), resultHandler.lastThread);
 	}
@@ -126,7 +138,7 @@ public class DelayHandlerTests {
 		Message<?> message = MessageBuilder.withPayload("test")
 			.setHeader("delay", 100).build();
 		input.send(message);
-		this.waitForLatch(1000);
+		waitForLatch(10000);
 		assertSame(message.getPayload(), resultHandler.lastMessage.getPayload());
 		assertNotSame(Thread.currentThread(), resultHandler.lastThread);
 	}
@@ -139,7 +151,7 @@ public class DelayHandlerTests {
 		Message<?> message = MessageBuilder.withPayload("test")
 			.setHeader("delay", -7000).build();
 		input.send(message);
-		this.waitForLatch(1000);
+		waitForLatch(10000);
 		assertSame(message.getPayload(), resultHandler.lastMessage.getPayload());
 		assertSame(Thread.currentThread(), resultHandler.lastThread);
 	}
@@ -152,7 +164,7 @@ public class DelayHandlerTests {
 		Message<?> message = MessageBuilder.withPayload("test")
 			.setHeader("delay", "not a number").build();
 		input.send(message);
-		this.waitForLatch(1000);
+		waitForLatch(10000);
 		assertSame(message.getPayload(), resultHandler.lastMessage.getPayload());
 		assertNotSame(Thread.currentThread(), resultHandler.lastThread);
 	}
@@ -165,7 +177,7 @@ public class DelayHandlerTests {
 		Message<?> message = MessageBuilder.withPayload("test")
 			.setHeader("delay", new Date(new Date().getTime() + 150)).build();
 		input.send(message);
-		this.waitForLatch(3000);
+		waitForLatch(10000);
 		assertSame(message.getPayload(), resultHandler.lastMessage.getPayload());
 		assertNotSame(Thread.currentThread(), resultHandler.lastThread);
 	}
@@ -178,7 +190,7 @@ public class DelayHandlerTests {
 		Message<?> message = MessageBuilder.withPayload("test")
 			.setHeader("delay", new Date(new Date().getTime() - 60 * 1000)).build();
 		input.send(message);
-		this.waitForLatch(3000);
+		waitForLatch(10000);
 		assertSame(message.getPayload(), resultHandler.lastMessage.getPayload());
 		assertSame(Thread.currentThread(), resultHandler.lastThread);
 	}
@@ -191,7 +203,7 @@ public class DelayHandlerTests {
 		Message<?> message = MessageBuilder.withPayload("test")
 			.setHeader("delay", nullDate).build();
 		input.send(message);
-		this.waitForLatch(3000);
+		waitForLatch(10000);
 		assertSame(message.getPayload(), resultHandler.lastMessage.getPayload());
 		assertSame(Thread.currentThread(), resultHandler.lastThread);
 	}
@@ -204,9 +216,7 @@ public class DelayHandlerTests {
 		Message<?> message = MessageBuilder.withPayload("test")
 			.setHeader("delay", future).build();
 		input.send(message);
-		this.waitForLatch(50);
-		assertSame(message.getPayload(), resultHandler.lastMessage.getPayload());
-		assertSame(Thread.currentThread(), resultHandler.lastThread);
+		waitForLatch(100);
 	}
 
 	@Test
@@ -217,7 +227,7 @@ public class DelayHandlerTests {
 		Message<?> message = MessageBuilder.withPayload("test")
 			.setHeader("delay", "20").build();
 		input.send(message);
-		this.waitForLatch(1000);
+		waitForLatch(10000);
 		assertSame(message.getPayload(), resultHandler.lastMessage.getPayload());
 		assertNotSame(Thread.currentThread(), resultHandler.lastThread);
 	}
@@ -231,6 +241,8 @@ public class DelayHandlerTests {
 
 		final CountDownLatch latch = new CountDownLatch(1);
 		new Thread(new Runnable() {
+
+			@Override
 			public void run() {
 				try {
 					taskScheduler.getScheduledExecutor().awaitTermination(10000, TimeUnit.MILLISECONDS);
@@ -240,9 +252,10 @@ public class DelayHandlerTests {
 					// won't countDown
 				}
 			}
+
 		}).start();
-		latch.await(50, TimeUnit.MILLISECONDS);
-		assertEquals(0, latch.getCount());
+
+		assertTrue(latch.await(10, TimeUnit.SECONDS));
 	}
 
 	@Test
@@ -255,6 +268,7 @@ public class DelayHandlerTests {
 
 		final CountDownLatch latch = new CountDownLatch(1);
 		new Thread(new Runnable() {
+			@Override
 			public void run() {
 				try {
 					taskScheduler.getScheduledExecutor().awaitTermination(10000, TimeUnit.MILLISECONDS);
@@ -274,6 +288,7 @@ public class DelayHandlerTests {
 		this.startDelayerHandler();
 		output.unsubscribe(resultHandler);
 		output.subscribe(new MessageHandler() {
+			@Override
 			public void handleMessage(Message<?> message) {
 				throw new UnsupportedOperationException("intentional test failure");
 			}
@@ -293,15 +308,18 @@ public class DelayHandlerTests {
 		output.unsubscribe(resultHandler);
 		errorChannel.subscribe(resultHandler);
 		output.subscribe(new MessageHandler() {
+
+			@Override
 			public void handleMessage(Message<?> message) {
 				throw new UnsupportedOperationException("intentional test failure");
 			}
+
 		});
 		Message<?> message = MessageBuilder.withPayload("test")
 				.setHeader("delay", "10")
 				.setErrorChannel(errorChannel).build();
 		input.send(message);
-		this.waitForLatch(1000);
+		waitForLatch(10000);
 		Message<?> errorMessage = resultHandler.lastMessage;
 		assertEquals(MessageDeliveryException.class, errorMessage.getPayload().getClass());
 		MessageDeliveryException exceptionPayload = (MessageDeliveryException) errorMessage.getPayload();
@@ -326,15 +344,18 @@ public class DelayHandlerTests {
 		output.unsubscribe(resultHandler);
 		customErrorChannel.subscribe(resultHandler);
 		output.subscribe(new MessageHandler() {
+
+			@Override
 			public void handleMessage(Message<?> message) {
 				throw new UnsupportedOperationException("intentional test failure");
 			}
+
 		});
 		Message<?> message = MessageBuilder.withPayload("test")
 				.setHeader("delay", "10")
 				.setErrorChannelName(errorChannelName).build();
 		input.send(message);
-		this.waitForLatch(1000);
+		waitForLatch(10000);
 		Message<?> errorMessage = resultHandler.lastMessage;
 		assertEquals(MessageDeliveryException.class, errorMessage.getPayload().getClass());
 		MessageDeliveryException exceptionPayload = (MessageDeliveryException) errorMessage.getPayload();
@@ -357,14 +378,17 @@ public class DelayHandlerTests {
 		output.unsubscribe(resultHandler);
 		defaultErrorChannel.subscribe(resultHandler);
 		output.subscribe(new MessageHandler() {
+
+			@Override
 			public void handleMessage(Message<?> message) {
 				throw new UnsupportedOperationException("intentional test failure");
 			}
+
 		});
 		Message<?> message = MessageBuilder.withPayload("test")
 				.setHeader("delay", "10").build();
 		input.send(message);
-		this.waitForLatch(1000);
+		waitForLatch(10000);
 		Message<?> errorMessage = resultHandler.lastMessage;
 		assertEquals(MessageDeliveryException.class, errorMessage.getPayload().getClass());
 		MessageDeliveryException exceptionPayload = (MessageDeliveryException) errorMessage.getPayload();
@@ -376,7 +400,7 @@ public class DelayHandlerTests {
 	@Test //INT-1132
 	public void testReschedulePersistedMessagesOnStartup() throws Exception {
 		MessageGroupStore messageGroupStore = new SimpleMessageStore();
-		this.delayHandler.setDefaultDelay(200);
+		this.delayHandler.setDefaultDelay(2000);
 		this.delayHandler.setMessageStore(messageGroupStore);
 		this.startDelayerHandler();
 		Message<?> message = MessageBuilder.withPayload("test").build();
@@ -405,7 +429,7 @@ public class DelayHandlerTests {
 		this.delayHandler.setBeanFactory(mock(BeanFactory.class));
 		this.startDelayerHandler();
 
-		assertTrue(this.latch.await(10, TimeUnit.SECONDS));
+		waitForLatch(10000);
 
 		assertSame(message.getPayload(), this.resultHandler.lastMessage.getPayload());
 		assertNotSame(Thread.currentThread(), this.resultHandler.lastThread);
@@ -418,6 +442,7 @@ public class DelayHandlerTests {
 	public void testDoubleOnApplicationEvent() throws Exception {
 		this.delayHandler = Mockito.spy(this.delayHandler);
 		Mockito.doAnswer(new Answer<Object>() {
+			@Override
 			public Object answer(InvocationOnMock invocation) throws Throwable {
 				return null;
 			}
@@ -436,6 +461,56 @@ public class DelayHandlerTests {
 		this.startDelayerHandler();
 		this.delayHandler.handleMessage(new GenericMessage<String>("test"));
 	}
+
+	@Test //INT-3560
+	/*
+	 It's difficult to test it from real ctx, because any async process from 'inbound-channel-adapter'
+	 can't achieve the DelayHandler before the main thread emits 'ContextRefreshedEvent'.
+	 */
+	public void testRescheduleAndHandleAtTheSameTime() throws Exception {
+		QueueChannel results = new QueueChannel();
+		delayHandler.setOutputChannel(results);
+		this.delayHandler.setDefaultDelay(100);
+		startDelayerHandler();
+
+		this.input.send(new GenericMessage<>("foo"));
+		this.delayHandler.reschedulePersistedMessages();
+		Message<?> message = results.receive(10000);
+		assertNotNull(message);
+		message = results.receive(500);
+		assertNull(message);
+	}
+
+	@Test
+	public void testRescheduleForTheDateDelay() throws Exception {
+		this.delayHandler.setDelayExpression(new SpelExpressionParser().parseExpression("payload"));
+		this.delayHandler.setOutputChannel(new DirectChannel());
+		this.delayHandler.setIgnoreExpressionFailures(false);
+		startDelayerHandler();
+		Calendar releaseDate = Calendar.getInstance();
+		releaseDate.add(Calendar.HOUR, 1);
+		this.delayHandler.handleMessage(new GenericMessage<>(releaseDate.getTime()));
+
+		// emulate restart
+		this.taskScheduler.destroy();
+		MessageGroupStore messageStore = TestUtils.getPropertyValue(this.delayHandler, "messageStore",
+				MessageGroupStore.class);
+		MessageGroup messageGroup = messageStore.getMessageGroup(DELAYER_MESSAGE_GROUP_ID);
+		Message<?> messageInStore = messageGroup.getMessages().iterator().next();
+		Object payload = messageInStore.getPayload();
+		DirectFieldAccessor dfa = new DirectFieldAccessor(payload);
+		long requestTime = (long) dfa.getPropertyValue("requestDate");
+		Calendar requestDate = Calendar.getInstance();
+		requestDate.setTimeInMillis(requestTime);
+		requestDate.add(Calendar.HOUR, -2);
+		dfa.setPropertyValue("requestDate", requestDate.getTimeInMillis());
+		this.taskScheduler.afterPropertiesSet();
+		this.delayHandler.reschedulePersistedMessages();
+		Thread.sleep(10);
+		Queue<?> works = TestUtils.getPropertyValue(this.taskScheduler, "scheduledExecutor.workQueue", Queue.class);
+		assertEquals(1, works.size());
+	}
+
 
 	private void waitForLatch(long timeout) {
 		try {
@@ -456,6 +531,7 @@ public class DelayHandlerTests {
 
 		private volatile Thread lastThread;
 
+		@Override
 		public void handleMessage(Message<?> message) {
 			this.lastMessage = message;
 			this.lastThread = Thread.currentThread();
@@ -467,7 +543,7 @@ public class DelayHandlerTests {
 	@SuppressWarnings("serial")
 	private static class TestTimedOutException extends RuntimeException {
 
-		public TestTimedOutException() {
+		TestTimedOutException() {
 			super("timed out while waiting for latch");
 		}
 	}

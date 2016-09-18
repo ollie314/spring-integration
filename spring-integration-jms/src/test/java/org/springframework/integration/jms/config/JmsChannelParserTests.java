@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,8 @@
 package org.springframework.integration.jms.config;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertTrue;
 
 import java.util.List;
 
@@ -27,15 +29,14 @@ import javax.jms.Queue;
 import javax.jms.Session;
 import javax.jms.Topic;
 
-import org.junit.After;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
 import org.springframework.beans.DirectFieldAccessor;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.support.AbstractApplicationContext;
 import org.springframework.integration.jms.PollableJmsChannel;
 import org.springframework.integration.jms.SubscribableJmsChannel;
+import org.springframework.integration.support.MessageBuilderFactory;
 import org.springframework.integration.test.util.TestUtils;
 import org.springframework.jms.core.JmsTemplate;
 import org.springframework.jms.listener.AbstractMessageListenerContainer;
@@ -45,6 +46,7 @@ import org.springframework.jms.support.destination.DestinationResolver;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.messaging.support.ChannelInterceptorAdapter;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 
@@ -54,6 +56,7 @@ import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
  */
 @ContextConfiguration
 @RunWith(SpringJUnit4ClassRunner.class)
+@DirtiesContext
 public class JmsChannelParserTests {
 
 	@Autowired
@@ -114,13 +117,10 @@ public class JmsChannelParserTests {
 	private MessageChannel withContainerClass;
 
 	@Autowired
-	private AbstractApplicationContext context;
+	private MessageChannel withContainerClassSpEL;
 
-
-	@After
-	public void closeContext() {
-		this.context.close();
-	}
+	@Autowired
+	private MessageBuilderFactory messageBuilderFactory;
 
 	@Test
 	public void queueReferenceChannel() {
@@ -172,7 +172,10 @@ public class JmsChannelParserTests {
 		AbstractMessageListenerContainer container = (AbstractMessageListenerContainer) accessor.getPropertyValue("container");
 		assertEquals(topic, jmsTemplate.getDefaultDestination());
 		assertEquals(topic, container.getDestination());
+		assertSame(this.messageBuilderFactory,
+				TestUtils.getPropertyValue(channel, "container.messageListener.messageBuilderFactory"));
 	}
+
 
 	@Test
 	public void topicNameChannel() {
@@ -183,6 +186,9 @@ public class JmsChannelParserTests {
 		AbstractMessageListenerContainer container = (AbstractMessageListenerContainer) accessor.getPropertyValue("container");
 		assertEquals("test.topic", jmsTemplate.getDefaultDestinationName());
 		assertEquals("test.topic", container.getDestinationName());
+		assertTrue(container.isSubscriptionShared());
+		assertTrue(container.isSubscriptionDurable());
+		assertEquals("subName", container.getSubscriptionName());
 	}
 
 	@Test
@@ -262,9 +268,9 @@ public class JmsChannelParserTests {
 	@Test
 	public void withPlaceholders() {
 		DefaultMessageListenerContainer container = TestUtils.getPropertyValue(withPlaceholders, "container", DefaultMessageListenerContainer.class);
-		System.out.println(container.getDestination());
-		System.out.println(container.getConcurrentConsumers());
-		System.out.println(container.getMaxConcurrentConsumers());
+		assertEquals("queue://test.queue", container.getDestination().toString());
+		assertEquals(5, container.getConcurrentConsumers());
+		assertEquals(25, container.getMaxConcurrentConsumers());
 	}
 
 	@Test
@@ -295,6 +301,14 @@ public class JmsChannelParserTests {
 	public void withContainerClass() {
 		CustomTestMessageListenerContainer container = TestUtils.getPropertyValue(
 				withContainerClass, "container",
+				CustomTestMessageListenerContainer.class);
+		assertEquals("custom.container.queue", container.getDestinationName());
+	}
+
+	@Test
+	public void withContainerClassSpEL() {
+		CustomTestMessageListenerContainer container = TestUtils.getPropertyValue(
+				withContainerClassSpEL, "container",
 				CustomTestMessageListenerContainer.class);
 		assertEquals("custom.container.queue", container.getDestinationName());
 	}

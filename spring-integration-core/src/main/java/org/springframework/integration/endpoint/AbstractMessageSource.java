@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,10 +19,15 @@ package org.springframework.integration.endpoint;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
 
+import org.springframework.beans.factory.BeanNameAware;
 import org.springframework.expression.Expression;
 import org.springframework.integration.core.MessageSource;
 import org.springframework.integration.support.AbstractIntegrationMessageBuilder;
+import org.springframework.integration.support.context.NamedComponent;
+import org.springframework.integration.support.management.IntegrationManagedResource;
+import org.springframework.integration.support.management.MessageSourceMetrics;
 import org.springframework.integration.util.AbstractExpressionEvaluator;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessagingException;
@@ -31,12 +36,26 @@ import org.springframework.util.CollectionUtils;
 /**
  * @author Mark Fisher
  * @author Oleg Zhurakousky
+ * @author Gary Russell
  * @since 2.0
  */
-public abstract class AbstractMessageSource<T> extends AbstractExpressionEvaluator implements MessageSource<T> {
+@IntegrationManagedResource
+public abstract class AbstractMessageSource<T> extends AbstractExpressionEvaluator implements MessageSource<T>,
+		MessageSourceMetrics, NamedComponent, BeanNameAware {
+
+	private final AtomicLong messageCount = new AtomicLong();
 
 	private volatile Map<String, Expression> headerExpressions = Collections.emptyMap();
 
+	private volatile String beanName;
+
+	private volatile String managedType;
+
+	private volatile String managedName;
+
+	private volatile boolean countsEnabled;
+
+	private volatile boolean loggingEnabled = true;
 
 	public void setHeaderExpressions(Map<String, Expression> headerExpressions) {
 		this.headerExpressions = (headerExpressions != null)
@@ -44,10 +63,78 @@ public abstract class AbstractMessageSource<T> extends AbstractExpressionEvaluat
 	}
 
 	@Override
-	@SuppressWarnings("unchecked")
+	public void setBeanName(String name) {
+		this.beanName = name;
+	}
+
+	@Override
+	public void setManagedType(String managedType) {
+		this.managedType = managedType;
+	}
+
+	@Override
+	public String getManagedType() {
+		return this.managedType;
+	}
+
+	@Override
+	public void setManagedName(String managedName) {
+		this.managedName = managedName;
+	}
+
+	@Override
+	public String getManagedName() {
+		return this.managedName;
+	}
+
+	@Override
+	public String getComponentName() {
+		return this.beanName;
+	}
+
+	@Override
+	public boolean isCountsEnabled() {
+		return this.countsEnabled;
+	}
+
+	@Override
+	public void setCountsEnabled(boolean countsEnabled) {
+		this.countsEnabled = countsEnabled;
+	}
+
+	@Override
+	public boolean isLoggingEnabled() {
+		return this.loggingEnabled;
+	}
+
+	@Override
+	public void setLoggingEnabled(boolean loggingEnabled) {
+		this.loggingEnabled = loggingEnabled;
+	}
+
+	@Override
+	public void reset() {
+		this.messageCount.set(0);
+	}
+
+	@Override
+	public int getMessageCount() {
+		return (int) this.messageCount.get();
+	}
+
+	@Override
+	public long getMessageCountLong() {
+		return this.messageCount.get();
+	}
+
+	@Override
 	public final Message<T> receive() {
+		return buildMessage(doReceive());
+	}
+
+	@SuppressWarnings("unchecked")
+	protected Message<T> buildMessage(Object result) {
 		Message<T> message = null;
-		Object result = this.doReceive();
 		Map<String, Object> headers = this.evaluateHeaders();
 		if (result instanceof Message<?>) {
 			try {
@@ -76,6 +163,9 @@ public abstract class AbstractMessageSource<T> extends AbstractExpressionEvaluat
 				builder.copyHeaders(headers);
 			}
 			message = builder.build();
+		}
+		if (this.countsEnabled && message != null) {
+			this.messageCount.incrementAndGet();
 		}
 		return message;
 	}

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,20 +16,16 @@
 
 package org.springframework.integration.groovy;
 
-import groovy.lang.Binding;
-import groovy.lang.GString;
-import groovy.lang.GroovyClassLoader;
-import groovy.lang.GroovyObject;
-import groovy.lang.MetaClass;
-import groovy.lang.MissingPropertyException;
-import groovy.lang.Script;
-
+import java.security.AccessController;
+import java.security.PrivilegedAction;
 import java.util.Map;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
-import org.springframework.beans.BeansException;
-import org.springframework.beans.factory.BeanFactory;
+import org.codehaus.groovy.control.CompilerConfiguration;
+import org.codehaus.groovy.control.customizers.ASTTransformationCustomizer;
+
+import org.springframework.beans.factory.InitializingBean;
 import org.springframework.beans.factory.NoSuchBeanDefinitionException;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.integration.scripting.AbstractScriptExecutingMessageProcessor;
@@ -40,6 +36,16 @@ import org.springframework.scripting.ScriptSource;
 import org.springframework.scripting.groovy.GroovyObjectCustomizer;
 import org.springframework.util.Assert;
 import org.springframework.util.ClassUtils;
+import org.springframework.util.StringUtils;
+
+import groovy.lang.Binding;
+import groovy.lang.GString;
+import groovy.lang.GroovyClassLoader;
+import groovy.lang.GroovyObject;
+import groovy.lang.MetaClass;
+import groovy.lang.MissingPropertyException;
+import groovy.lang.Script;
+import groovy.transform.CompileStatic;
 
 /**
  * The {@link org.springframework.integration.handler.MessageProcessor} implementation
@@ -52,7 +58,8 @@ import org.springframework.util.ClassUtils;
  * @author Artem Bilan
  * @since 2.0
  */
-public class GroovyScriptExecutingMessageProcessor extends AbstractScriptExecutingMessageProcessor<Object> {
+public class GroovyScriptExecutingMessageProcessor extends AbstractScriptExecutingMessageProcessor<Object>
+		implements InitializingBean {
 
 	private final VariableBindingGroovyObjectCustomizerDecorator customizerDecorator =
 			new VariableBindingGroovyObjectCustomizerDecorator();
@@ -61,14 +68,24 @@ public class GroovyScriptExecutingMessageProcessor extends AbstractScriptExecuti
 
 	private volatile ScriptSource scriptSource;
 
-	private volatile GroovyClassLoader groovyClassLoader = new GroovyClassLoader(ClassUtils.getDefaultClassLoader());
+	private volatile GroovyClassLoader groovyClassLoader = AccessController.doPrivileged(
+			new PrivilegedAction<GroovyClassLoader>() {
+
+				public GroovyClassLoader run() {
+					return new GroovyClassLoader(ClassUtils.getDefaultClassLoader());
+				}
+
+			});
 
 	private volatile Class<?> scriptClass;
+
+	private boolean compileStatic;
+
+	private CompilerConfiguration compilerConfiguration;
 
 	/**
 	 * Create a processor for the given {@link ScriptSource} that will use a
 	 * DefaultScriptVariableGenerator.
-	 *
 	 * @param scriptSource The script source.
 	 */
 	public GroovyScriptExecutingMessageProcessor(ScriptSource scriptSource) {
@@ -79,41 +96,67 @@ public class GroovyScriptExecutingMessageProcessor extends AbstractScriptExecuti
 	/**
 	 * Create a processor for the given {@link ScriptSource} that will use the provided
 	 * ScriptVariableGenerator.
-	 *
 	 * @param scriptSource The script source.
 	 * @param scriptVariableGenerator The variable generator.
 	 */
-	public GroovyScriptExecutingMessageProcessor(ScriptSource scriptSource, ScriptVariableGenerator scriptVariableGenerator) {
+	public GroovyScriptExecutingMessageProcessor(ScriptSource scriptSource,
+	                                             ScriptVariableGenerator scriptVariableGenerator) {
 		super(scriptVariableGenerator);
 		this.scriptSource = scriptSource;
 	}
 
-	@Override
-	public void setBeanClassLoader(ClassLoader classLoader) {
-		super.setBeanClassLoader(classLoader);
-		this.groovyClassLoader = new GroovyClassLoader(classLoader);
-	}
-
-	@Override
-	public void setBeanFactory(BeanFactory beanFactory) throws BeansException {
-		super.setBeanFactory(beanFactory);
-		if (beanFactory instanceof ConfigurableListableBeanFactory) {
-			((ConfigurableListableBeanFactory) beanFactory).ignoreDependencyType(MetaClass.class);
-		}
-	}
-
 	/**
 	 * Sets a {@link GroovyObjectCustomizer} for this processor.
-	 * 
 	 * @param customizer The customizer.
 	 */
 	public void setCustomizer(GroovyObjectCustomizer customizer) {
 		this.customizerDecorator.setCustomizer(customizer);
 	}
 
+	/**
+	 * Specify the {@code boolean} flag to indicate if the {@link GroovyClassLoader}'s compiler
+	 * should be customised for the {@link CompileStatic} hint for the provided script.
+	 * <p> More compiler options can be provided via {@link #setCompilerConfiguration(CompilerConfiguration)}
+	 * overriding this flag.
+	 * @param compileStatic the compile static {@code boolean} flag.
+	 * @since 4.3
+	 * @see CompileStatic
+	 */
+	public void setCompileStatic(boolean compileStatic) {
+		this.compileStatic = compileStatic;
+	}
+
+	/**
+	 * Specify the {@link CompilerConfiguration} options to customize the Groovy script compilation.
+	 * For example the {@link CompileStatic} and {@link org.codehaus.groovy.control.customizers.ImportCustomizer}
+	 * are the most popular options.
+	 * @param compilerConfiguration the Groovy script compiler options to use.
+	 * @since 4.3
+	 * @see CompileStatic
+	 * @see GroovyClassLoader
+	 */
+	public void setCompilerConfiguration(CompilerConfiguration compilerConfiguration) {
+		this.compilerConfiguration = compilerConfiguration;
+	}
+
 	@Override
 	protected ScriptSource getScriptSource(Message<?> message) {
 		return this.scriptSource;
+	}
+
+	@Override
+	public void afterPropertiesSet() throws Exception {
+		if (this.beanFactory != null && this.beanFactory instanceof ConfigurableListableBeanFactory) {
+			((ConfigurableListableBeanFactory) this.beanFactory).ignoreDependencyType(MetaClass.class);
+		}
+
+		CompilerConfiguration compilerConfiguration = this.compilerConfiguration;
+		if (compilerConfiguration == null && this.compileStatic) {
+			compilerConfiguration = new CompilerConfiguration();
+			compilerConfiguration.addCompilationCustomizers(new ASTTransformationCustomizer(CompileStatic.class));
+		}
+
+		this.groovyClassLoader = new GroovyClassLoader(this.beanClassLoader, compilerConfiguration);
 	}
 
 	@Override
@@ -131,8 +174,14 @@ public class GroovyScriptExecutingMessageProcessor extends AbstractScriptExecuti
 			try {
 				// synchronized double check
 				if (this.scriptClass == null || scriptSource.isModified()) {
-					this.scriptClass = this.groovyClassLoader.parseClass(
-							scriptSource.getScriptAsString(), scriptSource.suggestedClassName());
+					String className = scriptSource.suggestedClassName();
+					if (StringUtils.hasText(className)) {
+						this.scriptClass =
+								this.groovyClassLoader.parseClass(scriptSource.getScriptAsString(), className);
+					}
+					else {
+						this.scriptClass = this.groovyClassLoader.parseClass(scriptSource.getScriptAsString());
+					}
 				}
 			}
 			finally {
@@ -170,7 +219,7 @@ public class GroovyScriptExecutingMessageProcessor extends AbstractScriptExecuti
 		}
 	}
 
-	private class BeanFactoryFallbackBinding extends Binding {
+	private final class BeanFactoryFallbackBinding extends Binding {
 
 		private BeanFactoryFallbackBinding(Map<?, ?> variables) {
 			super(variables);
@@ -182,8 +231,8 @@ public class GroovyScriptExecutingMessageProcessor extends AbstractScriptExecuti
 				return super.getVariable(name);
 			}
 			catch (MissingPropertyException e) {
-			// Original {@link Binding} doesn't have 'variable' for the given 'name'.
-			// Try to resolve it as 'bean' from the given <code>beanFactory</code>.
+				// Original {@link Binding} doesn't have 'variable' for the given 'name'.
+				// Try to resolve it as 'bean' from the given <code>beanFactory</code>.
 			}
 
 			if (GroovyScriptExecutingMessageProcessor.this.beanFactory == null) {

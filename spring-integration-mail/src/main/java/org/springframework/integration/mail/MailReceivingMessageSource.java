@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,10 +25,12 @@ import org.apache.commons.logging.LogFactory;
 
 import org.springframework.beans.factory.BeanFactory;
 import org.springframework.beans.factory.BeanFactoryAware;
-import org.springframework.integration.context.IntegrationContextUtils;
+import org.springframework.beans.factory.BeanNameAware;
 import org.springframework.integration.core.MessageSource;
 import org.springframework.integration.support.DefaultMessageBuilderFactory;
 import org.springframework.integration.support.MessageBuilderFactory;
+import org.springframework.integration.support.context.NamedComponent;
+import org.springframework.integration.support.utils.IntegrationUtils;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessagingException;
 import org.springframework.util.Assert;
@@ -42,19 +44,24 @@ import org.springframework.util.Assert;
  * @author Mark Fisher
  * @author Gary Russell
  * @author Oleg Zhurakousky
+ * @author Artem Bilan
  */
-public class MailReceivingMessageSource implements MessageSource<javax.mail.Message>,
-		BeanFactoryAware {
+public class MailReceivingMessageSource implements MessageSource<Object>,
+		BeanFactoryAware, BeanNameAware, NamedComponent {
 
 	private final Log logger = LogFactory.getLog(this.getClass());
 
 	private final MailReceiver mailReceiver;
 
-	private final Queue<javax.mail.Message> mailQueue = new ConcurrentLinkedQueue<javax.mail.Message>();
+	private final Queue<Object> mailQueue = new ConcurrentLinkedQueue<Object>();
 
 	private volatile BeanFactory beanFactory;
 
 	private volatile MessageBuilderFactory messageBuilderFactory = new DefaultMessageBuilderFactory();
+
+	private volatile boolean messageBuilderFactorySet;
+
+	private volatile String beanName;
 
 
 	public MailReceivingMessageSource(MailReceiver mailReceiver) {
@@ -65,33 +72,59 @@ public class MailReceivingMessageSource implements MessageSource<javax.mail.Mess
 	@Override
 	public final void setBeanFactory(BeanFactory beanFactory) {
 		this.beanFactory = beanFactory;
-		this.messageBuilderFactory = IntegrationContextUtils.getMessageBuilderFactory(this.beanFactory);
 	}
 
 	protected BeanFactory getBeanFactory() {
-		return beanFactory;
+		return this.beanFactory;
 	}
 
 	protected MessageBuilderFactory getMessageBuilderFactory() {
-		return messageBuilderFactory;
+		if (!this.messageBuilderFactorySet) {
+			if (this.beanFactory != null) {
+				this.messageBuilderFactory = IntegrationUtils.getMessageBuilderFactory(this.beanFactory);
+			}
+			this.messageBuilderFactorySet = true;
+		}
+		return this.messageBuilderFactory;
 	}
 
 	@Override
-	public Message<javax.mail.Message> receive() {
+	public String getComponentName() {
+		return this.beanName;
+	}
+
+	@Override
+	public String getComponentType() {
+		return "mail:inbound-channel-adapter";
+	}
+
+	@Override
+	public void setBeanName(String name) {
+		this.beanName = name;
+	}
+
+	@SuppressWarnings("unchecked")
+	@Override
+	public Message<Object> receive() {
 		try {
-			javax.mail.Message mailMessage = this.mailQueue.poll();
+			Object mailMessage = this.mailQueue.poll();
 			if (mailMessage == null) {
-				javax.mail.Message[] messages = this.mailReceiver.receive();
+				Object[] messages = this.mailReceiver.receive();
 				if (messages != null) {
 					this.mailQueue.addAll(Arrays.asList(messages));
 				}
 				mailMessage = this.mailQueue.poll();
 			}
 			if (mailMessage != null) {
-				if (logger.isDebugEnabled()) {
-					logger.debug("received mail message [" + mailMessage + "]");
+				if (this.logger.isDebugEnabled()) {
+					this.logger.debug("received mail message [" + mailMessage + "]");
 				}
-				return this.messageBuilderFactory.withPayload(mailMessage).build();
+				if (mailMessage instanceof Message) {
+					return (Message<Object>) mailMessage;
+				}
+				else {
+					return getMessageBuilderFactory().withPayload(mailMessage).build();
+				}
 			}
 		}
 		catch (Exception e) {

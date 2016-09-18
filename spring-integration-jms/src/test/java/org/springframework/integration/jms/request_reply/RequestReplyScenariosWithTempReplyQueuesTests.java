@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.jms.request_reply;
 
 import static org.junit.Assert.assertEquals;
@@ -36,6 +37,8 @@ import javax.jms.TextMessage;
 
 import org.apache.activemq.broker.BrokerService;
 import org.apache.activemq.command.ActiveMQDestination;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.junit.Rule;
 import org.junit.Test;
 
@@ -43,7 +46,6 @@ import org.springframework.context.support.ClassPathXmlApplicationContext;
 import org.springframework.integration.gateway.RequestReplyExchanger;
 import org.springframework.integration.jms.ActiveMQMultiContextTests;
 import org.springframework.integration.jms.config.ActiveMqTestUtils;
-import org.springframework.messaging.support.GenericMessage;
 import org.springframework.integration.test.support.LongRunningIntegrationTest;
 import org.springframework.integration.test.util.TestUtils;
 import org.springframework.jms.connection.CachingConnectionFactory;
@@ -53,11 +55,14 @@ import org.springframework.jms.listener.DefaultMessageListenerContainer;
 import org.springframework.jms.listener.SessionAwareMessageListener;
 import org.springframework.jms.support.converter.SimpleMessageConverter;
 import org.springframework.messaging.MessageDeliveryException;
+import org.springframework.messaging.support.GenericMessage;
 /**
  * @author Oleg Zhurakousky
  * @author Gary Russell
  */
 public class RequestReplyScenariosWithTempReplyQueuesTests extends ActiveMQMultiContextTests {
+
+	private final Log logger = LogFactory.getLog(getClass());
 
 	private final SimpleMessageConverter converter = new SimpleMessageConverter();
 
@@ -65,7 +70,7 @@ public class RequestReplyScenariosWithTempReplyQueuesTests extends ActiveMQMulti
 	public LongRunningIntegrationTest longTests = new LongRunningIntegrationTest();
 
 	@Test
-	public void messageCorrelationBasedOnRequestMessageId() throws Exception{
+	public void messageCorrelationBasedOnRequestMessageId() throws Exception {
 		ActiveMqTestUtils.prepare();
 
 		ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext("producer-temp-reply-consumers.xml", this.getClass());
@@ -77,23 +82,27 @@ public class RequestReplyScenariosWithTempReplyQueuesTests extends ActiveMQMulti
 
 		new Thread(new Runnable() {
 
+			@Override
 			public void run() {
 				final Message requestMessage = jmsTemplate.receive(requestDestination);
 				Destination replyTo = null;
 				try {
 					replyTo = requestMessage.getJMSReplyTo();
-				} catch (Exception e) {
+				}
+				catch (Exception e) {
 					fail();
 				}
 				jmsTemplate.send(replyTo, new MessageCreator() {
 
+					@Override
 					public Message createMessage(Session session) throws JMSException {
 						try {
 							TextMessage message = session.createTextMessage();
 							message.setText("bar");
 							message.setJMSCorrelationID(requestMessage.getJMSMessageID());
 							return message;
-						} catch (Exception e) {
+						}
+						catch (Exception e) {
 							// ignore
 						}
 						return null;
@@ -106,7 +115,7 @@ public class RequestReplyScenariosWithTempReplyQueuesTests extends ActiveMQMulti
 	}
 
 	@Test
-	public void messageCorrelationBasedOnRequestCorrelationIdTimedOutFirstReply() throws Exception{
+	public void messageCorrelationBasedOnRequestCorrelationIdTimedOutFirstReply() throws Exception {
 		ActiveMqTestUtils.prepare();
 		ClassPathXmlApplicationContext context =
 				new ClassPathXmlApplicationContext("producer-temp-reply-consumers.xml", this.getClass());
@@ -120,18 +129,21 @@ public class RequestReplyScenariosWithTempReplyQueuesTests extends ActiveMQMulti
 		dmlc.setDestination(requestDestination);
 		dmlc.setMessageListener(new SessionAwareMessageListener<Message>() {
 
+			@Override
 			public void onMessage(Message message, Session session) {
 				Destination replyTo = null;
 				try {
 					replyTo = message.getJMSReplyTo();
-				} catch (Exception e) {
+				}
+				catch (Exception e) {
 					fail();
 				}
 				String requestPayload = (String) extractPayload(message);
-				if (requestPayload.equals("foo")){
+				if (requestPayload.equals("foo")) {
 					try {
 						Thread.sleep(6000);
-					} catch (Exception e) {/*ignore*/}
+					}
+					catch (Exception e) { /*ignore*/ }
 				}
 				try {
 					TextMessage replyMessage = session.createTextMessage();
@@ -139,7 +151,8 @@ public class RequestReplyScenariosWithTempReplyQueuesTests extends ActiveMQMulti
 					replyMessage.setJMSCorrelationID(message.getJMSMessageID());
 					MessageProducer producer = session.createProducer(replyTo);
 					producer.send(replyMessage);
-				} catch (Exception e) {
+				}
+				catch (Exception e) {
 					// ignore. the test will fail
 				}
 			}
@@ -149,13 +162,15 @@ public class RequestReplyScenariosWithTempReplyQueuesTests extends ActiveMQMulti
 
 		try {
 			gateway.exchange(new GenericMessage<String>("foo"));
-		} catch (Exception e) {
+		}
+		catch (Exception e) {
 			// ignore
 		}
 		Thread.sleep(1000);
 		try {
 			assertEquals("bar", gateway.exchange(new GenericMessage<String>("bar")).getPayload());
-		} catch (Exception e) {
+		}
+		catch (Exception e) {
 			e.printStackTrace();
 			fail();
 		}
@@ -167,7 +182,7 @@ public class RequestReplyScenariosWithTempReplyQueuesTests extends ActiveMQMulti
 	 * once a failure detected and that the messages will still be properly correlated
 	 */
 	@Test
-	public void brokenBrokerTest() throws Exception{
+	public void brokenBrokerTest() throws Exception {
 
 		BrokerService broker = new BrokerService();
 		broker.setPersistent(false);
@@ -185,23 +200,25 @@ public class RequestReplyScenariosWithTempReplyQueuesTests extends ActiveMQMulti
 		int timeoutCounter = 0;
 		for (int i = 0; i < 50; i++) {
 			try {
-				assertEquals(i+"", gateway.exchange(new GenericMessage<String>(String.valueOf(i))).getPayload());
+				assertEquals(i + "", gateway.exchange(new GenericMessage<String>(String.valueOf(i))).getPayload());
 				replyCounter++;
-			} catch (Exception e) {
+			}
+			catch (Exception e) {
 				timeoutCounter++;
 			}
-			if (i == 0 || i == 20 || i == 40){
+			if (i == 0 || i == 20 || i == 40) {
 				Object replyDestination = TestUtils.getPropertyValue(context.getBean("jog"), "handler.replyDestination");
-				if (replyDestination != null){
+				if (replyDestination != null) {
 					broker.removeDestination((ActiveMQDestination) replyDestination);
 				}
 			}
 		}
 		assertEquals(50, replyCounter + timeoutCounter);
+		context.close();
 	}
 
 	@Test
-	public void testConcurrently() throws Exception{
+	public void testConcurrently() throws Exception {
 		ActiveMqTestUtils.prepare();
 		ClassPathXmlApplicationContext context =
 				new ClassPathXmlApplicationContext("mult-producer-and-consumers-temp-reply.xml", this.getClass());
@@ -215,14 +232,16 @@ public class RequestReplyScenariosWithTempReplyQueuesTests extends ActiveMQMulti
 		for (int i = 0; i < testNumbers; i++) {
 			final int y = i;
 			executor.execute(new Runnable() {
+				@Override
 				public void run() {
 					try {
 
 						String reply = (String) gateway.exchange(new GenericMessage<String>(String.valueOf(y))).getPayload();
-						if (!String.valueOf(y).equals(reply)){
+						if (!String.valueOf(y).equals(reply)) {
 							missmatches.incrementAndGet();
 						}
-					} catch (Exception e) {
+					}
+					catch (Exception e) {
 						if (e instanceof MessageDeliveryException) {
 							timeouts.incrementAndGet();
 						}
@@ -246,25 +265,23 @@ public class RequestReplyScenariosWithTempReplyQueuesTests extends ActiveMQMulti
 		assertEquals(0, missmatches.get());
 		assertEquals(0, failures.get());
 		assertEquals(0, timeouts.get());
+		context.close();
 	}
 
-	private void print(AtomicInteger failures, AtomicInteger timeouts, AtomicInteger missmatches, long echangesProcessed){
-		System.out.println("============================");
-		System.out.println(echangesProcessed + " exchanges processed");
-		System.out.println("Failures: " + failures.get());
-		System.out.println("Timeouts: " + timeouts.get());
-		System.out.println("Missmatches: " + missmatches.get());
-		System.out.println("============================");
+	private void print(AtomicInteger failures, AtomicInteger timeouts, AtomicInteger missmatches, long echangesProcessed) {
+		logger.info("============================");
+		logger.info(echangesProcessed + " exchanges processed");
+		logger.info("Failures: " + failures.get());
+		logger.info("Timeouts: " + timeouts.get());
+		logger.info("Missmatches: " + missmatches.get());
+		logger.info("============================");
 	}
 
-	public static class MyRandomlySlowService{
+	public static class MyRandomlySlowService {
 		Random random = new Random();
 		List<Integer> list = new ArrayList<Integer>();
-		public String secho(String value) throws Exception{
+		public String secho(String value) throws Exception {
 			int i = random.nextInt(2000);
-//			if (i >= 2000){
-//				System.out.println("SLEEPIING: " + i);
-//			}
 			Thread.sleep(i);
 			return value;
 		}
@@ -273,7 +290,8 @@ public class RequestReplyScenariosWithTempReplyQueuesTests extends ActiveMQMulti
 	private Object extractPayload(Message jmsMessage) {
 		try {
 			return converter.fromMessage(jmsMessage);
-		} catch (Exception e) {
+		}
+		catch (Exception e) {
 			e.printStackTrace();
 			fail();
 		}

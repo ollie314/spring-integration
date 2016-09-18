@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,22 +22,24 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import org.junit.Test;
+
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.parsing.BeanDefinitionParsingException;
-import org.springframework.context.ApplicationContext;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
-import org.springframework.messaging.Message;
-import org.springframework.messaging.MessageHandler;
 import org.springframework.integration.endpoint.EventDrivenConsumer;
 import org.springframework.integration.handler.advice.AbstractRequestHandlerAdvice;
-import org.springframework.messaging.support.GenericMessage;
 import org.springframework.integration.test.util.TestUtils;
 import org.springframework.integration.twitter.outbound.DirectMessageSendingMessageHandler;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.MessageHandler;
+import org.springframework.messaging.support.GenericMessage;
 
 /**
  * @author Oleg Zhurakousky
  * @author Gary Russell
  * @author Artem Bilan
+ * @author Gary Russell
  * @since 2.0
  */
 public class TestSendingMessageHandlerParserTests {
@@ -45,8 +47,9 @@ public class TestSendingMessageHandlerParserTests {
 	private static volatile int adviceCalled;
 
 	@Test
-	public void testSendingMessageHandlerSuccessfulBootstrap(){
-		ApplicationContext ac = new ClassPathXmlApplicationContext("TestSendingMessageHandlerParser-context.xml", this.getClass());
+	public void testSendingMessageHandlerSuccessfulBootstrap() {
+		ConfigurableApplicationContext ac = new ClassPathXmlApplicationContext(
+				"TestSendingMessageHandlerParser-context.xml", this.getClass());
 		EventDrivenConsumer dmAdapter = ac.getBean("dmAdapter", EventDrivenConsumer.class);
 		MessageHandler handler = TestUtils.getPropertyValue(dmAdapter, "handler", MessageHandler.class);
 		assertEquals(DirectMessageSendingMessageHandler.class, handler.getClass());
@@ -59,12 +62,14 @@ public class TestSendingMessageHandlerParserTests {
 		assertNotSame(handler, handler2);
 		handler2.handleMessage(new GenericMessage<String>("foo"));
 		assertEquals(2, adviceCalled);
+		ac.close();
 	}
 
 	@Test
 	public void testInt2718FailForOutboundAdapterWithRequestHandlerAdviceChainWithinChainConfig() {
 		try {
-			new ClassPathXmlApplicationContext("OutboundAdapterWithRHACWithinChain-fail-context.xml", this.getClass());
+			new ClassPathXmlApplicationContext("OutboundAdapterWithRHACWithinChain-fail-context.xml", this.getClass())
+					.close();
 			fail("Expected BeanDefinitionParsingException");
 		}
 		catch (BeansException e) {

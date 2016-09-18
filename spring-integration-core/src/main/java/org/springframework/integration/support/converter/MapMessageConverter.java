@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.support.converter;
 
 import java.util.Arrays;
@@ -21,10 +22,10 @@ import java.util.Map;
 
 import org.springframework.beans.factory.BeanFactory;
 import org.springframework.beans.factory.BeanFactoryAware;
-import org.springframework.integration.context.IntegrationContextUtils;
 import org.springframework.integration.support.AbstractIntegrationMessageBuilder;
 import org.springframework.integration.support.DefaultMessageBuilderFactory;
 import org.springframework.integration.support.MessageBuilderFactory;
+import org.springframework.integration.support.utils.IntegrationUtils;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageHeaders;
 import org.springframework.messaging.converter.MessageConverter;
@@ -32,7 +33,9 @@ import org.springframework.util.Assert;
 
 /**
  * Converts to/from a Map with 2 keys ('headers' and 'payload').
+ *
  * @author Gary Russell
+ * @author Artem Bilan
  * @since 3.0
  *
  */
@@ -46,15 +49,22 @@ public class MapMessageConverter implements MessageConverter, BeanFactoryAware {
 
 	private volatile MessageBuilderFactory messageBuilderFactory = new DefaultMessageBuilderFactory();
 
+	private volatile boolean messageBuilderFactorySet;
+
 
 	@Override
 	public final void setBeanFactory(BeanFactory beanFactory) {
 		this.beanFactory = beanFactory;
-		this.messageBuilderFactory = IntegrationContextUtils.getMessageBuilderFactory(this.beanFactory);
 	}
 
 	protected MessageBuilderFactory getMessageBuilderFactory() {
-		return messageBuilderFactory;
+		if (!this.messageBuilderFactorySet) {
+			if (this.beanFactory != null) {
+				this.messageBuilderFactory = IntegrationUtils.getMessageBuilderFactory(this.beanFactory);
+			}
+			this.messageBuilderFactorySet = true;
+		}
+		return this.messageBuilderFactory;
 	}
 
 	/**
@@ -87,7 +97,7 @@ public class MapMessageConverter implements MessageConverter, BeanFactoryAware {
 		Map<String, ?> map = (Map<String, ?>) object;
 		Object payload = map.get("payload");
 		Assert.notNull(payload, "'payload' entry cannot be null");
-		AbstractIntegrationMessageBuilder<?> messageBuilder = this.messageBuilderFactory.withPayload(payload);
+		AbstractIntegrationMessageBuilder<?> messageBuilder = getMessageBuilderFactory().withPayload(payload);
 		@SuppressWarnings("unchecked")
 		Map<String, ?> headers = (Map<String, ?>) map.get("headers");
 		if (headers != null) {
@@ -96,16 +106,15 @@ public class MapMessageConverter implements MessageConverter, BeanFactoryAware {
 			}
 			messageBuilder.copyHeaders(headers);
 		}
-		Message<?> convertedMessage = messageBuilder.build();
-		return convertedMessage;
+		return messageBuilder.build();
 	}
 
 	@Override
 	public Object fromMessage(Message<?> message, Class<?> clazz) {
-		Map<String,Object> map = new HashMap<String, Object>();
+		Map<String, Object> map = new HashMap<String, Object>();
 		map.put("payload", message.getPayload());
 		Map<String, Object> headers = new HashMap<String, Object>();
-		for (String headerName : headerNames) {
+		for (String headerName : this.headerNames) {
 			Object header = message.getHeaders().get(headerName);
 			if (header != null) {
 				headers.put(headerName, header);

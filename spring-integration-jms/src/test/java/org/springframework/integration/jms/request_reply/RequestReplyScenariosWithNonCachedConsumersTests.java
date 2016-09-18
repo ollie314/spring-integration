@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.jms.request_reply;
 
 import static org.junit.Assert.assertEquals;
@@ -33,10 +34,10 @@ import org.springframework.integration.MessageTimeoutException;
 import org.springframework.integration.gateway.RequestReplyExchanger;
 import org.springframework.integration.jms.ActiveMQMultiContextTests;
 import org.springframework.integration.jms.config.ActiveMqTestUtils;
-import org.springframework.messaging.support.GenericMessage;
 import org.springframework.integration.test.support.LongRunningIntegrationTest;
 import org.springframework.jms.core.JmsTemplate;
 import org.springframework.jms.core.MessageCreator;
+import org.springframework.messaging.support.GenericMessage;
 /**
  * @author Oleg Zhurakousky
  * @author Gary Russell
@@ -46,8 +47,8 @@ public class RequestReplyScenariosWithNonCachedConsumersTests extends ActiveMQMu
 	@Rule
 	public LongRunningIntegrationTest longTests = new LongRunningIntegrationTest();
 
-	@Test(expected=MessageTimeoutException.class)
-	public void messageCorrelationBasedOnRequestMessageIdOptimized() throws Exception{
+	@Test(expected = MessageTimeoutException.class)
+	public void messageCorrelationBasedOnRequestMessageIdOptimized() throws Exception {
 		ActiveMqTestUtils.prepare();
 		AbstractApplicationContext context = new ClassPathXmlApplicationContext("producer-no-cached-consumers.xml", this.getClass());
 		try {
@@ -59,10 +60,12 @@ public class RequestReplyScenariosWithNonCachedConsumersTests extends ActiveMQMu
 			final Destination replyDestination = context.getBean("siInQueueC", Destination.class);
 			new Thread(new Runnable() {
 
+				@Override
 				public void run() {
 					final Message requestMessage = jmsTemplate.receive(requestDestination);
 					jmsTemplate.send(replyDestination, new MessageCreator() {
 
+						@Override
 						public Message createMessage(Session session) throws JMSException {
 							TextMessage message = session.createTextMessage();
 							message.setText("bar");
@@ -76,12 +79,12 @@ public class RequestReplyScenariosWithNonCachedConsumersTests extends ActiveMQMu
 			assertEquals("bar", siReplyMessage.getPayload());
 		}
 		finally {
-			context.destroy();
+			context.close();
 		}
 	}
 
 	@Test
-	public void messageCorrelationBasedOnRequestMessageIdNonOptimized() throws Exception{
+	public void messageCorrelationBasedOnRequestMessageIdNonOptimized() throws Exception {
 		ActiveMqTestUtils.prepare();
 		AbstractApplicationContext context = new ClassPathXmlApplicationContext("producer-no-cached-consumers.xml", this.getClass());
 		try {
@@ -93,9 +96,11 @@ public class RequestReplyScenariosWithNonCachedConsumersTests extends ActiveMQMu
 			final Destination replyDestination = context.getBean("siInQueueD", Destination.class);
 			new Thread(new Runnable() {
 
+				@Override
 				public void run() {
 					final Message requestMessage = jmsTemplate.receive(requestDestination);
 					jmsTemplate.send(replyDestination, new MessageCreator() {
+						@Override
 						public Message createMessage(Session session) throws JMSException {
 							TextMessage message = session.createTextMessage();
 							message.setText("bar");
@@ -109,12 +114,12 @@ public class RequestReplyScenariosWithNonCachedConsumersTests extends ActiveMQMu
 			assertEquals("bar", siReplyMessage.getPayload());
 		}
 		finally {
-			context.destroy();
+			context.close();
 		}
 	}
 
 	@Test
-	public void messageCorrelationBasedOnRequestCorrelationIdOptimized() throws Exception{
+	public void messageCorrelationBasedOnRequestCorrelationIdOptimized() throws Exception {
 		ActiveMqTestUtils.prepare();
 		AbstractApplicationContext context = new ClassPathXmlApplicationContext("producer-no-cached-consumers.xml", this.getClass());
 		try {
@@ -126,10 +131,12 @@ public class RequestReplyScenariosWithNonCachedConsumersTests extends ActiveMQMu
 			final Destination replyDestination = context.getBean("siInQueueA", Destination.class);
 			new Thread(new Runnable() {
 
+				@Override
 				public void run() {
 					final Message requestMessage = jmsTemplate.receive(requestDestination);
 					jmsTemplate.send(replyDestination, new MessageCreator() {
 
+						@Override
 						public Message createMessage(Session session) throws JMSException {
 							TextMessage message = session.createTextMessage();
 							message.setText("bar");
@@ -143,12 +150,12 @@ public class RequestReplyScenariosWithNonCachedConsumersTests extends ActiveMQMu
 			assertEquals("bar", siReplyMessage.getPayload());
 		}
 		finally {
-			context.destroy();
+			context.close();
 		}
 	}
 
-	@Test(expected=MessageTimeoutException.class)
-	public void messageCorrelationBasedOnRequestCorrelationIdNonOptimized() throws Exception{
+	@Test(expected = MessageTimeoutException.class)
+	public void messageCorrelationBasedOnRequestCorrelationIdNonOptimized() throws Exception {
 		ActiveMqTestUtils.prepare();
 		AbstractApplicationContext context = new ClassPathXmlApplicationContext("producer-no-cached-consumers.xml", this.getClass());
 		try {
@@ -160,10 +167,12 @@ public class RequestReplyScenariosWithNonCachedConsumersTests extends ActiveMQMu
 			final Destination replyDestination = context.getBean("siInQueueB", Destination.class);
 			new Thread(new Runnable() {
 
+				@Override
 				public void run() {
 					final Message requestMessage = jmsTemplate.receive(requestDestination);
 					jmsTemplate.send(replyDestination, new MessageCreator() {
 
+						@Override
 						public Message createMessage(Session session) throws JMSException {
 							TextMessage message = session.createTextMessage();
 							message.setText("bar");
@@ -177,7 +186,7 @@ public class RequestReplyScenariosWithNonCachedConsumersTests extends ActiveMQMu
 			assertEquals("bar", siReplyMessage.getPayload());
 		}
 		finally {
-			context.destroy();
+			context.close();
 		}
 	}
 }

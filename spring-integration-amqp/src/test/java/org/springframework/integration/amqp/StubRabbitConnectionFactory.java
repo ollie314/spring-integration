@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,7 +27,6 @@ import org.springframework.amqp.rabbit.connection.ConnectionListener;
 
 import com.rabbitmq.client.AMQP.Basic.RecoverOk;
 import com.rabbitmq.client.AMQP.BasicProperties;
-import com.rabbitmq.client.AMQP.Channel.FlowOk;
 import com.rabbitmq.client.AMQP.Confirm.SelectOk;
 import com.rabbitmq.client.AMQP.Exchange.BindOk;
 import com.rabbitmq.client.AMQP.Exchange.DeclareOk;
@@ -75,6 +74,11 @@ public class StubRabbitConnectionFactory implements ConnectionFactory {
 	}
 
 	@Override
+	public String getUsername() {
+		return null;
+	}
+
+	@Override
 	public void addConnectionListener(ConnectionListener listener) {
 	}
 
@@ -103,6 +107,12 @@ public class StubRabbitConnectionFactory implements ConnectionFactory {
 		public boolean isOpen() {
 			return false;
 		}
+
+		@Override
+		public int getLocalPort() {
+			return 0;
+		}
+
 	}
 
 	private static class StubChannel implements Channel {
@@ -148,13 +158,9 @@ public class StubRabbitConnectionFactory implements ConnectionFactory {
 		}
 
 		@Override
-		public FlowOk flow(boolean active) throws IOException {
-			return null;
-		}
-
-		@Override
-		public FlowOk getFlow() {
-			return null;
+		@Deprecated
+		public boolean flowBlocked() {
+			return false;
 		}
 
 		@Override
@@ -203,6 +209,10 @@ public class StubRabbitConnectionFactory implements ConnectionFactory {
 
 		@Override
 		public void basicQos(int prefetchSize, int prefetchCount, boolean global) throws IOException {
+		}
+
+		@Override
+		public void basicQos(int prefetchCount, boolean global) throws IOException {
 		}
 
 		@Override
@@ -326,7 +336,8 @@ public class StubRabbitConnectionFactory implements ConnectionFactory {
 				@Override
 				public String getQueue() {
 					return queue;
-				}};
+				}
+			};
 		}
 
 		@Override
@@ -413,6 +424,12 @@ public class StubRabbitConnectionFactory implements ConnectionFactory {
 		}
 
 		@Override
+		public String basicConsume(String queue, boolean autoAck, Map<String, Object> arguments, Consumer callback)
+				throws IOException {
+			return null;
+		}
+
+		@Override
 		public String basicConsume(String queue, boolean autoAck,
 				String consumerTag, boolean noLocal, boolean exclusive,
 				Map<String, Object> arguments, Consumer callback)
@@ -432,11 +449,6 @@ public class StubRabbitConnectionFactory implements ConnectionFactory {
 		@Override
 		public RecoverOk basicRecover(boolean requeue) throws IOException {
 			return null;
-		}
-
-		@Override
-		@Deprecated
-		public void basicRecoverAsync(boolean requeue) throws IOException {
 		}
 
 		@Override
@@ -483,15 +495,18 @@ public class StubRabbitConnectionFactory implements ConnectionFactory {
 		}
 
 		@Override
+		@Deprecated
 		public void addFlowListener(FlowListener listener) {
 		}
 
 		@Override
+		@Deprecated
 		public boolean removeFlowListener(FlowListener listener) {
 			return false;
 		}
 
 		@Override
+		@Deprecated
 		public void clearFlowListeners() {
 		}
 
@@ -533,6 +548,50 @@ public class StubRabbitConnectionFactory implements ConnectionFactory {
 		public void basicPublish(String arg0, String arg1, boolean arg2, BasicProperties arg3, byte[] arg4)
 				throws IOException {
 		}
+
+		@Override
+		public void exchangeDeclareNoWait(String exchange, String type, boolean durable, boolean autoDelete,
+				boolean internal, Map<String, Object> arguments) throws IOException {
+		}
+
+		@Override
+		public void exchangeDeleteNoWait(String exchange, boolean ifUnused) throws IOException {
+		}
+
+		@Override
+		public void exchangeBindNoWait(String destination, String source, String routingKey,
+				Map<String, Object> arguments) throws IOException {
+		}
+
+		@Override
+		public void exchangeUnbindNoWait(String destination, String source, String routingKey,
+				Map<String, Object> arguments) throws IOException {
+		}
+
+		@Override
+		public void queueDeclareNoWait(String queue, boolean durable, boolean exclusive, boolean autoDelete,
+				Map<String, Object> arguments) throws IOException {
+		}
+
+		@Override
+		public void queueDeleteNoWait(String queue, boolean ifUnused, boolean ifEmpty) throws IOException {
+		}
+
+		@Override
+		public void queueBindNoWait(String queue, String exchange, String routingKey, Map<String, Object> arguments)
+				throws IOException {
+		}
+
+		@Override
+		public long messageCount(String queue) throws IOException {
+			return 0;
+		}
+
+		@Override
+		public long consumerCount(String queue) throws IOException {
+			return 0;
+		}
+
 	}
 
 }

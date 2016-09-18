@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2014 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,73 +19,104 @@ package org.springframework.integration.rmi.config;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.Matchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
-import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
-import org.springframework.context.ApplicationContext;
-import org.springframework.context.support.ClassPathXmlApplicationContext;
-import org.springframework.messaging.Message;
-import org.springframework.messaging.MessageChannel;
+import org.junit.runner.RunWith;
+
+import org.springframework.beans.factory.BeanFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.integration.channel.QueueChannel;
-import org.springframework.messaging.PollableChannel;
 import org.springframework.integration.handler.advice.AbstractRequestHandlerAdvice;
-import org.springframework.messaging.support.GenericMessage;
 import org.springframework.integration.rmi.RmiInboundGateway;
 import org.springframework.integration.rmi.RmiOutboundGateway;
 import org.springframework.integration.support.MessageBuilder;
 import org.springframework.integration.test.util.TestUtils;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.MessageChannel;
+import org.springframework.messaging.PollableChannel;
+import org.springframework.messaging.support.GenericMessage;
+import org.springframework.remoting.rmi.RmiProxyFactoryBean;
+import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.ContextConfiguration;
+import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 
 /**
  * @author Mark Fisher
  * @author Gary Russell
  * @author Artem Bilan
  */
+@ContextConfiguration
+@RunWith(SpringJUnit4ClassRunner.class)
+@DirtiesContext
 public class RmiOutboundGatewayParserTests {
 
-	private final QueueChannel testChannel = new QueueChannel();
+	private static final QueueChannel testChannel = new QueueChannel();
 
-	private static volatile int adviceCalled;
+	@Autowired
+	public FooAdvice advice;
 
-	@Before
-	public void setupTestInboundGateway() throws Exception {
+	@Autowired
+	private MessageChannel advisedChannel;
+
+	@Autowired
+	private MessageChannel rmiOutboundGatewayInsideChain;
+
+	@Autowired
+	private MessageChannel requestReplyRmiWithChainChannel;
+
+	@Autowired
+	private PollableChannel replyChannel;
+
+	@Autowired
+	private RmiOutboundGateway.RmiProxyFactoryBeanConfigurer configurer;
+
+	@Autowired
+	@Qualifier("gateway.handler")
+	RmiOutboundGateway gateway;
+
+	@Autowired
+	@Qualifier("advised.handler")
+	RmiOutboundGateway advised;
+
+	@BeforeClass
+	public static void setupTestInboundGateway() throws Exception {
 		testChannel.setBeanName("testChannel");
 		RmiInboundGateway gateway = new RmiInboundGateway();
 		gateway.setRequestChannel(testChannel);
 		gateway.setExpectReply(false);
+		gateway.setBeanFactory(mock(BeanFactory.class));
 		gateway.afterPropertiesSet();
 	}
 
 	@Test
-	public void testOrder() {
-		ApplicationContext context = new ClassPathXmlApplicationContext(
-				"rmiOutboundGatewayParserTests.xml", this.getClass());
-		RmiOutboundGateway gateway = context.getBean("gateway.handler", RmiOutboundGateway.class);
+	public void testProperties() {
 		assertEquals(23, TestUtils.getPropertyValue(gateway, "order"));
 		assertTrue(TestUtils.getPropertyValue(gateway, "requiresReply", Boolean.class));
+		assertSame(this.configurer, TestUtils.getPropertyValue(this.gateway, "configurer"));
+		verify(this.configurer).configure(any(RmiProxyFactoryBean.class));
 	}
 
 	@Test
 	public void directInvocation() {
-		ApplicationContext context = new ClassPathXmlApplicationContext(
-				"rmiOutboundGatewayParserTests.xml", this.getClass());
-		MessageChannel localChannel = (MessageChannel) context.getBean("advisedChannel");
-		RmiOutboundGateway gateway = context.getBean("advised.handler", RmiOutboundGateway.class);
-		assertFalse(TestUtils.getPropertyValue(gateway, "requiresReply", Boolean.class));
+		assertFalse(TestUtils.getPropertyValue(advised, "requiresReply", Boolean.class));
 
-		localChannel.send(new GenericMessage<String>("test"));
+		advisedChannel.send(new GenericMessage<String>("test"));
 		Message<?> result = testChannel.receive(1000);
 		assertNotNull(result);
 		assertEquals("test", result.getPayload());
-		assertEquals(1, adviceCalled);
+		assertEquals(1, advice.adviceCalled);
 	}
 
 	@Test //INT-1029
 	public void testRmiOutboundGatewayInsideChain() {
-		ApplicationContext context = new ClassPathXmlApplicationContext(
-				"rmiOutboundGatewayParserTests.xml", this.getClass());
-		MessageChannel localChannel = context.getBean("rmiOutboundGatewayInsideChain", MessageChannel.class);
-		localChannel.send(MessageBuilder.withPayload("test").build());
+		rmiOutboundGatewayInsideChain.send(MessageBuilder.withPayload("test").build());
 		Message<?> result = testChannel.receive(1000);
 		assertNotNull(result);
 		assertEquals("test", result.getPayload());
@@ -93,17 +124,15 @@ public class RmiOutboundGatewayParserTests {
 
 	@Test //INT-1029
 	public void testRmiRequestReplyWithinChain() {
-		ApplicationContext context = new ClassPathXmlApplicationContext(
-				"rmiOutboundGatewayParserTests.xml", this.getClass());
-		MessageChannel localChannel = context.getBean("requestReplyRmiWithChainChannel", MessageChannel.class);
-		localChannel.send(MessageBuilder.withPayload("test").build());
-		PollableChannel replyChannel = context.getBean("replyChannel", PollableChannel.class);
-		Message<?> result = replyChannel.receive();
+		requestReplyRmiWithChainChannel.send(MessageBuilder.withPayload("test").build());
+		Message<?> result = replyChannel.receive(1000);
 		assertNotNull(result);
 		assertEquals("TEST", result.getPayload());
 	}
 
 	public static class FooAdvice extends AbstractRequestHandlerAdvice {
+
+		int adviceCalled;
 
 		@Override
 		protected Object doInvoke(ExecutionCallback callback, Object target, Message<?> message) throws Exception {

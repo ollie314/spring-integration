@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.redis.rules;
 
 import org.junit.Assume;
@@ -20,7 +21,7 @@ import org.junit.rules.MethodRule;
 import org.junit.runners.model.FrameworkMethod;
 import org.junit.runners.model.Statement;
 
-import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
+import org.springframework.data.redis.connection.jedis.JedisConnectionFactory;
 
 /**
  * @author Oleg Zhurakousky
@@ -31,15 +32,16 @@ public final class RedisAvailableRule implements MethodRule {
 
 	public static final int REDIS_PORT = 6379;
 
-	static ThreadLocal<LettuceConnectionFactory> connectionFactoryResource = new ThreadLocal<LettuceConnectionFactory>();
+	static ThreadLocal<JedisConnectionFactory> connectionFactoryResource = new ThreadLocal<JedisConnectionFactory>();
 
 	public Statement apply(final Statement base, final FrameworkMethod method, Object target) {
 		RedisAvailable redisAvailable = method.getAnnotation(RedisAvailable.class);
 		if (redisAvailable != null) {
-			LettuceConnectionFactory connectionFactory = null;
+			JedisConnectionFactory connectionFactory = null;
 			try {
-				connectionFactory = new LettuceConnectionFactory();
+				connectionFactory = new JedisConnectionFactory();
 				connectionFactory.setPort(REDIS_PORT);
+				connectionFactory.setTimeout(10000);
 				connectionFactory.afterPropertiesSet();
 				connectionFactory.getConnection();
 				connectionFactoryResource.set(connectionFactory);
@@ -63,7 +65,7 @@ public final class RedisAvailableRule implements MethodRule {
 						base.evaluate();
 					}
 					finally {
-						LettuceConnectionFactory connectionFactory = connectionFactoryResource.get();
+						JedisConnectionFactory connectionFactory = connectionFactoryResource.get();
 						connectionFactoryResource.remove();
 						if (connectionFactory != null) {
 							connectionFactory.destroy();

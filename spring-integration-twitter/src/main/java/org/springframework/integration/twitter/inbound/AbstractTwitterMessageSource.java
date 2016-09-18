@@ -1,4 +1,5 @@
-/* Copyright 2002-2014 the original author or authors.
+/*
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -58,6 +59,8 @@ import org.springframework.util.StringUtils;
 @SuppressWarnings("rawtypes")
 abstract class AbstractTwitterMessageSource<T> extends IntegrationObjectSupport implements MessageSource {
 
+	private static final int DEFAULT_PAGE_SIZE = 20;
+
 	private final Twitter twitter;
 
 	private final TweetComparator tweetComparator = new TweetComparator();
@@ -76,12 +79,14 @@ abstract class AbstractTwitterMessageSource<T> extends IntegrationObjectSupport 
 
 	private volatile long lastProcessedId = -1;
 
+	private volatile int pageSize = DEFAULT_PAGE_SIZE;
 
-	public AbstractTwitterMessageSource(Twitter twitter, String metadataKey) {
+
+	protected AbstractTwitterMessageSource(Twitter twitter, String metadataKey) {
 		Assert.notNull(twitter, "twitter must not be null");
 		Assert.notNull(metadataKey, "metadataKey must not be null");
 		this.twitter = twitter;
-		if (this.twitter.isAuthorized()){
+		if (this.twitter.isAuthorized()) {
 			UserOperations userOperations = this.twitter.userOperations();
 			String profileId = String.valueOf(userOperations.getProfileId());
 			if (profileId != null) {
@@ -102,6 +107,18 @@ abstract class AbstractTwitterMessageSource<T> extends IntegrationObjectSupport 
 
 	protected Twitter getTwitter() {
 		return this.twitter;
+	}
+
+	protected int getPageSize() {
+		return this.pageSize;
+	}
+
+	/**
+	 * Set the limit for the number of results returned on each poll; default 20.
+	 * @param pageSize The pageSize.
+	 */
+	public void setPageSize(int pageSize) {
+		this.pageSize = pageSize;
 	}
 
 	@Override
@@ -162,8 +179,8 @@ abstract class AbstractTwitterMessageSource<T> extends IntegrationObjectSupport 
 
 	private void refreshTweetQueueIfNecessary() {
 		try {
-			if (tweets.size() <= prefetchThreshold) {
-				List<T> tweets = pollForTweets(lastEnqueuedId);
+			if (this.tweets.size() <= this.prefetchThreshold) {
+				List<T> tweets = pollForTweets(this.lastEnqueuedId);
 				if (!CollectionUtils.isEmpty(tweets)) {
 					enqueueAll(tweets);
 				}
@@ -203,9 +220,9 @@ abstract class AbstractTwitterMessageSource<T> extends IntegrationObjectSupport 
 	/**
 	 * Remove the metadata key and the corresponding value from the Metadata Store.
 	 */
-	@ManagedOperation(description="Remove the metadata key and the corresponding value from the Metadata Store.")
+	@ManagedOperation(description = "Remove the metadata key and the corresponding value from the Metadata Store.")
 	void resetMetadataStore() {
-		synchronized(this) {
+		synchronized (this) {
 			this.metadataStore.remove(this.metadataKey);
 			this.lastProcessedId = -1L;
 			this.lastEnqueuedId = -1L;

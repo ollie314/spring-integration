@@ -1,14 +1,17 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
- * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
- * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
- * specific language governing permissions and limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package org.springframework.integration.aggregator;
@@ -43,6 +46,7 @@ import org.springframework.messaging.Message;
  *
  * @author Iwein Fuld
  * @author Oleg Zhurakousky
+ * @author Gary Russell
  *
  * @see AbstractCorrelatingMessageHandler
  */
@@ -88,10 +92,10 @@ public class CorrelatingMessageBarrier extends AbstractMessageHandler implements
 
 	@Override
 	protected void handleMessageInternal(Message<?> message) throws Exception {
-		Object correlationKey = correlationStrategy.getCorrelationKey(message);
+		Object correlationKey = this.correlationStrategy.getCorrelationKey(message);
 		Object lock = getLock(correlationKey);
 		synchronized (lock) {
-			store.addMessageToGroup(correlationKey, message);
+			this.store.addMessagesToGroup(correlationKey, message);
 		}
 		if (log.isDebugEnabled()) {
 			log.debug(String.format("Handled message for key [%s]: %s.", correlationKey, message));
@@ -99,30 +103,31 @@ public class CorrelatingMessageBarrier extends AbstractMessageHandler implements
 	}
 
 	private Object getLock(Object correlationKey) {
-		Object existingLock = correlationLocks.putIfAbsent(correlationKey, correlationKey);
+		Object existingLock = this.correlationLocks.putIfAbsent(correlationKey, correlationKey);
 		return existingLock == null ? correlationKey : existingLock;
 	}
 
 
 	@Override
 	public Message<Object> receive() {
-		for (Object key : correlationLocks.keySet()) {
+		for (Object key : this.correlationLocks.keySet()) {
 			Object lock = getLock(key);
 			synchronized (lock) {
-				MessageGroup group = store.getMessageGroup(key);
+				MessageGroup group = this.store.getMessageGroup(key);
 				//group might be removed by another thread
 				if (group != null) {
-					if (releaseStrategy.canRelease(group)) {
+					if (this.releaseStrategy.canRelease(group)) {
 						Message<?> nextMessage = null;
 
 						Iterator<Message<?>> messages = group.getMessages().iterator();
 						if (messages.hasNext()) {
 							nextMessage = messages.next();
-							store.removeMessageFromGroup(key, nextMessage);
+							this.store.removeMessagesFromGroup(key, nextMessage);
 							if (log.isDebugEnabled()) {
 								log.debug(String.format("Released message for key [%s]: %s.", key, nextMessage));
 							}
-						} else {
+						}
+						else {
 							remove(key);
 						}
 						@SuppressWarnings("unchecked")
@@ -136,8 +141,8 @@ public class CorrelatingMessageBarrier extends AbstractMessageHandler implements
 	}
 
 	private void remove(Object key) {
-		correlationLocks.remove(key);
-		store.removeMessageGroup(key);
+		this.correlationLocks.remove(key);
+		this.store.removeMessageGroup(key);
 	}
 
 }

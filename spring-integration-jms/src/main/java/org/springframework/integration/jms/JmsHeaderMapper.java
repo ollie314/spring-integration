@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,9 +29,9 @@ import org.springframework.integration.mapping.HeaderMapper;
  * @author Oleg Zhurakousky
  * @author Gary Russell
  */
-public interface JmsHeaderMapper extends HeaderMapper<Message> {
+public abstract class JmsHeaderMapper implements HeaderMapper<Message> {
 
-	static final String CONTENT_TYPE_PROPERTY = "content_type";
+	protected final static String CONTENT_TYPE_PROPERTY = "content_type";
 
 }
 

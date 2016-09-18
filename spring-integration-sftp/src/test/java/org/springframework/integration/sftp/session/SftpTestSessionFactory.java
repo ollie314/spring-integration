@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2010 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,19 +13,22 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.sftp.session;
 
-import org.springframework.integration.file.remote.session.Session;
-
-import com.jcraft.jsch.ChannelSftp.LsEntry;
 
 /**
  * @author Oleg Zhurakousky
- * 
+ * @author Gary Russell
+ *
  */
 public class SftpTestSessionFactory {
 
-	public static Session<LsEntry> createSftpSession(com.jcraft.jsch.Session jschSession) {
+	private SftpTestSessionFactory() {
+		super();
+	}
+
+	public static SftpSession createSftpSession(com.jcraft.jsch.Session jschSession) {
 		SftpSession sftpSession = new SftpSession(jschSession);
 		sftpSession.connect();
 		return sftpSession;

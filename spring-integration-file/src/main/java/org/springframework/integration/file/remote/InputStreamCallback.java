@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2014 the original author or authors.
+ * Copyright 2013-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.file.remote;
 
 import java.io.IOException;
@@ -25,13 +26,13 @@ import java.io.InputStream;
  * @since 3.0
  *
  */
+@FunctionalInterface
 public interface InputStreamCallback {
 
 	/**
 	 * Called with the InputStream for the remote file. The caller will
 	 * take care of closing the stream and finalizing the file retrieval operation after
 	 * this method exits.
-	 *
 	 * @param stream The InputStream.
 	 * @throws IOException Any IOException.
 	 */

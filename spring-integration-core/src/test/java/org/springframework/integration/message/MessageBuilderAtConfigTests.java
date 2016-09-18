@@ -1,5 +1,5 @@
 /*
- * Copyright 2014 the original author or authors.
+ * Copyright 2014-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,9 @@
 
 package org.springframework.integration.message;
 
-import static org.junit.Assert.assertThat;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
-import org.hamcrest.Matchers;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
@@ -31,10 +30,10 @@ import org.springframework.integration.channel.PublishSubscribeChannel;
 import org.springframework.integration.channel.QueueChannel;
 import org.springframework.integration.config.ConsumerEndpointFactoryBean;
 import org.springframework.integration.config.EnableIntegration;
-import org.springframework.integration.handler.BridgeHandler;
+import org.springframework.integration.handler.AbstractReplyProducingMessageHandler;
 import org.springframework.integration.message.MessageBuilderAtConfigTests.MBConfig;
 import org.springframework.integration.support.MessageBuilderFactory;
-import org.springframework.integration.support.MutableMessageBuilderFacfory;
+import org.springframework.integration.support.MutableMessageBuilderFactory;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.PollableChannel;
@@ -44,8 +43,9 @@ import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 
 /**
  * @author Gary Russell
+ * @author Marius Bogoevici
  */
-@ContextConfiguration(classes=MBConfig.class)
+@ContextConfiguration(classes = MBConfig.class)
 @RunWith(SpringJUnit4ClassRunner.class)
 public class MessageBuilderAtConfigTests {
 
@@ -60,11 +60,11 @@ public class MessageBuilderAtConfigTests {
 
 	@Test
 	public void mutate() {
-		assertTrue(messageBuilderFactory instanceof MutableMessageBuilderFacfory);
+		assertTrue(messageBuilderFactory instanceof MutableMessageBuilderFactory);
 		in.send(new GenericMessage<String>("foo"));
 		Message<?> m1 = out.receive(0);
 		Message<?> m2 = out.receive(0);
-		assertThat(m1, Matchers.instanceOf(MutableMessage.class));
+		assertEquals("org.springframework.integration.support.MutableMessage", m1.getClass().getName());
 		assertTrue(m1 == m2);
 	}
 
@@ -84,7 +84,7 @@ public class MessageBuilderAtConfigTests {
 
 		@Bean
 		public MessageBuilderFactory messageBuilderFactory() {
-			return new MutableMessageBuilderFacfory();
+			return new MutableMessageBuilderFactory();
 		}
 
 		@Bean
@@ -93,7 +93,7 @@ public class MessageBuilderAtConfigTests {
 		}
 
 		@Bean
-		public ConsumerEndpointFactoryBean bridge1() throws Exception {
+		public ConsumerEndpointFactoryBean echo1() throws Exception {
 			ConsumerEndpointFactoryBean factory = new ConsumerEndpointFactoryBean();
 			factory.setHandler(handler1());
 			factory.setInputChannel(in());
@@ -101,14 +101,14 @@ public class MessageBuilderAtConfigTests {
 		}
 
 		@Bean
-		public BridgeHandler handler1() {
-			BridgeHandler handler = new BridgeHandler();
+		public AbstractReplyProducingMessageHandler handler1() {
+			AbstractReplyProducingMessageHandler handler = new RequestHeaderCopyingEchoHandler();
 			handler.setOutputChannel(pubSub());
 			return handler;
 		}
 
 		@Bean
-		public ConsumerEndpointFactoryBean bridge2() throws Exception {
+		public ConsumerEndpointFactoryBean echo2() throws Exception {
 			ConsumerEndpointFactoryBean factory = new ConsumerEndpointFactoryBean();
 			factory.setHandler(handler2());
 			factory.setInputChannel(pubSub());
@@ -116,14 +116,14 @@ public class MessageBuilderAtConfigTests {
 		}
 
 		@Bean
-		public BridgeHandler handler2() {
-			BridgeHandler handler = new BridgeHandler();
+		public AbstractReplyProducingMessageHandler handler2() {
+			AbstractReplyProducingMessageHandler handler = new RequestHeaderCopyingEchoHandler();
 			handler.setOutputChannel(out());
 			return handler;
 		}
 
 		@Bean
-		public ConsumerEndpointFactoryBean bridge3() throws Exception {
+		public ConsumerEndpointFactoryBean echo3() throws Exception {
 			ConsumerEndpointFactoryBean factory = new ConsumerEndpointFactoryBean();
 			factory.setHandler(handler3());
 			factory.setInputChannel(pubSub());
@@ -131,12 +131,18 @@ public class MessageBuilderAtConfigTests {
 		}
 
 		@Bean
-		public BridgeHandler handler3() {
-			BridgeHandler handler = new BridgeHandler();
+		public AbstractReplyProducingMessageHandler handler3() {
+			AbstractReplyProducingMessageHandler handler = new RequestHeaderCopyingEchoHandler();
 			handler.setOutputChannel(out());
 			return handler;
 		}
 
 	}
 
+	private static class RequestHeaderCopyingEchoHandler extends AbstractReplyProducingMessageHandler {
+		@Override
+		protected Object handleRequestMessage(Message<?> requestMessage) {
+			return requestMessage;
+		}
+	}
 }

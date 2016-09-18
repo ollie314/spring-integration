@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,22 +17,28 @@
 package org.springframework.integration.file.remote.synchronizer;
 
 import java.io.BufferedOutputStream;
+import java.io.Closeable;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.List;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
+import org.springframework.beans.BeansException;
+import org.springframework.beans.factory.BeanFactory;
+import org.springframework.beans.factory.BeanFactoryAware;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.expression.EvaluationContext;
 import org.springframework.expression.Expression;
-import org.springframework.integration.expression.IntegrationEvaluationContextAware;
+import org.springframework.expression.common.LiteralExpression;
+import org.springframework.integration.expression.ExpressionUtils;
 import org.springframework.integration.file.filters.FileListFilter;
+import org.springframework.integration.file.filters.ReversibleFileListFilter;
 import org.springframework.integration.file.remote.RemoteFileTemplate;
 import org.springframework.integration.file.remote.SessionCallback;
 import org.springframework.integration.file.remote.session.Session;
@@ -56,8 +62,8 @@ import org.springframework.util.ObjectUtils;
  * @author Artem Bilan
  * @since 2.0
  */
-public abstract class AbstractInboundFileSynchronizer<F> implements InboundFileSynchronizer,
-		InitializingBean, IntegrationEvaluationContextAware {
+public abstract class AbstractInboundFileSynchronizer<F>
+		implements InboundFileSynchronizer, BeanFactoryAware, InitializingBean, Closeable {
 
 	protected final Log logger = LogFactory.getLog(this.getClass());
 
@@ -70,14 +76,14 @@ public abstract class AbstractInboundFileSynchronizer<F> implements InboundFileS
 	/**
 	 * Extension used when downloading files. We change it right after we know it's downloaded.
 	 */
-	private volatile String temporaryFileSuffix =".writing";
+	private volatile String temporaryFileSuffix = ".writing";
 
 	private volatile Expression localFilenameGeneratorExpression;
 
 	/**
 	 * the path on the remote mount as a String.
 	 */
-	private volatile String remoteDirectory;
+	private volatile Expression remoteDirectoryExpression;
 
 	/**
 	 * An {@link FileListFilter} that runs against the <em>remote</em> file system view.
@@ -96,6 +102,8 @@ public abstract class AbstractInboundFileSynchronizer<F> implements InboundFileS
 	 */
 	private volatile boolean  preserveTimestamp;
 
+	private BeanFactory beanFactory;
+
 	/**
 	 * Create a synchronizer with the {@link SessionFactory} used to acquire {@link Session} instances.
 	 *
@@ -107,16 +115,28 @@ public abstract class AbstractInboundFileSynchronizer<F> implements InboundFileS
 	}
 
 
+	/**
+	 * @param remoteFileSeparator the remote file separator.
+	 * @see RemoteFileTemplate#setRemoteFileSeparator(String)
+	 */
 	public void setRemoteFileSeparator(String remoteFileSeparator) {
 		Assert.notNull(remoteFileSeparator, "'remoteFileSeparator' must not be null");
 		this.remoteFileSeparator = remoteFileSeparator;
 	}
 
+	/**
+	 * Set an expression used to determine the local file name.
+	 * @param localFilenameGeneratorExpression the expression.
+	 */
 	public void setLocalFilenameGeneratorExpression(Expression localFilenameGeneratorExpression) {
 		Assert.notNull(localFilenameGeneratorExpression, "'localFilenameGeneratorExpression' must not be null");
 		this.localFilenameGeneratorExpression = localFilenameGeneratorExpression;
 	}
 
+	/**
+	 * Set a temporary file suffix to be used while transferring files. Default ".writing".
+	 * @param temporaryFileSuffix the file suffix.
+	 */
 	public void setTemporaryFileSuffix(String temporaryFileSuffix) {
 		this.temporaryFileSuffix = temporaryFileSuffix;
 	}
@@ -127,30 +147,68 @@ public abstract class AbstractInboundFileSynchronizer<F> implements InboundFileS
 	 * @param remoteDirectory The remote directory.
 	 */
 	public void setRemoteDirectory(String remoteDirectory) {
-		this.remoteDirectory = remoteDirectory;
+		this.remoteDirectoryExpression = new LiteralExpression(remoteDirectory);
 	}
 
+	/**
+	 * Specify an expression that evaluates to the full path to the remote directory.
+	 *
+	 * @param remoteDirectoryExpression The remote directory expression.
+	 * @since 4.2
+	 */
+	public void setRemoteDirectoryExpression(Expression remoteDirectoryExpression) {
+		Assert.notNull(remoteDirectoryExpression, "'remoteDirectoryExpression' must not be null");
+		this.remoteDirectoryExpression = remoteDirectoryExpression;
+	}
+
+	/**
+	 * Set the filter to be applied to the remote files before transferring.
+	 * @param filter the file list filter.
+	 */
 	public void setFilter(FileListFilter<F> filter) {
 		this.filter = filter;
 	}
 
+	/**
+	 * Set to true to enable deletion of remote files after successful transfer.
+	 * @param deleteRemoteFiles true to delete.
+	 */
 	public void setDeleteRemoteFiles(boolean deleteRemoteFiles) {
 		this.deleteRemoteFiles = deleteRemoteFiles;
 	}
 
+	/**
+	 * Set to true to enable the preservation of the remote file timestamp when
+	 * transferring.
+	 * @param preserveTimestamp true to preserve.
+	 */
 	public void setPreserveTimestamp(boolean preserveTimestamp) {
 		this.preserveTimestamp = preserveTimestamp;
 	}
 
-	@Override
 	public void setIntegrationEvaluationContext(EvaluationContext evaluationContext) {
 		this.evaluationContext = evaluationContext;
 	}
 
 	@Override
+	public void setBeanFactory(BeanFactory beanFactory) throws BeansException {
+		this.beanFactory = beanFactory;
+	}
+
+	@Override
 	public final void afterPropertiesSet() {
-		Assert.notNull(this.remoteDirectory, "remoteDirectory must not be null");
-		Assert.notNull(this.evaluationContext, "evaluationContext must not be null");
+		Assert.state(this.remoteDirectoryExpression != null, "'remoteDirectoryExpression' must not be null");
+		if (this.evaluationContext == null) {
+			this.evaluationContext = ExpressionUtils.createStandardEvaluationContext(this.beanFactory);
+		}
+		doInit();
+	}
+
+	/**
+	 * Subclasses can override to perform initialization - called from
+	 * {@link InitializingBean#afterPropertiesSet()}.
+	 */
+	protected void doInit() {
 	}
 
 	protected final List<F> filterFiles(F[] files) {
@@ -158,24 +216,61 @@ public abstract class AbstractInboundFileSynchronizer<F> implements InboundFileS
 	}
 
 	protected String getTemporaryFileSuffix() {
-		return temporaryFileSuffix;
+		return this.temporaryFileSuffix;
+	}
+
+	@Override
+	public void close() throws IOException {
+		if (this.filter instanceof Closeable) {
+			((Closeable) this.filter).close();
+		}
 	}
 
 	@Override
 	public void synchronizeToLocalDirectory(final File localDirectory) {
+		synchronizeToLocalDirectory(localDirectory, Integer.MIN_VALUE);
+	}
+
+	@Override
+	public void synchronizeToLocalDirectory(final File localDirectory, final int maxFetchSize) {
+		if (maxFetchSize == 0) {
+			if (this.logger.isDebugEnabled()) {
+				this.logger.debug("Max Fetch Size is zero - fetch to " + localDirectory.getAbsolutePath() + " ignored");
+			}
+			return;
+		}
+		final String remoteDirectory = this.remoteDirectoryExpression.getValue(this.evaluationContext, String.class);
 		try {
 			int transferred = this.remoteFileTemplate.execute(new SessionCallback<F, Integer>() {
 
 				@Override
 				public Integer doInSession(Session<F> session) throws IOException {
-					F[] files = session.list(AbstractInboundFileSynchronizer.this.remoteDirectory);
+					F[] files = session.list(remoteDirectory);
 					if (!ObjectUtils.isEmpty(files)) {
-						Collection<F> filteredFiles = AbstractInboundFileSynchronizer.this.filterFiles(files);
+						List<F> filteredFiles = filterFiles(files);
+						if (maxFetchSize >= 0 && filteredFiles.size() > maxFetchSize) {
+							rollbackFromFileToListEnd(filteredFiles, filteredFiles.get(maxFetchSize));
+							List<F> newList = new ArrayList<>(maxFetchSize);
+							for (int i = 0; i < maxFetchSize; i++) {
+								newList.add(filteredFiles.get(i));
+							}
+							filteredFiles = newList;
+						}
 						for (F file : filteredFiles) {
-							if (file != null) {
-								AbstractInboundFileSynchronizer.this.copyFileToLocalDirectory(
-										AbstractInboundFileSynchronizer.this.remoteDirectory, file, localDirectory,
-										session);
+							try {
+								if (file != null) {
+									copyFileToLocalDirectory(
+											remoteDirectory, file, localDirectory,
+											session);
+								}
+							}
+							catch (RuntimeException e) {
+								rollbackFromFileToListEnd(filteredFiles, file);
+								throw e;
+							}
+							catch (IOException e) {
+								rollbackFromFileToListEnd(filteredFiles, file);
+								throw e;
 							}
 						}
 						return filteredFiles.size();
@@ -184,9 +279,17 @@ public abstract class AbstractInboundFileSynchronizer<F> implements InboundFileS
 						return 0;
 					}
 				}
+
+				public void rollbackFromFileToListEnd(List<F> filteredFiles, F file) {
+					if (AbstractInboundFileSynchronizer.this.filter instanceof ReversibleFileListFilter) {
+						((ReversibleFileListFilter<F>) AbstractInboundFileSynchronizer.this.filter)
+								.rollback(file, filteredFiles);
+					}
+				}
+
 			});
-			if (logger.isDebugEnabled()) {
-				logger.debug(transferred + " files transferred");
+			if (this.logger.isDebugEnabled()) {
+				this.logger.debug(transferred + " files transferred");
 			}
 		}
 		catch (Exception e) {
@@ -194,13 +297,16 @@ public abstract class AbstractInboundFileSynchronizer<F> implements InboundFileS
 		}
 	}
 
-	private void copyFileToLocalDirectory(String remoteDirectoryPath, F remoteFile, File localDirectory, Session<F> session) throws IOException {
+	protected void copyFileToLocalDirectory(String remoteDirectoryPath, F remoteFile, File localDirectory,
+			Session<F> session) throws IOException {
 		String remoteFileName = this.getFilename(remoteFile);
 		String localFileName = this.generateLocalFileName(remoteFileName);
-		String remoteFilePath = remoteDirectoryPath + remoteFileSeparator + remoteFileName;
+		String remoteFilePath = remoteDirectoryPath != null
+				? (remoteDirectoryPath + this.remoteFileSeparator + remoteFileName)
+				: remoteFileName;
 		if (!this.isFile(remoteFile)) {
-			if (logger.isDebugEnabled()) {
-				logger.debug("cannot copy, not a file: " + remoteFilePath);
+			if (this.logger.isDebugEnabled()) {
+				this.logger.debug("cannot copy, not a file: " + remoteFilePath);
 			}
 			return;
 		}
@@ -214,7 +320,7 @@ public abstract class AbstractInboundFileSynchronizer<F> implements InboundFileS
 				session.read(remoteFilePath, outputStream);
 			}
 			catch (Exception e) {
-				if (e instanceof RuntimeException){
+				if (e instanceof RuntimeException) {
 					throw (RuntimeException) e;
 				}
 				else {
@@ -232,8 +338,8 @@ public abstract class AbstractInboundFileSynchronizer<F> implements InboundFileS
 			if (tempFile.renameTo(localFile)) {
 				if (this.deleteRemoteFiles) {
 					session.remove(remoteFilePath);
-					if (logger.isDebugEnabled()) {
-						logger.debug("deleted " + remoteFilePath);
+					if (this.logger.isDebugEnabled()) {
+						this.logger.debug("deleted " + remoteFilePath);
 					}
 				}
 			}
@@ -243,9 +349,9 @@ public abstract class AbstractInboundFileSynchronizer<F> implements InboundFileS
 		}
 	}
 
-	private String generateLocalFileName(String remoteFileName){
-		if (this.localFilenameGeneratorExpression != null){
-			return this.localFilenameGeneratorExpression.getValue(evaluationContext, remoteFileName, String.class);
+	private String generateLocalFileName(String remoteFileName) {
+		if (this.localFilenameGeneratorExpression != null) {
+			return this.localFilenameGeneratorExpression.getValue(this.evaluationContext, remoteFileName, String.class);
 		}
 		return remoteFileName;
 	}

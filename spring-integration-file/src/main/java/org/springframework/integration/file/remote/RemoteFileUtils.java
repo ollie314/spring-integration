@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.file.remote;
 
 import java.io.IOException;
@@ -29,9 +30,9 @@ import org.springframework.integration.file.remote.session.Session;
  * @since 3.0
  *
  */
-public class RemoteFileUtils {
+public final class RemoteFileUtils {
 
-	private RemoteFileUtils() {}
+	private RemoteFileUtils() { }
 
 	/**
 	 * Recursively create remote directories.
@@ -45,13 +46,13 @@ public class RemoteFileUtils {
 	public static <F> void makeDirectories(String path, Session<F> session, String remoteFileSeparator, Log logger)
 			throws IOException {
 
-		if (!session.exists(path)){
+		if (!session.exists(path)) {
 
 			int nextSeparatorIndex = path.lastIndexOf(remoteFileSeparator);
 
-			if (nextSeparatorIndex > -1){
+			if (nextSeparatorIndex > -1) {
 				List<String> pathsToCreate = new LinkedList<String>();
-				while (nextSeparatorIndex > -1){
+				while (nextSeparatorIndex > -1) {
 					String pathSegment = path.substring(0, nextSeparatorIndex);
 					if (pathSegment.length() == 0 || session.exists(pathSegment)) {
 						// no more paths to create
@@ -64,7 +65,7 @@ public class RemoteFileUtils {
 				}
 
 				for (String pathToCreate : pathsToCreate) {
-					if (logger.isDebugEnabled()){
+					if (logger.isDebugEnabled()) {
 						logger.debug("Creating '" + pathToCreate + "'");
 					}
 					session.mkdir(pathToCreate);

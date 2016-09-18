@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,7 +28,6 @@ import org.springframework.integration.jpa.support.OutboundGatewayType;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.MessageHandler;
 import org.springframework.transaction.interceptor.TransactionInterceptor;
-import org.springframework.util.Assert;
 import org.springframework.util.ClassUtils;
 import org.springframework.util.CollectionUtils;
 
@@ -47,21 +46,21 @@ import org.springframework.util.CollectionUtils;
  */
 public class JpaOutboundGatewayFactoryBean extends AbstractFactoryBean<MessageHandler> {
 
-	private final JpaExecutor jpaExecutor;
+	private JpaExecutor jpaExecutor;
 
 	private OutboundGatewayType gatewayType = OutboundGatewayType.UPDATING;
 
 	/**
 	 * &lt;transactional /&gt; element applies to entire flow from this point
 	 */
-	private volatile List<Advice> txAdviceChain;
+	private List<Advice> txAdviceChain;
 
 	/**
 	 * &lt;request-handler-advice-chain /&gt; only applies to the handleRequestMessage.
 	 */
-	private volatile List<Advice> adviceChain;
+	private List<Advice> adviceChain;
 
-	private volatile ClassLoader beanClassLoader = ClassUtils.getDefaultClassLoader();
+	private ClassLoader beanClassLoader = ClassUtils.getDefaultClassLoader();
 
 	private boolean producesReply = true;
 
@@ -71,18 +70,14 @@ public class JpaOutboundGatewayFactoryBean extends AbstractFactoryBean<MessageHa
 
 	private long replyTimeout;
 
-	private volatile boolean requiresReply = false;
+	private boolean requiresReply = false;
 
-	private volatile String componentName;
+	private String componentName;
 
-	/**
-	 * Constructor taking an {@link JpaExecutor} that wraps all JPA Operations.
-	 *
-	 * @param jpaExecutor Must not be null
-	 *
-	 */
-	public JpaOutboundGatewayFactoryBean(JpaExecutor jpaExecutor) {
-		Assert.notNull(jpaExecutor, "jpaExecutor must not be null.");
+	public JpaOutboundGatewayFactoryBean() {
+	}
+
+	public void setJpaExecutor(JpaExecutor jpaExecutor) {
 		this.jpaExecutor = jpaExecutor;
 	}
 
@@ -112,9 +107,9 @@ public class JpaOutboundGatewayFactoryBean extends AbstractFactoryBean<MessageHa
 
 	/**
 	 * Specifies the time the gateway will wait to send the result to the reply channel.
-	 * Only applies when the reply channel itself might block the send (for example a bounded QueueChannel that is currently full).
+	 * Only applies when the reply channel itself might block the send
+	 * (for example a bounded QueueChannel that is currently full).
 	 * By default the Gateway will wait indefinitely.
-	 *
 	 * @param replyTimeout The timeout in milliseconds
 	 */
 	public void setReplyTimeout(long replyTimeout) {
@@ -127,11 +122,16 @@ public class JpaOutboundGatewayFactoryBean extends AbstractFactoryBean<MessageHa
 
 	/**
 	 * Sets the name of the handler component.
-	 *
 	 * @param componentName The component name.
 	 */
 	public void setComponentName(String componentName) {
 		this.componentName = componentName;
+	}
+
+	@Override
+	public void setBeanClassLoader(ClassLoader classLoader) {
+		super.setBeanClassLoader(classLoader);
+		this.beanClassLoader = classLoader;
 	}
 
 	@Override
@@ -141,8 +141,7 @@ public class JpaOutboundGatewayFactoryBean extends AbstractFactoryBean<MessageHa
 
 	@Override
 	protected MessageHandler createInstance() {
-
-		JpaOutboundGateway jpaOutboundGateway = new JpaOutboundGateway(jpaExecutor);
+		JpaOutboundGateway jpaOutboundGateway = new JpaOutboundGateway(this.jpaExecutor);
 		jpaOutboundGateway.setGatewayType(this.gatewayType);
 		jpaOutboundGateway.setProducesReply(this.producesReply);
 		jpaOutboundGateway.setOutputChannel(this.outputChannel);
@@ -158,8 +157,8 @@ public class JpaOutboundGatewayFactoryBean extends AbstractFactoryBean<MessageHa
 		if (!CollectionUtils.isEmpty(this.txAdviceChain)) {
 
 			ProxyFactory proxyFactory = new ProxyFactory(jpaOutboundGateway);
-			if (!CollectionUtils.isEmpty(txAdviceChain)) {
-				for (Advice advice : txAdviceChain) {
+			if (!CollectionUtils.isEmpty(this.txAdviceChain)) {
+				for (Advice advice : this.txAdviceChain) {
 					proxyFactory.addAdvice(advice);
 				}
 			}
@@ -169,4 +168,5 @@ public class JpaOutboundGatewayFactoryBean extends AbstractFactoryBean<MessageHa
 
 		return jpaOutboundGateway;
 	}
+
 }

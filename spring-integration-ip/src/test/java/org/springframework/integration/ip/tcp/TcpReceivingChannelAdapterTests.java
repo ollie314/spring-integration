@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package org.springframework.integration.ip.tcp;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.Mockito.mock;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -35,18 +36,18 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import javax.net.ServerSocketFactory;
 import javax.net.SocketFactory;
 
 import org.junit.Test;
 
+import org.springframework.beans.factory.BeanFactory;
 import org.springframework.core.serializer.DefaultDeserializer;
 import org.springframework.core.serializer.DefaultSerializer;
-import org.springframework.messaging.Message;
 import org.springframework.integration.channel.DirectChannel;
 import org.springframework.integration.channel.QueueChannel;
-import org.springframework.messaging.SubscribableChannel;
 import org.springframework.integration.handler.ServiceActivatingHandler;
 import org.springframework.integration.ip.tcp.connection.AbstractClientConnectionFactory;
 import org.springframework.integration.ip.tcp.connection.AbstractServerConnectionFactory;
@@ -57,7 +58,8 @@ import org.springframework.integration.ip.tcp.connection.TcpNetServerConnectionF
 import org.springframework.integration.ip.tcp.connection.TcpNioServerConnectionFactory;
 import org.springframework.integration.ip.tcp.serializer.ByteArrayCrLfSerializer;
 import org.springframework.integration.ip.util.TestingUtilities;
-import org.springframework.integration.test.util.SocketUtils;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.SubscribableChannel;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 
 /**
@@ -67,8 +69,7 @@ public class TcpReceivingChannelAdapterTests extends AbstractTcpChannelAdapterTe
 
 	@Test
 	public void testNet() throws Exception {
-		final int port = SocketUtils.findAvailableServerSocket();
-		AbstractServerConnectionFactory scf = new TcpNetServerConnectionFactory(port);
+		AbstractServerConnectionFactory scf = new TcpNetServerConnectionFactory(0);
 		noopPublisher(scf);
 		ByteArrayCrLfSerializer serializer = new ByteArrayCrLfSerializer();
 		scf.setSerializer(serializer);
@@ -77,8 +78,10 @@ public class TcpReceivingChannelAdapterTests extends AbstractTcpChannelAdapterTe
 		adapter.setConnectionFactory(scf);
 		scf.start();
 		TestingUtilities.waitListening(scf, null);
+		int port = scf.getPort();
 		QueueChannel channel = new QueueChannel();
 		adapter.setOutputChannel(channel);
+		adapter.setBeanFactory(mock(BeanFactory.class));
 		adapter.afterPropertiesSet();
 		Socket socket = SocketFactory.getDefault().createSocket("localhost", port);
 		socket.getOutputStream().write("Test1\r\n".getBytes());
@@ -94,7 +97,7 @@ public class TcpReceivingChannelAdapterTests extends AbstractTcpChannelAdapterTe
 
 	@Test
 	public void testNetClientMode() throws Exception {
-		final int port = SocketUtils.findAvailableServerSocket();
+		final AtomicReference<ServerSocket> serverSocket = new AtomicReference<ServerSocket>();
 		final CountDownLatch latch1 = new CountDownLatch(1);
 		final CountDownLatch latch2 = new CountDownLatch(1);
 		final AtomicBoolean done = new AtomicBoolean();
@@ -102,7 +105,8 @@ public class TcpReceivingChannelAdapterTests extends AbstractTcpChannelAdapterTe
 			@Override
 			public void run() {
 				try {
-					ServerSocket server = ServerSocketFactory.getDefault().createServerSocket(port, 10);
+					ServerSocket server = ServerSocketFactory.getDefault().createServerSocket(0, 10);
+					serverSocket.set(server);
 					latch1.countDown();
 					Socket socket = server.accept();
 					socket.getOutputStream().write("Test1\r\nTest2\r\n".getBytes());
@@ -117,7 +121,9 @@ public class TcpReceivingChannelAdapterTests extends AbstractTcpChannelAdapterTe
 				}
 			}
 		});
-		AbstractClientConnectionFactory ccf = new TcpNetClientConnectionFactory("localhost", port);
+		assertTrue(latch1.await(10, TimeUnit.SECONDS));
+		AbstractClientConnectionFactory ccf = new TcpNetClientConnectionFactory("localhost",
+				serverSocket.get().getLocalPort());
 		noopPublisher(ccf);
 		ByteArrayCrLfSerializer serializer = new ByteArrayCrLfSerializer();
 		ccf.setSerializer(serializer);
@@ -128,8 +134,8 @@ public class TcpReceivingChannelAdapterTests extends AbstractTcpChannelAdapterTe
 		adapter.setClientMode(true);
 		QueueChannel channel = new QueueChannel();
 		adapter.setOutputChannel(channel);
+		adapter.setBeanFactory(mock(BeanFactory.class));
 		adapter.afterPropertiesSet();
-		assertTrue(latch1.await(10, TimeUnit.SECONDS));
 		adapter.setRetryInterval(10000);
 		ThreadPoolTaskScheduler taskScheduler = new ThreadPoolTaskScheduler();
 		taskScheduler.setPoolSize(1);
@@ -147,12 +153,12 @@ public class TcpReceivingChannelAdapterTests extends AbstractTcpChannelAdapterTe
 		adapter.stop();
 		latch2.countDown();
 		ccf.stop();
+		serverSocket.get().close();
 	}
 
 	@Test
 	public void testNio() throws Exception {
-		final int port = SocketUtils.findAvailableServerSocket();
-		TcpNioServerConnectionFactory scf = new TcpNioServerConnectionFactory(port);
+		TcpNioServerConnectionFactory scf = new TcpNioServerConnectionFactory(0);
 		noopPublisher(scf);
 		ByteArrayCrLfSerializer serializer = new ByteArrayCrLfSerializer();
 		scf.setSerializer(serializer);
@@ -162,6 +168,7 @@ public class TcpReceivingChannelAdapterTests extends AbstractTcpChannelAdapterTe
 		adapter.setConnectionFactory(scf);
 		scf.start();
 		TestingUtilities.waitListening(scf, null);
+		int port = scf.getPort();
 		QueueChannel channel = new QueueChannel();
 		adapter.setOutputChannel(channel);
 		Socket socket = SocketFactory.getDefault().createSocket("localhost", port);
@@ -182,8 +189,7 @@ public class TcpReceivingChannelAdapterTests extends AbstractTcpChannelAdapterTe
 
 	@Test
 	public void testNetShared() throws Exception {
-		final int port = SocketUtils.findAvailableServerSocket();
-		AbstractServerConnectionFactory scf = new TcpNetServerConnectionFactory(port);
+		AbstractServerConnectionFactory scf = new TcpNetServerConnectionFactory(0);
 		noopPublisher(scf);
 		ByteArrayCrLfSerializer serializer = new ByteArrayCrLfSerializer();
 		scf.setSerializer(serializer);
@@ -196,6 +202,7 @@ public class TcpReceivingChannelAdapterTests extends AbstractTcpChannelAdapterTe
 		QueueChannel channel = new QueueChannel();
 		adapter.setOutputChannel(channel);
 		TestingUtilities.waitListening(scf, null);
+		int port = scf.getPort();
 		Socket socket = SocketFactory.getDefault().createSocket("localhost", port);
 		socket.setSoTimeout(2000);
 		socket.getOutputStream().write("Test\r\n".getBytes());
@@ -216,8 +223,7 @@ public class TcpReceivingChannelAdapterTests extends AbstractTcpChannelAdapterTe
 
 	@Test
 	public void testNioShared() throws Exception {
-		final int port = SocketUtils.findAvailableServerSocket();
-		TcpNioServerConnectionFactory scf = new TcpNioServerConnectionFactory(port);
+		TcpNioServerConnectionFactory scf = new TcpNioServerConnectionFactory(0);
 		noopPublisher(scf);
 		ByteArrayCrLfSerializer serializer = new ByteArrayCrLfSerializer();
 		scf.setSerializer(serializer);
@@ -230,6 +236,7 @@ public class TcpReceivingChannelAdapterTests extends AbstractTcpChannelAdapterTe
 		QueueChannel channel = new QueueChannel();
 		adapter.setOutputChannel(channel);
 		TestingUtilities.waitListening(scf, null);
+		int port = scf.getPort();
 		Socket socket = SocketFactory.getDefault().createSocket("localhost", port);
 		socket.setSoTimeout(2000);
 		socket.getOutputStream().write("Test\r\n".getBytes());
@@ -250,8 +257,7 @@ public class TcpReceivingChannelAdapterTests extends AbstractTcpChannelAdapterTe
 
 	@Test
 	public void testNetSingleNoOutbound() throws Exception {
-		final int port = SocketUtils.findAvailableServerSocket();
-		AbstractServerConnectionFactory scf = new TcpNetServerConnectionFactory(port);
+		AbstractServerConnectionFactory scf = new TcpNetServerConnectionFactory(0);
 		noopPublisher(scf);
 		ByteArrayCrLfSerializer serializer = new ByteArrayCrLfSerializer();
 		scf.setSerializer(serializer);
@@ -261,6 +267,7 @@ public class TcpReceivingChannelAdapterTests extends AbstractTcpChannelAdapterTe
 		adapter.setConnectionFactory(scf);
 		scf.start();
 		TestingUtilities.waitListening(scf, null);
+		int port = scf.getPort();
 		QueueChannel channel = new QueueChannel();
 		adapter.setOutputChannel(channel);
 		Socket socket = SocketFactory.getDefault().createSocket("localhost", port);
@@ -282,8 +289,7 @@ public class TcpReceivingChannelAdapterTests extends AbstractTcpChannelAdapterTe
 
 	@Test
 	public void testNioSingleNoOutbound() throws Exception {
-		final int port = SocketUtils.findAvailableServerSocket();
-		TcpNioServerConnectionFactory scf = new TcpNioServerConnectionFactory(port);
+		TcpNioServerConnectionFactory scf = new TcpNioServerConnectionFactory(0);
 		noopPublisher(scf);
 		ByteArrayCrLfSerializer serializer = new ByteArrayCrLfSerializer();
 		scf.setSerializer(serializer);
@@ -293,6 +299,7 @@ public class TcpReceivingChannelAdapterTests extends AbstractTcpChannelAdapterTe
 		adapter.setConnectionFactory(scf);
 		scf.start();
 		TestingUtilities.waitListening(scf, null);
+		int port = scf.getPort();
 		QueueChannel channel = new QueueChannel();
 		adapter.setOutputChannel(channel);
 		Socket socket = SocketFactory.getDefault().createSocket("localhost", port);
@@ -324,8 +331,7 @@ public class TcpReceivingChannelAdapterTests extends AbstractTcpChannelAdapterTe
 
 	@Test
 	public void testNetSingleShared() throws Exception {
-		final int port = SocketUtils.findAvailableServerSocket();
-		AbstractServerConnectionFactory scf = new TcpNetServerConnectionFactory(port);
+		AbstractServerConnectionFactory scf = new TcpNetServerConnectionFactory(0);
 		noopPublisher(scf);
 		ByteArrayCrLfSerializer serializer = new ByteArrayCrLfSerializer();
 		scf.setSerializer(serializer);
@@ -339,6 +345,7 @@ public class TcpReceivingChannelAdapterTests extends AbstractTcpChannelAdapterTe
 		QueueChannel channel = new QueueChannel();
 		adapter.setOutputChannel(channel);
 		TestingUtilities.waitListening(scf, null);
+		int port = scf.getPort();
 		Socket socket1 = SocketFactory.getDefault().createSocket("localhost", port);
 		socket1.setSoTimeout(2000);
 		socket1.getOutputStream().write("Test1\r\n".getBytes());
@@ -361,8 +368,7 @@ public class TcpReceivingChannelAdapterTests extends AbstractTcpChannelAdapterTe
 
 	@Test
 	public void testNioSingleShared() throws Exception {
-		final int port = SocketUtils.findAvailableServerSocket();
-		TcpNioServerConnectionFactory scf = new TcpNioServerConnectionFactory(port);
+		TcpNioServerConnectionFactory scf = new TcpNioServerConnectionFactory(0);
 		noopPublisher(scf);
 		ByteArrayCrLfSerializer serializer = new ByteArrayCrLfSerializer();
 		scf.setSerializer(serializer);
@@ -376,6 +382,7 @@ public class TcpReceivingChannelAdapterTests extends AbstractTcpChannelAdapterTe
 		QueueChannel channel = new QueueChannel();
 		adapter.setOutputChannel(channel);
 		TestingUtilities.waitListening(scf, null);
+		int port = scf.getPort();
 		Socket socket1 = SocketFactory.getDefault().createSocket("localhost", port);
 		socket1.setSoTimeout(2000);
 		socket1.getOutputStream().write("Test1\r\n".getBytes());
@@ -398,8 +405,7 @@ public class TcpReceivingChannelAdapterTests extends AbstractTcpChannelAdapterTe
 
 	@Test
 	public void testNioSingleSharedMany() throws Exception {
-		final int port = SocketUtils.findAvailableServerSocket();
-		TcpNioServerConnectionFactory scf = new TcpNioServerConnectionFactory(port);
+		TcpNioServerConnectionFactory scf = new TcpNioServerConnectionFactory(0);
 		noopPublisher(scf);
 		ByteArrayCrLfSerializer serializer = new ByteArrayCrLfSerializer();
 		scf.setSerializer(serializer);
@@ -416,6 +422,7 @@ public class TcpReceivingChannelAdapterTests extends AbstractTcpChannelAdapterTe
 		QueueChannel channel = new QueueChannel();
 		adapter.setOutputChannel(channel);
 		TestingUtilities.waitListening(scf, null);
+		int port = scf.getPort();
 		List<Socket> sockets = new LinkedList<Socket>();
 		for (int i = 100; i < 200; i++) {
 			Socket socket1 = SocketFactory.getDefault().createSocket("localhost", port);
@@ -438,59 +445,53 @@ public class TcpReceivingChannelAdapterTests extends AbstractTcpChannelAdapterTe
 
 	@Test
 	public void testNetInterceptors() throws Exception {
-		final int port = SocketUtils.findAvailableServerSocket();
-		AbstractServerConnectionFactory scf = new TcpNetServerConnectionFactory(port);
+		AbstractServerConnectionFactory scf = new TcpNetServerConnectionFactory(0);
 		noopPublisher(scf);
-		interceptorsGuts(port, scf);
+		interceptorsGuts(scf);
 		scf.stop();
 	}
 
 	@Test
 	public void testNetSingleNoOutboundInterceptors() throws Exception {
-		final int port = SocketUtils.findAvailableServerSocket();
-		AbstractServerConnectionFactory scf = new TcpNetServerConnectionFactory(port);
+		AbstractServerConnectionFactory scf = new TcpNetServerConnectionFactory(0);
 		noopPublisher(scf);
-		singleNoOutboundInterceptorsGuts(port, scf);
+		singleNoOutboundInterceptorsGuts(scf);
 		scf.stop();
 	}
 
 	@Test
 	public void testNetSingleSharedInterceptors() throws Exception {
-		final int port = SocketUtils.findAvailableServerSocket();
-		AbstractServerConnectionFactory scf = new TcpNetServerConnectionFactory(port);
+		AbstractServerConnectionFactory scf = new TcpNetServerConnectionFactory(0);
 		noopPublisher(scf);
-		singleSharedInterceptorsGuts(port, scf);
+		singleSharedInterceptorsGuts(scf);
 		scf.stop();
 	}
 
 	@Test
 	public void testNioInterceptors() throws Exception {
-		final int port = SocketUtils.findAvailableServerSocket();
-		AbstractServerConnectionFactory scf = new TcpNioServerConnectionFactory(port);
+		AbstractServerConnectionFactory scf = new TcpNioServerConnectionFactory(0);
 		noopPublisher(scf);
-		interceptorsGuts(port, scf);
+		interceptorsGuts(scf);
 		scf.stop();
 	}
 
 	@Test
 	public void testNioSingleNoOutboundInterceptors() throws Exception {
-		final int port = SocketUtils.findAvailableServerSocket();
-		AbstractServerConnectionFactory scf = new TcpNioServerConnectionFactory(port);
+		AbstractServerConnectionFactory scf = new TcpNioServerConnectionFactory(0);
 		noopPublisher(scf);
-		singleNoOutboundInterceptorsGuts(port, scf);
+		singleNoOutboundInterceptorsGuts(scf);
 		scf.stop();
 	}
 
 	@Test
 	public void testNioSingleSharedInterceptors() throws Exception {
-		final int port = SocketUtils.findAvailableServerSocket();
-		AbstractServerConnectionFactory scf = new TcpNioServerConnectionFactory(port);
+		AbstractServerConnectionFactory scf = new TcpNioServerConnectionFactory(0);
 		noopPublisher(scf);
-		singleSharedInterceptorsGuts(port, scf);
+		singleSharedInterceptorsGuts(scf);
 		scf.stop();
 	}
 
-	private void interceptorsGuts(final int port, AbstractServerConnectionFactory scf) throws Exception {
+	private void interceptorsGuts(AbstractServerConnectionFactory scf) throws Exception {
 		scf.setSerializer(new DefaultSerializer());
 		scf.setDeserializer(new DefaultDeserializer());
 		scf.setSingleUse(false);
@@ -505,6 +506,7 @@ public class TcpReceivingChannelAdapterTests extends AbstractTcpChannelAdapterTe
 		scf.setSoTimeout(10000);
 		scf.start();
 		TestingUtilities.waitListening(scf, null);
+		int port = scf.getPort();
 		QueueChannel channel = new QueueChannel();
 		adapter.setOutputChannel(channel);
 		Socket socket = SocketFactory.getDefault().createSocket("localhost", port);
@@ -526,7 +528,7 @@ public class TcpReceivingChannelAdapterTests extends AbstractTcpChannelAdapterTe
 		assertTrue(results.contains("Test2"));
 	}
 
-	private void singleNoOutboundInterceptorsGuts(final int port, AbstractServerConnectionFactory scf) throws Exception {
+	private void singleNoOutboundInterceptorsGuts(AbstractServerConnectionFactory scf) throws Exception {
 		scf.setSerializer(new DefaultSerializer());
 		scf.setDeserializer(new DefaultDeserializer());
 		scf.setSingleUse(true);
@@ -541,6 +543,7 @@ public class TcpReceivingChannelAdapterTests extends AbstractTcpChannelAdapterTe
 		adapter.setConnectionFactory(scf);
 		scf.start();
 		TestingUtilities.waitListening(scf, null);
+		int port = scf.getPort();
 		QueueChannel channel = new QueueChannel();
 		adapter.setOutputChannel(channel);
 		Socket socket = SocketFactory.getDefault().createSocket("localhost", port);
@@ -569,7 +572,7 @@ public class TcpReceivingChannelAdapterTests extends AbstractTcpChannelAdapterTe
 		assertTrue(results.contains("Test2"));
 	}
 
-	private void singleSharedInterceptorsGuts(final int port, AbstractServerConnectionFactory scf) throws Exception {
+	private void singleSharedInterceptorsGuts(AbstractServerConnectionFactory scf) throws Exception {
 		scf.setSerializer(new DefaultSerializer());
 		scf.setDeserializer(new DefaultDeserializer());
 		scf.setSingleUse(true);
@@ -588,6 +591,7 @@ public class TcpReceivingChannelAdapterTests extends AbstractTcpChannelAdapterTe
 		QueueChannel channel = new QueueChannel();
 		adapter.setOutputChannel(channel);
 		TestingUtilities.waitListening(scf, null);
+		int port = scf.getPort();
 		Socket socket1 = SocketFactory.getDefault().createSocket("localhost", port);
 		socket1.setSoTimeout(60000);
 		new ObjectOutputStream(socket1.getOutputStream()).writeObject("Hello");
@@ -617,8 +621,7 @@ public class TcpReceivingChannelAdapterTests extends AbstractTcpChannelAdapterTe
 
 	@Test
 	public void testException() throws Exception {
-		final int port = SocketUtils.findAvailableServerSocket();
-		AbstractServerConnectionFactory scf = new TcpNetServerConnectionFactory(port);
+		AbstractServerConnectionFactory scf = new TcpNetServerConnectionFactory(0);
 		noopPublisher(scf);
 		ByteArrayCrLfSerializer serializer = new ByteArrayCrLfSerializer();
 		scf.setSerializer(serializer);
@@ -627,6 +630,7 @@ public class TcpReceivingChannelAdapterTests extends AbstractTcpChannelAdapterTe
 		adapter.setConnectionFactory(scf);
 		scf.start();
 		TestingUtilities.waitListening(scf, null);
+		int port = scf.getPort();
 		SubscribableChannel channel = new DirectChannel();
 		adapter.setOutputChannel(channel);
 		ServiceActivatingHandler handler = new ServiceActivatingHandler(new FailingService());

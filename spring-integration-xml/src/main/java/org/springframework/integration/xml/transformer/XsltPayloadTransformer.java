@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,9 @@
 package org.springframework.integration.xml.transformer;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.Map;
+import java.util.Map.Entry;
 
 import javax.xml.transform.Result;
 import javax.xml.transform.Source;
@@ -36,17 +38,16 @@ import org.springframework.core.io.Resource;
 import org.springframework.expression.Expression;
 import org.springframework.expression.spel.support.StandardEvaluationContext;
 import org.springframework.integration.expression.ExpressionUtils;
-import org.springframework.integration.transformer.AbstractTransformer;
 import org.springframework.integration.xml.result.DomResultFactory;
 import org.springframework.integration.xml.result.ResultFactory;
 import org.springframework.integration.xml.source.DomSourceFactory;
 import org.springframework.integration.xml.source.SourceFactory;
 import org.springframework.messaging.Message;
-import org.springframework.messaging.MessageHeaders;
 import org.springframework.messaging.MessagingException;
 import org.springframework.util.Assert;
 import org.springframework.util.ObjectUtils;
 import org.springframework.util.PatternMatchUtils;
+import org.springframework.util.StringUtils;
 import org.springframework.xml.transform.StringResult;
 import org.springframework.xml.transform.StringSource;
 
@@ -77,7 +78,7 @@ import org.springframework.xml.transform.StringSource;
  * @author Mike Bazos
  * @author Gary Russell
  */
-public class XsltPayloadTransformer extends AbstractTransformer implements BeanClassLoaderAware {
+public class XsltPayloadTransformer extends AbstractXmlTransformer implements BeanClassLoaderAware {
 
 	private final ResultTransformer resultTransformer;
 
@@ -92,8 +93,6 @@ public class XsltPayloadTransformer extends AbstractTransformer implements BeanC
 	private Map<String, Expression> xslParameterMappings;
 
 	private volatile SourceFactory sourceFactory = new DomSourceFactory();
-
-	private volatile ResultFactory resultFactory = new DomResultFactory();
 
 	private volatile boolean resultFactoryExplicitlySet;
 
@@ -154,9 +153,9 @@ public class XsltPayloadTransformer extends AbstractTransformer implements BeanC
 	 *
 	 * @param resultFactory The result factory.
 	 */
+	@Override
 	public void setResultFactory(ResultFactory resultFactory) {
-		Assert.notNull(sourceFactory, "ResultFactory must not be null");
-		this.resultFactory = resultFactory;
+		super.setResultFactory(resultFactory);
 		this.resultFactoryExplicitlySet = true;
 	}
 
@@ -183,7 +182,7 @@ public class XsltPayloadTransformer extends AbstractTransformer implements BeanC
 	}
 
 	public void setXsltParamHeaders(String[] xsltParamHeaders) {
-		this.xsltParamHeaders = xsltParamHeaders;
+		this.xsltParamHeaders = Arrays.copyOf(xsltParamHeaders, xsltParamHeaders.length);
 	}
 
 	@Override
@@ -192,6 +191,21 @@ public class XsltPayloadTransformer extends AbstractTransformer implements BeanC
 		this.classLoader = classLoader;
 	}
 
+	@Override
+	public void setResultType(String resultType) {
+		super.setResultType(resultType);
+		if (StringUtils.hasText(resultType)) {
+			this.alwaysUseResultFactory = true;
+		}
+	}
+
+	@Override
+	public void setResultFactoryName(String resultFactoryName) {
+		super.setResultFactoryName(resultFactoryName);
+		if (StringUtils.hasText(resultFactoryName)) {
+			this.alwaysUseResultFactory = true;
+		}
+	}
 
 	@Override
 	public String getComponentType() {
@@ -219,7 +233,7 @@ public class XsltPayloadTransformer extends AbstractTransformer implements BeanC
 		Transformer transformer = buildTransformer(message);
 		Object payload;
 		if (this.alwaysUseSourceFactory) {
-			payload = sourceFactory.createSource(message.getPayload());
+			payload = this.sourceFactory.createSource(message.getPayload());
 		}
 		else {
 			payload = message.getPayload();
@@ -270,7 +284,7 @@ public class XsltPayloadTransformer extends AbstractTransformer implements BeanC
 			result = new StringResult();
 		}
 		else {
-			result = this.resultFactory.createResult(payload);
+			result = this.getResultFactory().createResult(payload);
 		}
 		transformer.transform(source, result);
 		if (this.resultTransformer != null) {
@@ -300,7 +314,7 @@ public class XsltPayloadTransformer extends AbstractTransformer implements BeanC
 		else {
 			source = new DOMSource(documentPayload);
 		}
-		Result result = this.resultFactory.createResult(documentPayload);
+		Result result = this.getResultFactory().createResult(documentPayload);
 		if (!DOMResult.class.isAssignableFrom(result.getClass())) {
 			throw new MessagingException(
 					"Document to Document conversion requires a DOMResult-producing ResultFactory implementation.");
@@ -315,8 +329,9 @@ public class XsltPayloadTransformer extends AbstractTransformer implements BeanC
 		// process individual mappings
 		Transformer transformer = this.templates.newTransformer();
 		if (this.xslParameterMappings != null) {
-			for (String parameterName : this.xslParameterMappings.keySet()) {
-				Expression expression = this.xslParameterMappings.get(parameterName);
+			for (Entry<String, Expression> entry : this.xslParameterMappings.entrySet()) {
+				String parameterName = entry.getKey();
+				Expression expression = entry.getValue();
 				try {
 					Object value = expression.getValue(this.evaluationContext, message);
 					transformer.setParameter(parameterName, value);
@@ -332,11 +347,11 @@ public class XsltPayloadTransformer extends AbstractTransformer implements BeanC
 			}
 		}
 		// process xslt-parameter-headers
-		MessageHeaders headers = message.getHeaders();
 		if (!ObjectUtils.isEmpty(this.xsltParamHeaders)) {
-			for (String headerName : headers.keySet()) {
+			for (Entry<String, Object> entry : message.getHeaders().entrySet()) {
+				String headerName = entry.getKey();
 				if (PatternMatchUtils.simpleMatch(this.xsltParamHeaders, headerName)) {
-					transformer.setParameter(headerName, headers.get(headerName));
+					transformer.setParameter(headerName, entry.getValue());
 				}
 			}
 		}

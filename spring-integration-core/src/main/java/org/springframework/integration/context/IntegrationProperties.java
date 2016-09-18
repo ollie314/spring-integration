@@ -1,5 +1,5 @@
 /*
- * Copyright 2014 the original author or authors.
+ * Copyright 2014-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,7 +33,7 @@ import org.springframework.core.io.support.ResourcePatternResolver;
  */
 public final class IntegrationProperties {
 
-	public static final String INTEGRATION_PROPERTIES_PREFIX = "spring.integraton.";
+	public static final String INTEGRATION_PROPERTIES_PREFIX = "spring.integration.";
 
 	/**
 	 * Specifies whether to allow create automatically {@link org.springframework.integration.channel.DirectChannel}
@@ -65,6 +65,12 @@ public final class IntegrationProperties {
 	 * Specifies the value of {@link org.springframework.messaging.core.GenericMessagingTemplate#throwExceptionOnLateReply}.
 	 */
 	public static final String THROW_EXCEPTION_ON_LATE_REPLY = INTEGRATION_PROPERTIES_PREFIX + "messagingTemplate.throwExceptionOnLateReply";
+
+	/**
+	 * Specifies the value of {@link org.springframework.integration.support.DefaultMessageBuilderFactory#readOnlyHeaders}.
+	 */
+	public static final String READ_ONLY_HEADERS = INTEGRATION_PROPERTIES_PREFIX + "readOnly.headers";
+
 
 	private static Properties defaults;
 

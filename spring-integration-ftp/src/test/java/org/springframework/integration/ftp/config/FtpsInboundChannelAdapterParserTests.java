@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,55 +19,48 @@ package org.springframework.integration.ftp.config;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 
-import java.util.Map;
-
 import org.junit.Test;
+import org.junit.runner.RunWith;
 
-import org.springframework.context.ApplicationContext;
-import org.springframework.context.support.ClassPathXmlApplicationContext;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.integration.endpoint.SourcePollingChannelAdapter;
 import org.springframework.integration.ftp.inbound.FtpInboundFileSynchronizer;
 import org.springframework.integration.ftp.inbound.FtpInboundFileSynchronizingMessageSource;
 import org.springframework.integration.test.util.TestUtils;
+import org.springframework.messaging.MessageChannel;
+import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.ContextConfiguration;
+import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 
 /**
  * @author Oleg Zhurakousky
  * @author Gunnar Hillert
+ * @author Gary Russell
  */
+@ContextConfiguration
+@RunWith(SpringJUnit4ClassRunner.class)
+@DirtiesContext
 public class FtpsInboundChannelAdapterParserTests {
 
-	@Test
-	public void testFtpsInboundChannelAdapterComplete() throws Exception{
+	@Autowired
+	private SourcePollingChannelAdapter ftpInbound;
 
-		ApplicationContext ac =
-			new ClassPathXmlApplicationContext("FtpsInboundChannelAdapterParserTests-context.xml", this.getClass());
-		SourcePollingChannelAdapter adapter = ac.getBean("ftpInbound", SourcePollingChannelAdapter.class);
-		assertEquals("ftpInbound", adapter.getComponentName());
-		assertEquals("ftp:inbound-channel-adapter", adapter.getComponentType());
-		assertNotNull(TestUtils.getPropertyValue(adapter, "poller"));
-		assertEquals(ac.getBean("ftpChannel"), TestUtils.getPropertyValue(adapter, "outputChannel"));
+	@Autowired
+	private MessageChannel ftpChannel;
+
+	@Test
+	public void testFtpsInboundChannelAdapterComplete() throws Exception {
+		assertEquals("ftpInbound", ftpInbound.getComponentName());
+		assertEquals("ftp:inbound-channel-adapter", ftpInbound.getComponentType());
+		assertNotNull(TestUtils.getPropertyValue(ftpInbound, "poller"));
+		assertEquals(this.ftpChannel, TestUtils.getPropertyValue(ftpInbound, "outputChannel"));
 		FtpInboundFileSynchronizingMessageSource inbound =
-			(FtpInboundFileSynchronizingMessageSource) TestUtils.getPropertyValue(adapter, "source");
+			(FtpInboundFileSynchronizingMessageSource) TestUtils.getPropertyValue(ftpInbound, "source");
 
 		FtpInboundFileSynchronizer fisync =
 			(FtpInboundFileSynchronizer) TestUtils.getPropertyValue(inbound, "synchronizer");
 		assertNotNull(TestUtils.getPropertyValue(fisync, "filter"));
 
-	}
-
-	@Test
-	public void testFtpsInboundChannelAdapterCompleteNoId() throws Exception{
-
-		ApplicationContext ac =
-			new ClassPathXmlApplicationContext("FtpsInboundChannelAdapterParserTests-context.xml", this.getClass());
-		Map<String, SourcePollingChannelAdapter> spcas = ac.getBeansOfType(SourcePollingChannelAdapter.class);
-		SourcePollingChannelAdapter adapter = null;
-		for (String key : spcas.keySet()) {
-			if (!key.equals("ftpInbound")){
-				adapter = spcas.get(key);
-			}
-		}
-		assertNotNull(adapter);
 	}
 
 }

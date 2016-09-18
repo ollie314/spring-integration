@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package org.springframework.integration.ip.tcp.connection;
 
+import java.io.BufferedOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -28,14 +29,19 @@ import java.nio.channels.SocketChannel;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import javax.net.ssl.SSLSession;
 
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.core.serializer.Serializer;
 import org.springframework.integration.ip.tcp.serializer.SoftEndOfStreamException;
+import org.springframework.integration.util.CompositeExecutor;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessagingException;
 import org.springframework.util.Assert;
@@ -44,6 +50,7 @@ import org.springframework.util.Assert;
  * A TcpConnection that uses and underlying {@link SocketChannel}.
  *
  * @author Gary Russell
+ * @author John Anderson
  * @since 2.0
  *
  */
@@ -57,9 +64,11 @@ public class TcpNioConnection extends TcpConnectionSupport {
 
 	private final ChannelInputStream channelInputStream = new ChannelInputStream();
 
+	private volatile OutputStream bufferedOutputStream;
+
 	private volatile boolean usingDirectBuffers;
 
-	private volatile Executor taskExecutor;
+	private volatile CompositeExecutor taskExecutor;
 
 	private volatile ByteBuffer rawBuffer;
 
@@ -73,7 +82,11 @@ public class TcpNioConnection extends TcpConnectionSupport {
 
 	private volatile boolean writingToPipe;
 
+	private volatile CountDownLatch writingLatch;
+
 	private volatile long pipeTimeout = DEFAULT_PIPE_TIMEOUT;
+
+	private volatile boolean timedOut;
 
 	/**
 	 * Constructs a TcpNetConnection for the SocketChannel.
@@ -109,13 +122,13 @@ public class TcpNioConnection extends TcpConnectionSupport {
 
 	private void doClose() {
 		try {
-			channelInputStream.close();
+			this.channelInputStream.close();
 		}
-		catch (IOException e) {}
+		catch (IOException e) { }
 		try {
 			this.socketChannel.close();
 		}
-		catch (Exception e) {}
+		catch (Exception e) { }
 		super.close();
 	}
 
@@ -127,18 +140,26 @@ public class TcpNioConnection extends TcpConnectionSupport {
 	@Override
 	@SuppressWarnings("unchecked")
 	public void send(Message<?> message) throws Exception {
-		synchronized(this.socketChannel) {
+		synchronized (this.socketChannel) {
+			if (this.bufferedOutputStream == null) {
+				int writeBufferSize = this.socketChannel.socket().getSendBufferSize();
+				this.bufferedOutputStream = new BufferedOutputStream(this.getChannelOutputStream(),
+						writeBufferSize > 0 ? writeBufferSize : 8192);
+			}
 			Object object = this.getMapper().fromMessage(message);
 			this.lastSend = System.currentTimeMillis();
 			try {
-				((Serializer<Object>) this.getSerializer()).serialize(object, this.getChannelOutputStream());
+				((Serializer<Object>) this.getSerializer()).serialize(object, this.bufferedOutputStream);
+				this.bufferedOutputStream.flush();
 			}
 			catch (Exception e) {
-				this.publishConnectionExceptionEvent(e);
+				this.publishConnectionExceptionEvent(new MessagingException(message, "Failed TCP serialization", e));
 				this.closeConnection(true);
 				throw e;
 			}
-			this.afterSend(message);
+			if (logger.isDebugEnabled()) {
+				logger.debug(getConnectionId() + " Message sent " + message);
+			}
 		}
 	}
 
@@ -157,6 +178,11 @@ public class TcpNioConnection extends TcpConnectionSupport {
 		return this.channelInputStream;
 	}
 
+	@Override
+	public SSLSession getSslSession() {
+		return null;
+	}
+
 	/**
 	 * Allocates a ByteBuffer of the requested length using normal or
 	 * direct buffers, depending on the usingDirectBuffers field.
@@ -168,14 +194,15 @@ public class TcpNioConnection extends TcpConnectionSupport {
 		ByteBuffer buffer;
 		if (this.usingDirectBuffers) {
 			buffer = ByteBuffer.allocateDirect(length);
-		} else {
+		}
+		else {
 			buffer = ByteBuffer.allocate(length);
 		}
 		return buffer;
 	}
 
 	/**
-	 * If there is no listener, and this connection is not for single use,
+	 * If there is no listener,
 	 * this method exits. When there is a listener, this method assembles
 	 * data into messages by invoking convertAndSend whenever there is
 	 * data in the input Stream. Method exits when a message is complete
@@ -187,73 +214,103 @@ public class TcpNioConnection extends TcpConnectionSupport {
 		if (logger.isTraceEnabled()) {
 			logger.trace(this.getConnectionId() + " Nio message assembler running...");
 		}
-		try {
-			if (this.getListener() == null && !this.isSingleUse()) {
-				logger.debug("TcpListener exiting - no listener and not single use");
-				return;
-			}
+		boolean moreDataAvailable = true;
+		while (moreDataAvailable) {
 			try {
-				if (dataAvailable()) {
-					Message<?> message = convert();
+				try {
 					if (dataAvailable()) {
-						// there is more data in the pipe; run another assembler
-						// to assemble the next message, while we send ours
-						this.executionControl.incrementAndGet();
-						this.taskExecutor.execute(this);
+						Message<?> message = convert();
+						if (dataAvailable()) {
+							// there is more data in the pipe; run another assembler
+							// to assemble the next message, while we send ours
+							this.executionControl.incrementAndGet();
+							try {
+								this.taskExecutor.execute2(this);
+							}
+							catch (RejectedExecutionException e) {
+								this.executionControl.decrementAndGet();
+								if (logger.isInfoEnabled()) {
+									logger.info(getConnectionId() + " Insufficient threads in the assembler fixed thread pool; consider " +
+											"increasing this task executor pool size; data avail: " + this.channelInputStream.available());
+								}
+							}
+						}
+						this.executionControl.decrementAndGet();
+						if (message != null) {
+							sendToChannel(message);
+						}
 					}
-					this.executionControl.decrementAndGet();
-					if (message != null) {
-						sendToChannel(message);
+					else {
+						this.executionControl.decrementAndGet();
 					}
 				}
-				else {
-					this.executionControl.decrementAndGet();
-				}
-			}
-			catch (Exception e) {
-				if (logger.isTraceEnabled()) {
-					logger.error("Read exception " +
-							 this.getConnectionId(), e);
-				}
-				else if (!this.isNoReadErrorOnClose()) {
-					logger.error("Read exception " +
-								 this.getConnectionId() + " " +
-								 e.getClass().getSimpleName() +
-							     ":" + e.getCause() + ":" + e.getMessage());
-				}
-				else {
-					if (logger.isDebugEnabled()) {
-						logger.debug("Read exception " +
+				catch (Exception e) {
+					if (logger.isTraceEnabled()) {
+						logger.error("Read exception " +
+								 this.getConnectionId(), e);
+					}
+					else if (!this.isNoReadErrorOnClose()) {
+						logger.error("Read exception " +
 									 this.getConnectionId() + " " +
 									 e.getClass().getSimpleName() +
 								     ":" + e.getCause() + ":" + e.getMessage());
 					}
-				}
-				this.closeConnection(true);
-				this.sendExceptionToListener(e);
-				return;
-			}
-		}
-		finally {
-			if (logger.isTraceEnabled()) {
-				logger.trace(this.getConnectionId() + " Nio message assembler exiting...");
-			}
-			// Final check in case new data came in and the
-			// timing was such that we were the last assembler and
-			// a new one wasn't run
-			try {
-				if (this.isOpen() && dataAvailable()) {
-					checkForAssembler();
+					else {
+						if (logger.isDebugEnabled()) {
+							logger.debug("Read exception " +
+										 this.getConnectionId() + " " +
+										 e.getClass().getSimpleName() +
+									     ":" + e.getCause() + ":" + e.getMessage());
+						}
+					}
+					this.closeConnection(true);
+					this.sendExceptionToListener(e);
+					return;
 				}
 			}
-			catch (IOException e) {
-				logger.error("Exception when checking for assembler", e);
+			finally {
+				moreDataAvailable = false;
+				// Final check in case new data came in and the
+				// timing was such that we were the last assembler and
+				// a new one wasn't run
+				try {
+					if (dataAvailable()) {
+						synchronized (this.executionControl) {
+							if (this.executionControl.incrementAndGet() <= 1) {
+								// only continue if we don't already have another assembler running
+								this.executionControl.set(1);
+								moreDataAvailable = true;
+
+							}
+							else {
+								this.executionControl.decrementAndGet();
+							}
+						}
+					}
+					if (moreDataAvailable) {
+						if (logger.isTraceEnabled()) {
+							logger.trace(this.getConnectionId() + " Nio message assembler continuing...");
+						}
+					}
+					else {
+						if (logger.isTraceEnabled()) {
+							logger.trace(this.getConnectionId() + " Nio message assembler exiting... avail: " + this.channelInputStream.available());
+						}
+					}
+				}
+				catch (IOException e) {
+					logger.error("Exception when checking for assembler", e);
+				}
 			}
 		}
 	}
 
 	private boolean dataAvailable() throws IOException {
-		return this.channelInputStream.available() > 0 || writingToPipe;
+		if (logger.isTraceEnabled()) {
+			logger.trace(getConnectionId() + " checking data avail: " + this.channelInputStream.available() +
+					" pending: " + (this.writingToPipe));
+		}
+		return this.writingToPipe || this.channelInputStream.available() > 0;
 	}
 
 	/**
@@ -263,8 +320,25 @@ public class TcpNioConnection extends TcpConnectionSupport {
 	 * @throws IOException
 	 */
 	private synchronized Message<?> convert() throws Exception {
-		if (!dataAvailable()) {
-			return null;
+		if (logger.isTraceEnabled()) {
+			logger.trace(getConnectionId() + " checking data avail (convert): " + this.channelInputStream.available() +
+					" pending: " + (this.writingToPipe));
+		}
+		if (this.channelInputStream.available() <= 0) {
+			try {
+				if (this.writingLatch.await(60, TimeUnit.SECONDS)) {
+					if (this.channelInputStream.available() <= 0) {
+						return null;
+					}
+				}
+				else { // should never happen
+					throw new IOException("Timed out waiting for IO");
+				}
+			}
+			catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new IOException("Interrupted waiting for IO");
+			}
 		}
 		Message<?> message = null;
 		try {
@@ -272,11 +346,12 @@ public class TcpNioConnection extends TcpConnectionSupport {
 		}
 		catch (Exception e) {
 			this.closeConnection(true);
-			if (e instanceof SocketTimeoutException && this.isSingleUse()) {
+			if (e instanceof SocketTimeoutException) {
 				if (logger.isDebugEnabled()) {
-					logger.debug("Closing single use socket after timeout " + this.getConnectionId());
+					logger.debug("Closing socket after timeout " + this.getConnectionId());
 				}
-			} else {
+			}
+			else {
 				if (!(e instanceof SoftEndOfStreamException)) {
 					throw e;
 				}
@@ -287,50 +362,45 @@ public class TcpNioConnection extends TcpConnectionSupport {
 	}
 
 	private void sendToChannel(Message<?> message) {
-		boolean intercepted = false;
 		try {
 			if (message != null) {
-				intercepted = getListener().onMessage(message);
+				TcpListener listener = getListener();
+				if (listener == null) {
+					throw new NoListenerException("No listener");
+				}
+				listener.onMessage(message);
 			}
 		}
 		catch (Exception e) {
-			if (e instanceof NoListenerException) {
-				if (this.isSingleUse()) {
-					if (logger.isDebugEnabled()) {
-						logger.debug("Closing single use channel after inbound message " + this.getConnectionId());
-					}
-					this.closeConnection(true);
+			if (e instanceof NoListenerException) { // could also be thrown by an interceptor
+				if (logger.isWarnEnabled()) {
+					logger.warn("Unexpected message - no endpoint registered with connection: "
+									+ getConnectionId()
+									+ " - "
+									+ message);
 				}
 			}
 			else {
 				logger.error("Exception sending message: " + message, e);
 			}
 		}
-		/*
-		 * For single use sockets, we close after receipt if we are on the client
-		 * side, and the data was not intercepted,
-		 * or the server side has no outbound adapter registered
-		 */
-		if (this.isSingleUse() && ((!this.isServer() && !intercepted) || (this.isServer() && this.getSender() == null))) {
-			if (logger.isDebugEnabled()) {
-				logger.debug("Closing single use channel after inbound message " + this.getConnectionId());
-			}
-			this.closeConnection(false);
-		}
 	}
 
 	private void doRead() throws Exception {
 		if (this.rawBuffer == null) {
-			this.rawBuffer = allocate(maxMessageSize);
+			this.rawBuffer = allocate(this.maxMessageSize);
 		}
 
+		this.writingLatch = new CountDownLatch(1);
 		this.writingToPipe = true;
 		try {
 			if (this.taskExecutor == null) {
-				this.taskExecutor = Executors.newCachedThreadPool();
+				ExecutorService executor = Executors.newCachedThreadPool();
+				this.taskExecutor = new CompositeExecutor(executor, executor);
 			}
 			// If there is no assembler running, start one
 			checkForAssembler();
+
 			if (logger.isTraceEnabled()) {
 				logger.trace("Before read:" + this.rawBuffer.position() + "/" + this.rawBuffer.limit());
 			}
@@ -347,32 +417,12 @@ public class TcpNioConnection extends TcpConnectionSupport {
 				logger.trace("After flip:" + this.rawBuffer.position() + "/" + this.rawBuffer.limit());
 			}
 			if (logger.isDebugEnabled()) {
-				logger.debug("Read " + rawBuffer.limit() + " into raw buffer");
+				logger.debug("Read " + this.rawBuffer.limit() + " into raw buffer");
 			}
-			final CountDownLatch latch = new CountDownLatch(1);
-			/*
-			 * If there are insufficient threads, either to run the
-			 * write to the pipe, or to assemble the data, we need
-			 * avoid a deadlock (block on the write to the pipe).
-			 * Hence the count down latch.
-			 */
-			this.taskExecutor.execute(new Runnable() {
-				@Override
-				public void run() {
-					try {
-						TcpNioConnection.this.sendToPipe(rawBuffer);
-						latch.countDown();
-					}
-					catch (Exception e) {
-						logger.error(getConnectionId() + " Failed to write to pipe", e);
-					}
-				}
-			});
-			if (!latch.await(this.pipeTimeout , TimeUnit.MILLISECONDS)) {
-				this.close();
-				throw new MessagingException("Timed out writing to ChannelInputStream, probably due to insufficient threads in " +
-						"a fixed thread pool; consider increasing this task executor pool size");
-			}
+			this.sendToPipe(this.rawBuffer);
+		}
+		catch (RejectedExecutionException e) {
+			throw e;
 		}
 		catch (Exception e) {
 			this.publishConnectionExceptionEvent(e);
@@ -380,6 +430,7 @@ public class TcpNioConnection extends TcpConnectionSupport {
 		}
 		finally {
 			this.writingToPipe = false;
+			this.writingLatch.countDown();
 		}
 	}
 
@@ -393,15 +444,26 @@ public class TcpNioConnection extends TcpConnectionSupport {
 	}
 
 	private void checkForAssembler() {
-		synchronized(this.executionControl) {
+		synchronized (this.executionControl) {
 			if (this.executionControl.incrementAndGet() <= 1) {
 				// only execute run() if we don't already have one running
 				this.executionControl.set(1);
 				if (logger.isDebugEnabled()) {
 					logger.debug(this.getConnectionId() + " Running an assembler");
 				}
-				this.taskExecutor.execute(this);
-			} else {
+				try {
+					this.taskExecutor.execute2(this);
+				}
+				catch (RejectedExecutionException e) {
+					this.executionControl.decrementAndGet();
+					if (logger.isInfoEnabled()) {
+						logger.info("Insufficient threads in the assembler fixed thread pool; consider increasing " +
+								"this task executor pool size");
+					}
+					throw e;
+				}
+			}
+			else {
 				this.executionControl.decrementAndGet();
 			}
 		}
@@ -423,6 +485,9 @@ public class TcpNioConnection extends TcpConnectionSupport {
 			}
 			this.closeConnection(true);
 		}
+		catch (RejectedExecutionException e) {
+			throw e;
+		}
 		catch (Exception e) {
 			logger.error("Exception on Read " +
 					     this.getConnectionId() + " " +
@@ -435,6 +500,7 @@ public class TcpNioConnection extends TcpConnectionSupport {
 	 * Close the socket due to timeout.
 	 */
 	void timeout() {
+		this.timedOut = true;
 		this.closeConnection(true);
 	}
 
@@ -443,7 +509,12 @@ public class TcpNioConnection extends TcpConnectionSupport {
 	 * @param taskExecutor the taskExecutor to set
 	 */
 	public void setTaskExecutor(Executor taskExecutor) {
-		this.taskExecutor = taskExecutor;
+		if (taskExecutor instanceof CompositeExecutor) {
+			this.taskExecutor = (CompositeExecutor) taskExecutor;
+		}
+		else {
+			this.taskExecutor = new CompositeExecutor(taskExecutor, taskExecutor);
+		}
 	}
 
 	/**
@@ -456,11 +527,11 @@ public class TcpNioConnection extends TcpConnectionSupport {
 	}
 
 	protected boolean isUsingDirectBuffers() {
-		return usingDirectBuffers;
+		return this.usingDirectBuffers;
 	}
 
 	protected ChannelOutputStream getChannelOutputStream() {
-		return channelOutputStream;
+		return this.channelOutputStream;
 	}
 
 	/**
@@ -468,7 +539,7 @@ public class TcpNioConnection extends TcpConnectionSupport {
 	 * @return Time of last read.
 	 */
 	public long getLastRead() {
-		return lastRead;
+		return this.lastRead;
 	}
 
 	/**
@@ -483,7 +554,7 @@ public class TcpNioConnection extends TcpConnectionSupport {
 	 * @return the time of the last send
 	 */
 	public long getLastSend() {
-		return lastSend;
+		return this.lastSend;
 	}
 
 	/**
@@ -529,23 +600,23 @@ public class TcpNioConnection extends TcpConnectionSupport {
 			if (logger.isDebugEnabled()) {
 				logger.debug(getConnectionId() + " writing " + buffer.remaining());
 			}
-			socketChannel.write(buffer);
+			TcpNioConnection.this.socketChannel.write(buffer);
 			int remaining = buffer.remaining();
 			if (remaining == 0) {
 				return;
 			}
 			if (this.selector == null) {
 				this.selector = Selector.open();
-				this.soTimeout = socketChannel.socket().getSoTimeout();
+				this.soTimeout = TcpNioConnection.this.socketChannel.socket().getSoTimeout();
 			}
-			socketChannel.register(selector, SelectionKey.OP_WRITE);
+			TcpNioConnection.this.socketChannel.register(this.selector, SelectionKey.OP_WRITE);
 			while (remaining > 0) {
 				int selectionCount = this.selector.select(this.soTimeout);
 				if (selectionCount == 0) {
 					throw new SocketTimeoutException("Timeout on write");
 				}
-				selector.selectedKeys().clear();
-				socketChannel.write(buffer);
+				this.selector.selectedKeys().clear();
+				TcpNioConnection.this.socketChannel.write(buffer);
 				remaining = buffer.remaining();
 			}
 		}
@@ -577,10 +648,10 @@ public class TcpNioConnection extends TcpConnectionSupport {
 		public int read(byte[] b, int off, int len) throws IOException {
 			Assert.notNull(b, "byte[] cannot be null");
 			if (off < 0 || len < 0 || len > b.length - off) {
-			    throw new IndexOutOfBoundsException();
+				throw new IndexOutOfBoundsException();
 			}
 			else if (len == 0) {
-			    return 0;
+				return 0;
 			}
 
 			int n = 0;
@@ -602,13 +673,19 @@ public class TcpNioConnection extends TcpConnectionSupport {
 
 		@Override
 		public synchronized int read() throws IOException {
-			if (this.isClosed && available.get() == 0) {
+			if (this.isClosed && this.available.get() == 0) {
+				if (TcpNioConnection.this.timedOut) {
+					throw new SocketTimeoutException("Connection has timed out");
+				}
 				return -1;
 			}
 			if (this.currentBuffer == null) {
 				this.currentBuffer = getNextBuffer();
 				this.currentOffset = 0;
 				if (this.currentBuffer == null) {
+					if (TcpNioConnection.this.timedOut) {
+						throw new SocketTimeoutException("Connection has timed out");
+					}
 					return -1;
 				}
 			}
@@ -625,7 +702,7 @@ public class TcpNioConnection extends TcpConnectionSupport {
 			byte[] buffer = null;
 			while (buffer == null) {
 				try {
-					buffer = buffers.poll(1, TimeUnit.SECONDS);
+					buffer = this.buffers.poll(1, TimeUnit.SECONDS);
 					if (buffer == null && this.isClosed) {
 						return null;
 					}
@@ -649,8 +726,11 @@ public class TcpNioConnection extends TcpConnectionSupport {
 				byte[] buffer = new byte[bytesToWrite];
 				System.arraycopy(array, 0, buffer, 0, bytesToWrite);
 				this.available.addAndGet(bytesToWrite);
+				if (TcpNioConnection.this.writingLatch != null) {
+					TcpNioConnection.this.writingLatch.countDown();
+				}
 				try {
-					if (!this.buffers.offer(buffer, pipeTimeout, TimeUnit.MILLISECONDS)) {
+					if (!this.buffers.offer(buffer, TcpNioConnection.this.pipeTimeout, TimeUnit.MILLISECONDS)) {
 						throw new IOException("Timed out waiting for buffer space");
 					}
 				}
@@ -658,6 +738,7 @@ public class TcpNioConnection extends TcpConnectionSupport {
 					Thread.currentThread().interrupt();
 					throw new IOException("Interrupted while waiting for buffer space", e);
 				}
+				TcpNioConnection.this.writingLatch = new CountDownLatch(1);
 			}
 		}
 
@@ -673,4 +754,5 @@ public class TcpNioConnection extends TcpConnectionSupport {
 		}
 
 	}
+
 }

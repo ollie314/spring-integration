@@ -1,14 +1,17 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
- * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
- * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
- * specific language governing permissions and limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package org.springframework.integration.jdbc;
@@ -125,7 +128,18 @@ public class ExpressionEvaluatingSqlParameterSourceFactory extends AbstractExpre
 
 	@Override
 	public SqlParameterSource createParameterSource(final Object input) {
-		return new ExpressionEvaluatingSqlParameterSource(input, this.staticParameters, this.parameterExpressions);
+		return new ExpressionEvaluatingSqlParameterSource(input, this.staticParameters, this.parameterExpressions, true);
+	}
+
+	/**
+	 * Create an expression evaluating {@link SqlParameterSource} that does not cache it's results. Useful for cases
+	 * where the source is used multiple times, for example in a {@code <int-jdbc:inbound-channel-adapter/>} for the
+	 * {@code select-sql-parameter-source} attribute.
+	 * @param input The root object for the evaluation.
+	 * @return The parameter source.
+	 */
+	public SqlParameterSource createParameterSourceNoCache(final Object input) {
+		return new ExpressionEvaluatingSqlParameterSource(input, this.staticParameters, this.parameterExpressions, false);
 	}
 
 	@Override
@@ -138,24 +152,35 @@ public class ExpressionEvaluatingSqlParameterSourceFactory extends AbstractExpre
 
 		private final Object input;
 
-		private volatile Map<String, Object> values = new HashMap<String, Object>();
+		private final Map<String, Object> values = new HashMap<String, Object>();
 
 		private final Map<String, Expression[]> parameterExpressions;
 
+		private final boolean cache;
+
 		private ExpressionEvaluatingSqlParameterSource(Object input, Map<String, ?> staticParameters,
-				Map<String, Expression[]> parameterExpressions) {
+				Map<String, Expression[]> parameterExpressions, boolean cache) {
 			this.input = input;
 			this.parameterExpressions = parameterExpressions;
 			this.values.putAll(staticParameters);
+			this.cache = cache;
 		}
 
 		@Override
 		public Object getValue(String paramName) throws IllegalArgumentException {
-			if (values.containsKey(paramName)) {
-				return values.get(paramName);
+			return this.doGetValue(paramName, false);
+		}
+
+		public Object doGetValue(String paramName, boolean calledFromHasValue) throws IllegalArgumentException {
+			if (this.values.containsKey(paramName)) {
+				Object cachedByHasValue = this.values.get(paramName);
+				if (!this.cache) {
+					this.values.remove(paramName);
+				}
+				return cachedByHasValue;
 			}
 
-			if (!parameterExpressions.containsKey(paramName)) {
+			if (!this.parameterExpressions.containsKey(paramName)) {
 				Expression[] expressions = new Expression[] {
 						PARSER.parseExpression(paramName),
 						PARSER.parseExpression("#root.![" + paramName + "]")
@@ -166,15 +191,17 @@ public class ExpressionEvaluatingSqlParameterSourceFactory extends AbstractExpre
 
 			Expression expression = null;
 
-			if (input instanceof Collection<?>) {
-				expression = parameterExpressions.get(paramName)[1];
+			if (this.input instanceof Collection<?>) {
+				expression = this.parameterExpressions.get(paramName)[1];
 			}
 			else {
-				expression = parameterExpressions.get(paramName)[0];
+				expression = this.parameterExpressions.get(paramName)[0];
 			}
 
-			Object value = evaluateExpression(expression, input);
-			values.put(paramName, value);
+			Object value = evaluateExpression(expression, this.input);
+			if (this.cache || calledFromHasValue) {
+				this.values.put(paramName, value);
+			}
 			if (logger.isDebugEnabled()) {
 				logger.debug("Resolved expression " + expression + " to " + value);
 			}
@@ -184,7 +211,7 @@ public class ExpressionEvaluatingSqlParameterSourceFactory extends AbstractExpre
 		@Override
 		public boolean hasValue(String paramName) {
 			try {
-				Object value = getValue(paramName);
+				Object value = doGetValue(paramName, true);
 				if (value == ERROR) {
 					return false;
 				}
@@ -193,7 +220,9 @@ public class ExpressionEvaluatingSqlParameterSourceFactory extends AbstractExpre
 				if (logger.isDebugEnabled()) {
 					logger.debug("Could not evaluate expression", e);
 				}
-				values.put(paramName, ERROR);
+				if (this.cache) {
+					this.values.put(paramName, ERROR);
+				}
 				return false;
 			}
 			return true;

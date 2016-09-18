@@ -1,5 +1,5 @@
 /*
- * Copyright 2013 the original author or authors.
+ * Copyright 2013-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.expression;
 
 import static org.junit.Assert.assertNotNull;
@@ -29,6 +30,7 @@ import org.springframework.expression.TypeConverter;
 import org.springframework.expression.spel.support.StandardEvaluationContext;
 import org.springframework.integration.config.IntegrationEvaluationContextFactoryBean;
 import org.springframework.integration.context.IntegrationContextUtils;
+import org.springframework.integration.support.utils.IntegrationUtils;
 import org.springframework.integration.test.util.TestUtils;
 
 /**
@@ -43,7 +45,7 @@ public class ExpressionUtilsTests {
 		GenericApplicationContext context = new GenericApplicationContext();
 		context.registerBeanDefinition(IntegrationContextUtils.INTEGRATION_EVALUATION_CONTEXT_BEAN_NAME,
 				new RootBeanDefinition(IntegrationEvaluationContextFactoryBean.class));
-		context.registerBeanDefinition(IntegrationContextUtils.INTEGRATION_CONVERSION_SERVICE_BEAN_NAME,
+		context.registerBeanDefinition(IntegrationUtils.INTEGRATION_CONVERSION_SERVICE_BEAN_NAME,
 				new RootBeanDefinition(ConversionServiceFactoryBean.class));
 		context.refresh();
 		StandardEvaluationContext evalContext = ExpressionUtils.createStandardEvaluationContext(context);
@@ -71,7 +73,7 @@ public class ExpressionUtilsTests {
 	@Test
 	public void testEvaluationContextNoFactoryBean() {
 		GenericApplicationContext context = new GenericApplicationContext();
-		context.registerBeanDefinition(IntegrationContextUtils.INTEGRATION_CONVERSION_SERVICE_BEAN_NAME,
+		context.registerBeanDefinition(IntegrationUtils.INTEGRATION_CONVERSION_SERVICE_BEAN_NAME,
 				new RootBeanDefinition(ConversionServiceFactoryBean.class));
 		context.refresh();
 		StandardEvaluationContext evalContext = ExpressionUtils.createStandardEvaluationContext(context);
@@ -80,7 +82,7 @@ public class ExpressionUtilsTests {
 		assertNotNull(typeConverter);
 		assertNotSame(TestUtils.getPropertyValue(typeConverter, "defaultConversionService"),
 				TestUtils.getPropertyValue(typeConverter, "conversionService"));
-		assertSame(context.getBean(IntegrationContextUtils.INTEGRATION_CONVERSION_SERVICE_BEAN_NAME),
+		assertSame(context.getBean(IntegrationUtils.INTEGRATION_CONVERSION_SERVICE_BEAN_NAME),
 				TestUtils.getPropertyValue(typeConverter, "conversionService"));
 	}
 

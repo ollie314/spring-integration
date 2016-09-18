@@ -1,16 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <beans:beans xmlns="http://www.springframework.org/schema/integration/file"
-             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-             xmlns:beans="http://www.springframework.org/schema/beans"
-             xmlns:integration="http://www.springframework.org/schema/integration"
-             xsi:schemaLocation="http://www.springframework.org/schema/beans
+			 xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+			 xmlns:beans="http://www.springframework.org/schema/beans"
+			 xmlns:integration="http://www.springframework.org/schema/integration"
+			 xmlns:context="http://www.springframework.org/schema/context"
+			 xsi:schemaLocation="http://www.springframework.org/schema/beans
 			http://www.springframework.org/schema/beans/spring-beans.xsd
 			http://www.springframework.org/schema/integration
 			http://www.springframework.org/schema/integration/spring-integration.xsd
 			http://www.springframework.org/schema/integration/file
-			http://www.springframework.org/schema/integration/file/spring-integration-file.xsd">
+			http://www.springframework.org/schema/integration/file/spring-integration-file.xsd
+			http://www.springframework.org/schema/context
+			http://www.springframework.org/schema/context/spring-context.xsd">
 
-    <beans:bean class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer"/>
+    <context:property-placeholder/>
 
     <integration:channel id="channel">
         <integration:queue/>
@@ -20,6 +23,7 @@
                              directory="file:${java.io.tmpdir}"
                              filter="testFilter"
                              channel="channel"
+                             ignore-hidden="false"
                              auto-startup="false">
         <integration:poller fixed-rate="10000"/>
     </inbound-channel-adapter>
@@ -29,6 +33,7 @@
                              filter="testFilter"
                              prevent-duplicates="true"
                              channel="channel"
+                             ignore-hidden="false"
                              auto-startup="false">
         <integration:poller fixed-rate="10000"/>
     </inbound-channel-adapter>
@@ -38,6 +43,7 @@
                              filter="testFilter"
                              prevent-duplicates="false"
                              channel="channel"
+                             ignore-hidden="false"
                              auto-startup="false">
         <integration:poller fixed-rate="10000"/>
 
@@ -47,6 +53,7 @@
                              directory="file:${java.io.tmpdir}"
                              filename-pattern="test"
                              channel="channel"
+                             ignore-hidden="false"
                              auto-startup="false">
         <integration:poller fixed-rate="10000"/>
 
@@ -57,6 +64,7 @@
                              filename-pattern="test"
                              prevent-duplicates="true"
                              channel="channel"
+                             ignore-hidden="false"
                              auto-startup="false">
         <integration:poller fixed-rate="10000"/>
 
@@ -67,6 +75,7 @@
                              filename-pattern="test"
                              prevent-duplicates="false"
                              channel="channel"
+                             ignore-hidden="false"
                              auto-startup="false">
         <integration:poller fixed-rate="10000"/>
 
@@ -75,6 +84,7 @@
     <inbound-channel-adapter id="defaultAndNull"
                              directory="file:${java.io.tmpdir}"
                              channel="channel"
+                             ignore-hidden="false"
                              auto-startup="false">
         <integration:poller fixed-rate="10000"/>
 
@@ -84,6 +94,7 @@
                              directory="file:${java.io.tmpdir}"
                              prevent-duplicates="true"
                              channel="channel"
+                             ignore-hidden="false"
                              auto-startup="false">
         <integration:poller fixed-rate="10000"/>
 
@@ -93,6 +104,7 @@
                              directory="file:${java.io.tmpdir}"
                              prevent-duplicates="false"
                              channel="channel"
+                             ignore-hidden="false"
                              auto-startup="false">
         <integration:poller fixed-rate="10000"/>
 

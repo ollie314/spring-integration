@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,25 +16,28 @@
 
 package org.springframework.integration.mqtt.outbound;
 
-import org.eclipse.paho.client.mqttv3.MqttMessage;
+import java.util.concurrent.atomic.AtomicBoolean;
 
-import org.springframework.context.SmartLifecycle;
+import org.springframework.context.Lifecycle;
 import org.springframework.integration.handler.AbstractMessageHandler;
 import org.springframework.integration.mqtt.support.DefaultPahoMessageConverter;
 import org.springframework.integration.mqtt.support.MqttHeaders;
-import org.springframework.integration.mqtt.support.MqttMessageConverter;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageHandlingException;
+import org.springframework.messaging.converter.MessageConverter;
 import org.springframework.util.Assert;
 
 /**
  * Abstract class for MQTT outbound channel adapters.
  *
  * @author Gary Russell
+ * @author Artem Bilan
  * @since 4.0
  *
  */
-public abstract class AbstractMqttMessageHandler extends AbstractMessageHandler implements SmartLifecycle {
+public abstract class AbstractMqttMessageHandler extends AbstractMessageHandler implements Lifecycle {
+
+	private final AtomicBoolean running = new AtomicBoolean();
 
 	private final String url;
 
@@ -46,16 +49,11 @@ public abstract class AbstractMqttMessageHandler extends AbstractMessageHandler 
 
 	private volatile boolean defaultRetained = false;
 
-	private volatile MqttMessageConverter converter;
+	private volatile MessageConverter converter;
 
-	private boolean running;
-
-	private volatile int phase;
-
-	private volatile boolean autoStartup;
+	private volatile int clientInstance;
 
 	public AbstractMqttMessageHandler(String url, String clientId) {
-		Assert.hasText(url, "'url' cannot be null or empty");
 		Assert.hasText(clientId, "'clientId' cannot be null or empty");
 		this.url = url;
 		this.clientId = clientId;
@@ -73,17 +71,39 @@ public abstract class AbstractMqttMessageHandler extends AbstractMessageHandler 
 		this.defaultRetained = defaultRetain;
 	}
 
-	public void setConverter(MqttMessageConverter converter) {
+	public void setConverter(MessageConverter converter) {
 		Assert.notNull(converter, "'converter' cannot be null");
 		this.converter = converter;
 	}
 
-	protected String getUrl() {
-		return url;
+	protected MessageConverter getConverter() {
+		return this.converter;
 	}
 
-	protected String getClientId() {
-		return clientId;
+	protected String getUrl() {
+		return this.url;
+	}
+
+	public String getClientId() {
+		return this.clientId;
+	}
+
+	/**
+	 * Incremented each time the client is connected.
+	 * @return The instance;
+	 * @since 4.1
+	 */
+	public int getClientInstance() {
+		return this.clientInstance;
+	}
+
+	@Override
+	public String getComponentType() {
+		return "mqtt:outbound-channel-adapter";
+	}
+
+	protected void incrementClientInstance() {
+		this.clientInstance++; //NOSONAR - false positive - called from synchronized block
 	}
 
 	@Override
@@ -96,66 +116,38 @@ public abstract class AbstractMqttMessageHandler extends AbstractMessageHandler 
 
 	@Override
 	public final void start() {
-		this.doStart();
+		if (!this.running.getAndSet(true)) {
+			doStart();
+		}
 	}
 
 	protected abstract void doStart();
 
 	@Override
 	public final void stop() {
-		this.doStop();
+		if (this.running.getAndSet(false)) {
+			doStop();
+		}
 	}
 
 	protected abstract void doStop();
 
 	@Override
 	public boolean isRunning() {
-		return this.running;
-	}
-
-	@Override
-	public int getPhase() {
-		return this.phase;
-	}
-
-	public void setPhase(int phase) {
-		this.phase = phase;
-	}
-
-	public void setAutoStartup(boolean autoStartup) {
-		this.autoStartup = autoStartup;
-	}
-
-	@Override
-	public boolean isAutoStartup() {
-		return this.autoStartup;
-	}
-
-	@Override
-	public void stop(Runnable callback) {
-		this.stop();
-		callback.run();
+		return this.running.get();
 	}
 
 	@Override
 	protected void handleMessageInternal(Message<?> message) throws Exception {
-		this.connectIfNeeded();
 		String topic = (String) message.getHeaders().get(MqttHeaders.TOPIC);
-		MqttMessage mqttMessage = (MqttMessage) this.converter.fromMessage(message, MqttMessage.class);
+		Object mqttMessage = this.converter.fromMessage(message, Object.class);
 		if (topic == null && this.defaultTopic == null) {
 			throw new MessageHandlingException(message,
 					"No '" + MqttHeaders.TOPIC + "' header and no default topic defined");
 		}
-		this.publish(topic == null ? this.defaultTopic : topic, mqttMessage);
+		this.publish(topic == null ? this.defaultTopic : topic, mqttMessage, message);
 	}
 
-	protected abstract void connectIfNeeded();
-
-	protected abstract void publish(String topic, Object mqttMessage) throws Exception;
-
-	@Override
-	public String getComponentType() {
-		return "mqtt:outbound-channel-adapter";
-	}
+	protected abstract void publish(String topic, Object mqttMessage, Message<?> message) throws Exception;
 
 }

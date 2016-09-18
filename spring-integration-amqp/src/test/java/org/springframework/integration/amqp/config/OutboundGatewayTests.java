@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import org.junit.After;
 import org.junit.Test;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
@@ -32,14 +33,16 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.NoSuchBeanDefinitionException;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
+import org.springframework.expression.ExpressionParser;
+import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.expression.spel.support.StandardEvaluationContext;
 import org.springframework.integration.amqp.outbound.AmqpOutboundEndpoint;
 import org.springframework.integration.config.IntegrationEvaluationContextFactoryBean;
 import org.springframework.integration.context.IntegrationContextUtils;
 import org.springframework.integration.handler.MessageProcessor;
-import org.springframework.messaging.support.GenericMessage;
 import org.springframework.integration.test.util.TestUtils;
 import org.springframework.messaging.Message;
+import org.springframework.messaging.support.GenericMessage;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.util.ClassUtils;
 
@@ -53,7 +56,15 @@ import org.springframework.util.ClassUtils;
  */
 public class OutboundGatewayTests {
 
-	private final ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext(getClass().getSimpleName() + "-context.xml", getClass());
+	private static final ExpressionParser PARSER = new SpelExpressionParser();
+
+	private final ClassPathXmlApplicationContext context =
+			new ClassPathXmlApplicationContext(getClass().getSimpleName() + "-context.xml", getClass());
+
+	@After
+	public void tearDown() {
+		context.close();
+	}
 
 	@Test
 	public void testVanillaConfiguration() throws Exception {
@@ -65,11 +76,12 @@ public class OutboundGatewayTests {
 	public void testExpressionBasedConfiguration() throws Exception {
 		assertTrue(context.getBeanFactory().containsBeanDefinition("expression"));
 		Object target = context.getBean("expression");
-		assertNotNull(ReflectionTestUtils.getField(ReflectionTestUtils.getField(target, "handler"), "routingKeyGenerator"));
+		assertNotNull(ReflectionTestUtils.getField(ReflectionTestUtils.getField(target, "handler"),
+				"routingKeyGenerator"));
 	}
 
-	@SuppressWarnings("unchecked")
 	@Test
+	@SuppressWarnings("unchecked")
 	public void testExpressionsBeanResolver() throws Exception {
 		ApplicationContext context = mock(ApplicationContext.class);
 		doAnswer(new Answer<Object>() {
@@ -82,17 +94,19 @@ public class OutboundGatewayTests {
 		when(context.getBean(ClassUtils.forName("org.springframework.integration.config.SpelPropertyAccessorRegistrar",
 				context.getClassLoader())))
 				.thenThrow(NoSuchBeanDefinitionException.class);
-		IntegrationEvaluationContextFactoryBean integrationEvaluationContextFactoryBean = new IntegrationEvaluationContextFactoryBean();
+		IntegrationEvaluationContextFactoryBean integrationEvaluationContextFactoryBean =
+				new IntegrationEvaluationContextFactoryBean();
 		integrationEvaluationContextFactoryBean.setApplicationContext(context);
 		integrationEvaluationContextFactoryBean.afterPropertiesSet();
 		StandardEvaluationContext evalContext = integrationEvaluationContextFactoryBean.getObject();
-		when(context.getBean(IntegrationContextUtils.INTEGRATION_EVALUATION_CONTEXT_BEAN_NAME, StandardEvaluationContext.class))
+		when(context.getBean(IntegrationContextUtils.INTEGRATION_EVALUATION_CONTEXT_BEAN_NAME,
+				StandardEvaluationContext.class))
 			.thenReturn(evalContext);
 		RabbitTemplate template = mock(RabbitTemplate.class);
 		AmqpOutboundEndpoint endpoint = new AmqpOutboundEndpoint(template);
-		endpoint.setRoutingKeyExpression("@foo");
-		endpoint.setExchangeNameExpression("@bar");
-		endpoint.setConfirmCorrelationExpression("@baz");
+		endpoint.setRoutingKeyExpression(PARSER.parseExpression("@foo"));
+		endpoint.setExchangeNameExpression(PARSER.parseExpression("@bar"));
+		endpoint.setConfirmCorrelationExpressionString("@baz");
 		endpoint.setBeanFactory(context);
 		endpoint.afterPropertiesSet();
 		Message<?> message = new GenericMessage<String>("Hello, world!");

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,13 +23,10 @@ import org.springframework.messaging.MessageHandlingException;
  * Exception that indicates a message has been rejected by a selector.
  *
  * @author Mark Fisher
+ * @author Artem Bilan
  */
 @SuppressWarnings("serial")
 public class MessageRejectedException extends MessageHandlingException {
-
-	public MessageRejectedException(Message<?> failedMessage) {
-		super(failedMessage);
-	}
 
 	public MessageRejectedException(Message<?> failedMessage, String description) {
 		super(failedMessage, description);

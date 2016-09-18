@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -52,11 +52,8 @@ public class JmsChannelParser extends AbstractChannelParser {
 		if (StringUtils.hasText(messageDriven)) {
 			builder.addConstructorArgValue(messageDriven);
 		}
-		String connectionFactory = element.getAttribute("connection-factory");
-		if (!StringUtils.hasText(connectionFactory)) {
-			connectionFactory = "connectionFactory";
-		}
-		builder.addPropertyReference("connectionFactory", connectionFactory);
+		builder.addPropertyReference(JmsParserUtils.CONNECTION_FACTORY_PROPERTY,
+				JmsParserUtils.determineConnectionFactoryBeanName(element, parserContext));
 		if ("channel".equals(element.getLocalName())) {
 			this.parseDestination(element, parserContext, builder, "queue");
 		}
@@ -68,7 +65,7 @@ public class JmsChannelParser extends AbstractChannelParser {
 
 		String containerType = element.getAttribute(CONTAINER_TYPE_ATTRIBUTE);
 		String containerClass = element.getAttribute(CONTAINER_CLASS_ATTRIBUTE);
-		if (!StringUtils.hasText(containerClass)) {
+		if (!StringUtils.hasText(containerClass) && StringUtils.hasText(containerType)) {
 			if ("default".equals(containerType)) {
 				containerClass = "org.springframework.jms.listener.DefaultMessageListenerContainer";
 			}
@@ -84,7 +81,9 @@ public class JmsChannelParser extends AbstractChannelParser {
 		 *
 		 * We cannot reliably infer it here.
 		 */
-		builder.addPropertyValue("containerType", containerClass);
+		if (StringUtils.hasText(containerClass)) {
+			builder.addPropertyValue("containerType", containerClass);
+		}
 		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "receive-timeout");
 		IntegrationNamespaceUtils.setReferenceIfAttributeDefined(builder, element, "task-executor");
 		IntegrationNamespaceUtils.setReferenceIfAttributeDefined(builder, element, "transaction-manager");
@@ -124,7 +123,7 @@ public class JmsChannelParser extends AbstractChannelParser {
 		String prefetch = element.getAttribute("prefetch");
 		if (StringUtils.hasText(prefetch)) {
 			if (containerType.startsWith("default")) {
-				builder.addPropertyValue("maxMessagesPerTask", new Integer(prefetch));
+				builder.addPropertyValue("maxMessagesPerTask", Integer.valueOf(prefetch));
 			}
 		}
 		return builder;
@@ -154,6 +153,7 @@ public class JmsChannelParser extends AbstractChannelParser {
 		if (isPubSub) {
 			IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "durable", "subscriptionDurable");
 			IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "subscription", "durableSubscriptionName");
+			IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "subscription-shared");
 			IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "client-id");
 		}
 	}

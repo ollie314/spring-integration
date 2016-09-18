@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,26 +29,28 @@ import org.springframework.messaging.support.GenericMessage;
  * handler.
  * .
  * @author Gary Russell
+ * @author Artem Bilan
+ *
  * @since 2.2
  */
-public class AdviceMessage extends GenericMessage<Object> {
+public class AdviceMessage<T> extends GenericMessage<T> {
 
 	private static final long serialVersionUID = 1L;
 
 	private final Message<?> inputMessage;
 
-	public AdviceMessage(Object payload, Message<?> inputMessage) {
+	public AdviceMessage(T payload, Message<?> inputMessage) {
 		super(payload);
 		this.inputMessage = inputMessage;
 	}
 
-	public AdviceMessage(Object payload, Map<String, Object> headers, Message<?> inputMessage) {
+	public AdviceMessage(T payload, Map<String, Object> headers, Message<?> inputMessage) {
 		super(payload, headers);
 		this.inputMessage = inputMessage;
 	}
 
 	public Message<?> getInputMessage() {
-		return inputMessage;
+		return this.inputMessage;
 	}
 
 }

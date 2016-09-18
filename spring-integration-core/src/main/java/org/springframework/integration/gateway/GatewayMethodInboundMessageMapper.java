@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -31,21 +32,23 @@ import org.springframework.beans.factory.BeanFactoryAware;
 import org.springframework.core.LocalVariableTableParameterNameDiscoverer;
 import org.springframework.core.MethodParameter;
 import org.springframework.core.ParameterNameDiscoverer;
+import org.springframework.core.annotation.AnnotationUtils;
 import org.springframework.expression.EvaluationContext;
 import org.springframework.expression.Expression;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.expression.spel.support.StandardEvaluationContext;
-import org.springframework.integration.annotation.Header;
-import org.springframework.integration.annotation.Headers;
-import org.springframework.integration.annotation.Payload;
 import org.springframework.integration.expression.ExpressionUtils;
 import org.springframework.integration.mapping.InboundMessageMapper;
 import org.springframework.integration.mapping.MessageMappingException;
 import org.springframework.integration.support.AbstractIntegrationMessageBuilder;
 import org.springframework.integration.support.DefaultMessageBuilderFactory;
 import org.springframework.integration.support.MessageBuilderFactory;
+import org.springframework.integration.util.MessagingAnnotationUtils;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessagingException;
+import org.springframework.messaging.handler.annotation.Header;
+import org.springframework.messaging.handler.annotation.Headers;
+import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.util.Assert;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
@@ -72,6 +75,7 @@ import org.springframework.util.StringUtils;
  * @author Iwein Fuld
  * @author Oleg Zhurakousky
  * @author Gary Russell
+ * @author Artem Bilan
  * @since 2.0
  */
 class GatewayMethodInboundMessageMapper implements InboundMessageMapper<Object[]>, BeanFactoryAware {
@@ -85,6 +89,8 @@ class GatewayMethodInboundMessageMapper implements InboundMessageMapper<Object[]
 	private final Map<String, Expression> headerExpressions;
 
 	private final Map<String, Expression> globalHeaderExpressions;
+
+	private final Map<String, Object> headers;
 
 	private final List<MethodParameter> parameterList;
 
@@ -100,20 +106,28 @@ class GatewayMethodInboundMessageMapper implements InboundMessageMapper<Object[]
 
 	private final MessageBuilderFactory messageBuilderFactory;
 
-	public GatewayMethodInboundMessageMapper(Method method) {
+	GatewayMethodInboundMessageMapper(Method method) {
 		this(method, null);
 	}
 
-	public GatewayMethodInboundMessageMapper(Method method, Map<String, Expression> headerExpressions) {
+	GatewayMethodInboundMessageMapper(Method method, Map<String, Expression> headerExpressions) {
 		this(method, headerExpressions, null, null, null);
 	}
 
-	public GatewayMethodInboundMessageMapper(Method method, Map<String, Expression> headerExpressions,
+	GatewayMethodInboundMessageMapper(Method method, Map<String, Expression> headerExpressions,
 			Map<String, Expression> globalHeaderExpressions, MethodArgsMessageMapper mapper,
+			MessageBuilderFactory messageBuilderFactory) {
+		this(method, headerExpressions, globalHeaderExpressions, null, mapper, messageBuilderFactory);
+	}
+
+	GatewayMethodInboundMessageMapper(Method method, Map<String, Expression> headerExpressions,
+			Map<String, Expression> globalHeaderExpressions, Map<String, Object> headers,
+			MethodArgsMessageMapper mapper,
 			MessageBuilderFactory messageBuilderFactory) {
 		Assert.notNull(method, "method must not be null");
 		this.method = method;
 		this.headerExpressions = headerExpressions;
+		this.headers = headers;
 		this.globalHeaderExpressions = globalHeaderExpressions;
 		this.parameterList = getMethodParameterList(method);
 		this.payloadExpression = parsePayloadExpression(method);
@@ -136,6 +150,7 @@ class GatewayMethodInboundMessageMapper implements InboundMessageMapper<Object[]
 		this.payloadExpression = PARSER.parseExpression(expressionString);
 	}
 
+	@Override
 	public void setBeanFactory(final BeanFactory beanFactory) {
 		if (beanFactory != null) {
 			this.beanFactory = beanFactory;
@@ -143,11 +158,12 @@ class GatewayMethodInboundMessageMapper implements InboundMessageMapper<Object[]
 		}
 	}
 
- 	public Message<?> toMessage(Object[] arguments) {
+	@Override
+	public Message<?> toMessage(Object[] arguments) {
 		Assert.notNull(arguments, "cannot map null arguments to Message");
 		if (arguments.length != this.parameterList.size()) {
 			String prefix = (arguments.length < this.parameterList.size()) ? "Not enough" : "Too many";
-			throw new IllegalArgumentException(prefix + " parameters provided for method [" + method +
+			throw new IllegalArgumentException(prefix + " parameters provided for method [" + this.method +
 					"], expected " + this.parameterList.size() + " but received " + arguments.length + ".");
 		}
 		return this.mapArgumentsToMessage(arguments);
@@ -167,7 +183,8 @@ class GatewayMethodInboundMessageMapper implements InboundMessageMapper<Object[]
 		}
 	}
 
-	private Map<String, Object> evaluateHeaders(EvaluationContext methodInvocationEvaluationContext, Map<String, Expression> headerExpressions) {
+	private Map<String, Object> evaluateHeaders(EvaluationContext methodInvocationEvaluationContext,
+			Map<String, Expression> headerExpressions) {
 		Map<String, Object> evaluatedHeaders = new HashMap<String, Object>();
 		for (Map.Entry<String, Expression> entry : headerExpressions.entrySet()) {
 			Object value = entry.getValue().getValue(methodInvocationEvaluationContext);
@@ -182,9 +199,6 @@ class GatewayMethodInboundMessageMapper implements InboundMessageMapper<Object[]
 		StandardEvaluationContext context = ExpressionUtils.createStandardEvaluationContext(this.beanFactory);
 		context.setVariable("args", arguments);
 
-		// TODO deprecated in 3.0/4.0 - retained for backwards compatibility
-		context.setVariable("method", this.method.getName());
-
 		context.setVariable("gatewayMethod", this.method);
 		return context;
 	}
@@ -198,35 +212,18 @@ class GatewayMethodInboundMessageMapper implements InboundMessageMapper<Object[]
 		return expression.getValue(this.payloadExpressionEvaluationContext, argumentValue);
 	}
 
-	private Annotation findMappingAnnotation(Annotation[] annotations) {
-		if (annotations == null || annotations.length == 0) {
-			return null;
-		}
-		Annotation match = null;
-		for (Annotation annotation : annotations) {
-			Class<? extends Annotation> type = annotation.annotationType();
-			if (type.equals(Payload.class) || type.equals(Header.class) || type.equals(Headers.class)) {
-				if (match != null) {
-					throw new MessagingException("At most one parameter annotation can be provided for message mapping, " +
-							"but found two: [" + match.annotationType().getName() + "] and [" + annotation.annotationType().getName() + "]");
-				}
-				match = annotation;
-			}
-		}
-		return match;
-	}
 
 	private void copyHeaders(Map<?, ?> argumentValue, Map<String, Object> headers) {
-		for (Object key : argumentValue.keySet()) {
+		for (Entry<?, ?> entry : argumentValue.entrySet()) {
+			Object key = entry.getKey();
 			if (!(key instanceof String)) {
-				if (this.logger.isWarnEnabled()){
+				if (this.logger.isWarnEnabled()) {
 					this.logger.warn("Invalid header name [" + key +
 							"], name type must be String. Skipping mapping of this header to MessageHeaders.");
 				}
 			}
 			else {
-				Object value = argumentValue.get(key);
-				headers.put((String) key, value);
+				headers.put((String) key, entry.getValue());
 			}
 		}
 	}
@@ -237,8 +234,8 @@ class GatewayMethodInboundMessageMapper implements InboundMessageMapper<Object[]
 				"payload or Message. Found more than one on method [" + methodParameter.getMethod() + "]");
 	}
 
-	private String determineHeaderName(Header headerAnnotation, MethodParameter methodParameter) {
-		String valueAttribute = headerAnnotation.value();
+	private String determineHeaderName(Annotation headerAnnotation, MethodParameter methodParameter) {
+		String valueAttribute = (String) AnnotationUtils.getValue(headerAnnotation);
 		String headerName = StringUtils.hasText(valueAttribute) ? valueAttribute : methodParameter.getParameterName();
 		Assert.notNull(headerName, "Cannot determine header name. Possible reasons: -debug is " +
 				"disabled or header name is not explicitly provided via @Header annotation.");
@@ -259,9 +256,9 @@ class GatewayMethodInboundMessageMapper implements InboundMessageMapper<Object[]
 
 	private static Expression parsePayloadExpression(Method method) {
 		Expression expression = null;
-		Payload payload = method.getAnnotation(Payload.class);
+		Annotation payload = method.getAnnotation(Payload.class);
 		if (payload != null) {
-			String expressionString = payload.value();
+			String expressionString = (String) AnnotationUtils.getValue(payload);
 			Assert.hasText(expressionString,
 					"@Payload at method-level on a Gateway must provide a non-empty Expression.");
 			expression = PARSER.parseExpression(expressionString);
@@ -279,31 +276,34 @@ class GatewayMethodInboundMessageMapper implements InboundMessageMapper<Object[]
 			EvaluationContext methodInvocationEvaluationContext = createMethodInvocationEvaluationContext(arguments);
 			Map<String, Object> headers = new HashMap<String, Object>();
 			if (GatewayMethodInboundMessageMapper.this.payloadExpression != null) {
-				messageOrPayload = GatewayMethodInboundMessageMapper.this.payloadExpression.getValue(methodInvocationEvaluationContext);
+				messageOrPayload =
+						GatewayMethodInboundMessageMapper.this.payloadExpression.getValue(methodInvocationEvaluationContext);
 			}
 			for (int i = 0; i < GatewayMethodInboundMessageMapper.this.parameterList.size(); i++) {
 				Object argumentValue = arguments[i];
 				MethodParameter methodParameter = GatewayMethodInboundMessageMapper.this.parameterList.get(i);
-				Annotation annotation = GatewayMethodInboundMessageMapper.this.findMappingAnnotation(methodParameter.getParameterAnnotations());
+				Annotation annotation =
+						MessagingAnnotationUtils.findMessagePartAnnotation(methodParameter.getParameterAnnotations(), false);
 				if (annotation != null) {
 					if (annotation.annotationType().equals(Payload.class)) {
 						if (messageOrPayload != null) {
-							GatewayMethodInboundMessageMapper.this.throwExceptionForMultipleMessageOrPayloadParameters(methodParameter);
+							throwExceptionForMultipleMessageOrPayloadParameters(methodParameter);
 						}
-						String expression = ((Payload) annotation).value();
+						String expression = (String) AnnotationUtils.getValue(annotation);
 						if (!StringUtils.hasText(expression)) {
 							messageOrPayload = argumentValue;
 						}
 						else {
-							messageOrPayload = GatewayMethodInboundMessageMapper.this.evaluatePayloadExpression(expression, argumentValue);
+							messageOrPayload = evaluatePayloadExpression(expression, argumentValue);
 						}
 						foundPayloadAnnotation = true;
 					}
 					else if (annotation.annotationType().equals(Header.class)) {
-						Header headerAnnotation = (Header) annotation;
-						String headerName = GatewayMethodInboundMessageMapper.this.determineHeaderName(headerAnnotation, methodParameter);
-						if (headerAnnotation.required() && argumentValue == null) {
-							throw new IllegalArgumentException("Received null argument value for required header: '" + headerName + "'");
+						String headerName =
+								GatewayMethodInboundMessageMapper.this.determineHeaderName(annotation, methodParameter);
+						if ((Boolean) AnnotationUtils.getValue(annotation, "required") && argumentValue == null) {
+							throw new IllegalArgumentException("Received null argument value for required header: '"
+									+ headerName + "'");
 						}
 						headers.put(headerName, argumentValue);
 					}
@@ -326,7 +326,7 @@ class GatewayMethodInboundMessageMapper implements InboundMessageMapper<Object[]
 				}
 				else if (Map.class.isAssignableFrom(methodParameter.getParameterType())) {
 					if (messageOrPayload instanceof Map && !foundPayloadAnnotation) {
-						if (payloadExpression == null){
+						if (GatewayMethodInboundMessageMapper.this.payloadExpression == null) {
 							throw new MessagingException("Ambiguous method parameters; found more than one " +
 									"Map-typed parameter and neither one contains a @Payload annotation");
 						}
@@ -337,7 +337,8 @@ class GatewayMethodInboundMessageMapper implements InboundMessageMapper<Object[]
 					GatewayMethodInboundMessageMapper.this.throwExceptionForMultipleMessageOrPayloadParameters(methodParameter);
 				}
 			}
-			Assert.isTrue(messageOrPayload != null, "unable to determine a Message or payload parameter on method [" + method + "]");
+			Assert.isTrue(messageOrPayload != null,
+					"unable to determine a Message or payload parameter on method [" + GatewayMethodInboundMessageMapper.this.method + "]");
 			AbstractIntegrationMessageBuilder<?> builder = (messageOrPayload instanceof Message)
 					? GatewayMethodInboundMessageMapper.this.messageBuilderFactory.fromMessage((Message<?>) messageOrPayload)
 					: GatewayMethodInboundMessageMapper.this.messageBuilderFactory.withPayload(messageOrPayload);
@@ -353,6 +354,9 @@ class GatewayMethodInboundMessageMapper implements InboundMessageMapper<Object[]
 				Map<String, Object> evaluatedHeaders = evaluateHeaders(methodInvocationEvaluationContext,
 						GatewayMethodInboundMessageMapper.this.globalHeaderExpressions);
 				builder.copyHeadersIfAbsent(evaluatedHeaders);
+			}
+			if (GatewayMethodInboundMessageMapper.this.headers != null) {
+				builder.copyHeadersIfAbsent(GatewayMethodInboundMessageMapper.this.headers);
 			}
 			return builder.build();
 		}

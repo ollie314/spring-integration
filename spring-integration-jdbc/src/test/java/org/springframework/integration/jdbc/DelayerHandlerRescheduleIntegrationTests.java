@@ -1,21 +1,26 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
- * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
- * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
- * specific language governing permissions and limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package org.springframework.integration.jdbc;
 
+import static org.hamcrest.Matchers.instanceOf;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNotSame;
+import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -33,6 +38,7 @@ import org.springframework.integration.context.IntegrationContextUtils;
 import org.springframework.integration.handler.DelayHandler;
 import org.springframework.integration.store.MessageGroup;
 import org.springframework.integration.store.MessageGroupStore;
+import org.springframework.integration.store.SimpleMessageGroup;
 import org.springframework.integration.support.MessageBuilder;
 import org.springframework.integration.test.support.LongRunningIntegrationTest;
 import org.springframework.integration.util.UUIDConverter;
@@ -77,7 +83,8 @@ public class DelayerHandlerRescheduleIntegrationTests {
 
 	@Test //INT-1132
 	public void testDelayerHandlerRescheduleWithJdbcMessageStore() throws Exception {
-		AbstractApplicationContext context = new ClassPathXmlApplicationContext("DelayerHandlerRescheduleIntegrationTests-context.xml", this.getClass());
+		AbstractApplicationContext context =
+				new ClassPathXmlApplicationContext("DelayerHandlerRescheduleIntegrationTests-context.xml", getClass());
 		MessageChannel input = context.getBean("input", MessageChannel.class);
 		MessageGroupStore messageStore = context.getBean("messageStore", MessageGroupStore.class);
 
@@ -88,7 +95,8 @@ public class DelayerHandlerRescheduleIntegrationTests {
 
 		// Emulate restart and check DB state before next start
 		// Interrupt taskScheduler as quickly as possible
-		ThreadPoolTaskScheduler taskScheduler = (ThreadPoolTaskScheduler) IntegrationContextUtils.getTaskScheduler(context);
+		ThreadPoolTaskScheduler taskScheduler =
+				(ThreadPoolTaskScheduler) IntegrationContextUtils.getTaskScheduler(context);
 		taskScheduler.shutdown();
 		taskScheduler.getScheduledExecutor().awaitTermination(10, TimeUnit.SECONDS);
 		context.destroy();
@@ -109,6 +117,8 @@ public class DelayerHandlerRescheduleIntegrationTests {
 		assertEquals(2, messageStore.messageGroupSize(delayerMessageGroupId));
 		assertEquals(2, messageStore.getMessageCountForAllMessageGroups());
 		MessageGroup messageGroup = messageStore.getMessageGroup(delayerMessageGroupId);
+		// Ensure that with the lazyLoadMessageGroups = false the MessageStore doesn't return PersistentMessageGroup
+		assertThat(messageGroup, instanceOf(SimpleMessageGroup.class));
 		Message<?> messageInStore = messageGroup.getMessages().iterator().next();
 		Object payload = messageInStore.getPayload();
 
@@ -137,7 +147,8 @@ public class DelayerHandlerRescheduleIntegrationTests {
 
 	@Test //INT-2649
 	public void testRollbackOnDelayerHandlerReleaseTask() throws Exception {
-		AbstractApplicationContext context = new ClassPathXmlApplicationContext("DelayerHandlerRescheduleIntegrationTests-context.xml", this.getClass());
+		AbstractApplicationContext context =
+				new ClassPathXmlApplicationContext("DelayerHandlerRescheduleIntegrationTests-context.xml", getClass());
 		MessageChannel input = context.getBean("transactionalDelayerInput", MessageChannel.class);
 
 		MessageGroupStore messageStore = context.getBean("messageStore", MessageGroupStore.class);
@@ -158,6 +169,7 @@ public class DelayerHandlerRescheduleIntegrationTests {
 
 		//On transaction rollback the delayed Message should remain in the persistent MessageStore
 		assertEquals(1, messageStore.messageGroupSize(delayerMessageGroupId));
+		context.close();
 	}
 
 	@SuppressWarnings("unused")
@@ -173,6 +185,7 @@ public class DelayerHandlerRescheduleIntegrationTests {
 	@SuppressWarnings("unused")
 	private static class ExceptionMessageHandler implements MessageHandler {
 
+		@Override
 		public void handleMessage(Message<?> message) throws MessagingException {
 			TransactionSynchronizationManager.registerSynchronization(new RollbackTxSync());
 			throw new RuntimeException("intentional");

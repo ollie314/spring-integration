@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.ip.util;
 
 import org.springframework.integration.ip.tcp.connection.AbstractConnectionFactory;
@@ -27,7 +28,11 @@ import org.springframework.integration.ip.tcp.connection.AbstractServerConnectio
  * @since 2.2
  *
  */
-public class TestingUtilities {
+public final class TestingUtilities {
+
+	private TestingUtilities() {
+		super();
+	}
 
 	/**
 	 * Wait for a server connection factory to actually start listening before
@@ -48,13 +53,14 @@ public class TestingUtilities {
 		while (!serverConnectionFactory.isListening()) {
 			try {
 				Thread.sleep(100);
-			} catch (InterruptedException e1) {
+			}
+			catch (InterruptedException e1) {
 				Thread.currentThread().interrupt();
 				throw new IllegalStateException(e1);
 			}
 
 			if (n++ > delay) {
-				throw new IllegalStateException ("Server didn't start listening.");
+				throw new IllegalStateException("Server didn't start listening.");
 			}
 		}
 	}
@@ -77,14 +83,14 @@ public class TestingUtilities {
 		int n = 0;
 		while (serverConnectionFactory.isListening()) {
 			try {
-				Thread.sleep(100);
+				Thread.sleep(delay);
 			}
 			catch (InterruptedException e) {
 				Thread.currentThread().interrupt();
 				throw new IllegalStateException(e);
 			}
 			if (n++ > 200) {
-				throw new IllegalStateException ("Server didn't stop listening.");
+				throw new IllegalStateException("Server didn't stop listening.");
 			}
 		}
 	}

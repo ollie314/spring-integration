@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,18 +28,19 @@ import org.junit.Test;
 
 import org.springframework.beans.factory.support.RootBeanDefinition;
 import org.springframework.context.support.GenericApplicationContext;
-import org.springframework.messaging.Message;
-import org.springframework.messaging.MessagingException;
-import org.springframework.integration.annotation.Header;
-import org.springframework.integration.annotation.Headers;
-import org.springframework.integration.annotation.Payload;
 import org.springframework.integration.channel.QueueChannel;
 import org.springframework.integration.config.IntegrationEvaluationContextFactoryBean;
 import org.springframework.integration.context.IntegrationContextUtils;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.MessagingException;
+import org.springframework.messaging.handler.annotation.Header;
+import org.springframework.messaging.handler.annotation.Headers;
+import org.springframework.messaging.handler.annotation.Payload;
 
 /**
  * @author Mark Fisher
  * @author Gary Russell
+ * @author Artem Bilan
  * @since 2.0
  */
 public class GatewayProxyMessageMappingTests {
@@ -152,6 +153,7 @@ public class GatewayProxyMessageMappingTests {
 		Message<?> result = channel.receive(0);
 		assertNotNull(result);
 		assertEquals("FOO!!!", result.getPayload());
+		context.close();
 	}
 
 	@Test
@@ -183,6 +185,7 @@ public class GatewayProxyMessageMappingTests {
 		assertNotNull(barResult);
 		assertEquals(309, barResult.getPayload());
 		assertNull(channel.receive(0));
+		context.close();
 	}
 
 	@Test(expected = MessagingException.class)
@@ -210,7 +213,7 @@ public class GatewayProxyMessageMappingTests {
 	}
 
 
-	public static interface TestGateway {
+	public interface TestGateway {
 
 		void payloadAndHeaderMapWithoutAnnotations(String s, Map<String, Object> map);
 

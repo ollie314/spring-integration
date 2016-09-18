@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.ip.tcp.connection;
 
 import java.io.UnsupportedEncodingException;
@@ -21,14 +22,22 @@ import java.util.Map;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
+import org.springframework.beans.BeansException;
+import org.springframework.beans.factory.BeanFactory;
+import org.springframework.beans.factory.BeanFactoryAware;
 import org.springframework.integration.ip.IpHeaders;
 import org.springframework.integration.mapping.InboundMessageMapper;
 import org.springframework.integration.mapping.OutboundMessageMapper;
 import org.springframework.integration.support.AbstractIntegrationMessageBuilder;
 import org.springframework.integration.support.DefaultMessageBuilderFactory;
 import org.springframework.integration.support.MessageBuilderFactory;
+import org.springframework.integration.support.utils.IntegrationUtils;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageHandlingException;
+import org.springframework.messaging.MessageHeaders;
+import org.springframework.util.Assert;
+import org.springframework.util.InvalidMimeTypeException;
+import org.springframework.util.MimeType;
 
 /**
  * Maps incoming data from a {@link TcpConnection} to a {@link Message}.
@@ -40,13 +49,16 @@ import org.springframework.messaging.MessageHandlingException;
  * to correlate which connection to send a reply. If applySequence is set, adds
  * standard correlationId/sequenceNumber headers allowing for downstream (unbounded)
  * resequencing.
+ * *
  * @author Gary Russell
+ * @author Artem Bilan
  * @since 2.0
  *
  */
 public class TcpMessageMapper implements
 		InboundMessageMapper<TcpConnection>,
-		OutboundMessageMapper<Object> {
+		OutboundMessageMapper<Object>,
+		BeanFactoryAware {
 
 	protected final Log logger = LogFactory.getLog(this.getClass());
 
@@ -58,7 +70,16 @@ public class TcpMessageMapper implements
 
 	private volatile MessageBuilderFactory messageBuilderFactory = new DefaultMessageBuilderFactory();
 
+	private volatile boolean messageBuilderFactorySet;
+
+	private volatile String contentType = "application/octet-stream;charset=" + this.charset;
+
+	private volatile boolean addContentTypeHeader;
+
+	private BeanFactory beanFactory;
+
 	/**
+	 * Set the charset to use when converting outbound String messages to {@code byte[]}.
 	 * @param charset the charset to set
 	 */
 	public void setCharset(String charset) {
@@ -81,12 +102,50 @@ public class TcpMessageMapper implements
 		this.applySequence = applySequence;
 	}
 
-	public void setMessageBuilderFactory(MessageBuilderFactory messageBuilderFactory) {
-		this.messageBuilderFactory = messageBuilderFactory;
+	/**
+	 * Set the content type header value to add to inbound messages when
+	 * {@link #setAddContentTypeHeader(boolean) addContentTypeHeader} is true.
+	 * Default {@code application/octet-stream;charset=UTF-8}. This default is <b>not</b>
+	 * modified by {@link #setCharset(String)}.
+	 * @param contentType the content type header value to set.
+	 * @since 4.3
+	 * @see #setAddContentTypeHeader(boolean)
+	 * @see TcpMessageMapper#setCharset(String)
+	 */
+	public void setContentType(String contentType) {
+		Assert.notNull(contentType, "'contentType' cannot be null");
+		try {
+			MimeType.valueOf(contentType);
+		}
+		catch (InvalidMimeTypeException e) {
+			throw new IllegalArgumentException("'contentType' could not be parsed", e);
+		}
+		this.contentType = contentType;
+	}
+
+	/**
+	 * Set to true to add a content type header; default false.
+	 * @param addContentTypeHeader true to add a content type header.
+	 * @since 4.3
+	 * @see #setContentType(String)
+	 */
+	public void setAddContentTypeHeader(boolean addContentTypeHeader) {
+		this.addContentTypeHeader = addContentTypeHeader;
+	}
+
+	@Override
+	public void setBeanFactory(BeanFactory beanFactory) throws BeansException {
+		this.beanFactory = beanFactory;
 	}
 
 	protected MessageBuilderFactory getMessageBuilderFactory() {
-		return messageBuilderFactory;
+		if (!this.messageBuilderFactorySet) {
+			if (this.beanFactory != null) {
+				this.messageBuilderFactory = IntegrationUtils.getMessageBuilderFactory(this.beanFactory);
+			}
+			this.messageBuilderFactorySet = true;
+		}
+		return this.messageBuilderFactory;
 	}
 
 	@Override
@@ -94,34 +153,43 @@ public class TcpMessageMapper implements
 		Message<Object> message = null;
 		Object payload = connection.getPayload();
 		if (payload != null) {
-			AbstractIntegrationMessageBuilder<Object> messageBuilder = this.messageBuilderFactory.withPayload(payload);
+			AbstractIntegrationMessageBuilder<Object> messageBuilder = getMessageBuilderFactory().withPayload(payload);
 			this.addStandardHeaders(connection, messageBuilder);
 			this.addCustomHeaders(connection, messageBuilder);
 			message = messageBuilder.build();
 		}
 		else {
-			if (logger.isWarnEnabled()) {
-				logger.warn("Null payload from connection " + connection.getConnectionId());
+			if (this.logger.isWarnEnabled()) {
+				this.logger.warn("Null payload from connection " + connection.getConnectionId());
 			}
 		}
 		return message;
 	}
 
-	protected final void addStandardHeaders(TcpConnection connection, AbstractIntegrationMessageBuilder<?> messageBuilder) {
+	protected final void addStandardHeaders(TcpConnection connection,
+			AbstractIntegrationMessageBuilder<?> messageBuilder) {
 		String connectionId = connection.getConnectionId();
 		messageBuilder
 			.setHeader(IpHeaders.HOSTNAME, connection.getHostName())
 			.setHeader(IpHeaders.IP_ADDRESS, connection.getHostAddress())
 			.setHeader(IpHeaders.REMOTE_PORT, connection.getPort())
 			.setHeader(IpHeaders.CONNECTION_ID, connectionId);
+		SocketInfo socketInfo = connection.getSocketInfo();
+		if (socketInfo != null) {
+			messageBuilder.setHeader(IpHeaders.LOCAL_ADDRESS, socketInfo.getLocalAddress());
+		}
 		if (this.applySequence) {
 			messageBuilder
 				.setCorrelationId(connectionId)
 				.setSequenceNumber((int) connection.incrementAndGetConnectionSequence());
 		}
+		if (this.addContentTypeHeader) {
+			messageBuilder.setHeader(MessageHeaders.CONTENT_TYPE, this.contentType);
+		}
 	}
 
-	protected final void addCustomHeaders(TcpConnection connection, AbstractIntegrationMessageBuilder<?> messageBuilder) {
+	protected final void addCustomHeaders(TcpConnection connection,
+			AbstractIntegrationMessageBuilder<?> messageBuilder) {
 		Map<String, ?> customHeaders = this.supplyCustomHeaders(connection);
 		if (customHeaders != null) {
 			messageBuilder.copyHeadersIfAbsent(customHeaders);

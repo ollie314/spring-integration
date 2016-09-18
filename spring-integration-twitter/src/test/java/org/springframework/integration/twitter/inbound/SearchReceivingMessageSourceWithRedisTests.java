@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2014 the original author or authors.
+ * Copyright 2013-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.BDDMockito.given;
 import static org.mockito.Matchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -45,15 +46,16 @@ import org.springframework.integration.test.util.TestUtils;
 import org.springframework.messaging.PollableChannel;
 import org.springframework.social.twitter.api.SearchMetadata;
 import org.springframework.social.twitter.api.SearchOperations;
+import org.springframework.social.twitter.api.SearchParameters;
 import org.springframework.social.twitter.api.SearchResults;
 import org.springframework.social.twitter.api.Tweet;
 import org.springframework.social.twitter.api.UserOperations;
-import org.springframework.social.twitter.api.SearchParameters;
 import org.springframework.social.twitter.api.impl.TwitterTemplate;
 
 /**
  * @author Gunnar Hillert
  * @author Artem Bilan
+ * @author Gary Russell
  * @since 3.0
  */
 public class SearchReceivingMessageSourceWithRedisTests extends RedisAvailableTests {
@@ -86,6 +88,7 @@ public class SearchReceivingMessageSourceWithRedisTests extends RedisAvailableTe
 		this.metadataStore.put(metadataKey, "-1");
 
 		this.twitterMessageSource.afterPropertiesSet();
+		context.close();
 	}
 
 	/**
@@ -95,8 +98,10 @@ public class SearchReceivingMessageSourceWithRedisTests extends RedisAvailableTe
 	@Test
 	@RedisAvailable
 	public void testPollForTweetsThreeResultsWithRedisMetadataStore() throws Exception {
-		MetadataStore metadataStore = TestUtils.getPropertyValue(this.twitterSearchAdapter, "source.metadataStore", MetadataStore.class);
-		assertTrue("Exptected metadataStore to be an instance of RedisMetadataStore", metadataStore instanceof RedisMetadataStore);
+		MetadataStore metadataStore = TestUtils.getPropertyValue(this.twitterSearchAdapter, "source.metadataStore",
+				MetadataStore.class);
+		assertTrue("Expected metadataStore to be an instance of RedisMetadataStore",
+				metadataStore instanceof RedisMetadataStore);
 		assertSame(this.metadataStore, metadataStore);
 
 		assertEquals("twitterSearchAdapter.74", metadataKey);
@@ -135,18 +140,26 @@ public class SearchReceivingMessageSourceWithRedisTests extends RedisAvailableTe
 	}
 
 	@Configuration
-	@ImportResource("classpath:org/springframework/integration/twitter/inbound/SearchReceivingMessageSourceWithRedisTests-context.xml")
+	@ImportResource("org/springframework/integration/twitter/inbound/SearchReceivingMessageSourceWithRedisTests-context.xml")
 	static class SearchReceivingMessageSourceWithRedisTestsConfig {
 
-		@Bean(name="twitterTemplate")
+		@Bean(name = "twitterTemplate")
 		public TwitterTemplate twitterTemplate() {
-			final TwitterTemplate twitterTemplate = mock(TwitterTemplate.class);
+			TwitterTemplate twitterTemplate = mock(TwitterTemplate.class);
 
-			final SearchOperations so = mock(SearchOperations.class);
+			SearchOperations so = mock(SearchOperations.class);
 
-			final Tweet tweet3 = new Tweet(3L, "first", new GregorianCalendar(2013, 2, 20).getTime(), "fromUser", "profileImageUrl", 888L, 999L, "languageCode", "source");
-			final Tweet tweet1 = new Tweet(1L, "first", new GregorianCalendar(2013, 0, 20).getTime(), "fromUser", "profileImageUrl", 888L, 999L, "languageCode", "source");
-			final Tweet tweet2 = new Tweet(2L, "first", new GregorianCalendar(2013, 1, 20).getTime(), "fromUser", "profileImageUrl", 888L, 999L, "languageCode", "source");
+			Tweet tweet3 = mock(Tweet.class);
+			given(tweet3.getId()).willReturn(3L);
+			given(tweet3.getCreatedAt()).willReturn(new GregorianCalendar(2013, 2, 20).getTime());
+
+			Tweet tweet1 = mock(Tweet.class);
+			given(tweet1.getId()).willReturn(1L);
+			given(tweet1.getCreatedAt()).willReturn(new GregorianCalendar(2013, 0, 20).getTime());
+
+			final Tweet tweet2 = mock(Tweet.class);
+			given(tweet2.getId()).willReturn(2L);
+			given(tweet2.getCreatedAt()).willReturn(new GregorianCalendar(2013, 1, 20).getTime());
 
 			final List<Tweet> tweets = new ArrayList<Tweet>();
 

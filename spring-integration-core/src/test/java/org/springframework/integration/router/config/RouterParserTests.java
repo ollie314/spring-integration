@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,12 +30,13 @@ import java.util.List;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mockito;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
 import org.springframework.integration.IntegrationMessageHeaderAccessor;
 import org.springframework.integration.annotation.Router;
-import org.springframework.messaging.support.GenericMessage;
+import org.springframework.integration.core.MessagingTemplate;
 import org.springframework.integration.router.AbstractMappingMessageRouter;
 import org.springframework.integration.router.MethodInvokingRouter;
 import org.springframework.integration.test.util.TestUtils;
@@ -47,7 +48,7 @@ import org.springframework.messaging.PollableChannel;
 import org.springframework.messaging.SubscribableChannel;
 import org.springframework.messaging.core.DestinationResolutionException;
 import org.springframework.messaging.core.DestinationResolver;
-import org.springframework.integration.core.MessagingTemplate;
+import org.springframework.messaging.support.GenericMessage;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 
@@ -168,7 +169,7 @@ public class RouterParserTests {
 		}
 	}
 
-	@Test(expected=MessageDeliveryException.class)
+	@Test(expected = MessageDeliveryException.class)
 	public void testResolutionRequiredIsFalse() {
 		this.resolutionRequiredIsFalseInput.send(new GenericMessage<String>("channelThatDoesNotExist"));
 	}
@@ -224,7 +225,7 @@ public class RouterParserTests {
 	}
 
 	@Test
-	public void testErrorChannel(){
+	public void testErrorChannel() {
 		MessageHandler handler = mock(MessageHandler.class);
 		this.errorChannel.subscribe(handler);
 		this.routerAndErrorChannelInputChannel.send(new GenericMessage<String>("fail"));
@@ -232,13 +233,13 @@ public class RouterParserTests {
 	}
 
 	@Test // should not fail
-	public void routerFactoryBeanTest(){
-		new ClassPathXmlApplicationContext("rfb-fix-config.xml", this.getClass());
+	public void routerFactoryBeanTest() {
+		new ClassPathXmlApplicationContext("rfb-fix-config.xml", this.getClass()).close();
 	}
 
 
-	public static class NonExistingChannelRouter{
-		public String route(String payload){
+	public static class NonExistingChannelRouter {
+		public String route(String payload) {
 			return "foo";
 		}
 	}
@@ -254,7 +255,7 @@ public class RouterParserTests {
 
 		@Override
 		protected List<Object> getChannelKeys(Message<?> message) {
-			return Collections.singletonList((Object)this.channel);
+			return Collections.singletonList((Object) this.channel);
 		}
 	}
 
@@ -277,7 +278,7 @@ public class RouterParserTests {
 
 		@Router
 		public String route(Message<?> message) {
-			return (String)message.getPayload();
+			return (String) message.getPayload();
 		}
 
 
@@ -286,6 +287,7 @@ public class RouterParserTests {
 
 	static class TestChannelResover implements DestinationResolver<MessageChannel> {
 
+		@Override
 		public MessageChannel resolveDestination(String channelName) {
 			return null;
 		}

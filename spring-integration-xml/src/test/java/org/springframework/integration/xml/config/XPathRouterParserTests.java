@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,14 @@
 
 package org.springframework.integration.xml.config;
 
+import static org.hamcrest.Matchers.contains;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertThat;
+
+import java.util.List;
 
 import org.junit.After;
 import org.junit.Test;
@@ -29,12 +34,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.config.AutowireCapableBeanFactory;
 import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.context.SmartLifecycle;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
 import org.springframework.integration.channel.QueueChannel;
 import org.springframework.integration.endpoint.EventDrivenConsumer;
 import org.springframework.integration.router.AbstractMappingMessageRouter;
 import org.springframework.integration.support.MessageBuilder;
-import org.springframework.integration.support.channel.BeanFactoryChannelResolver;
+import org.springframework.integration.support.SmartLifecycleRoleController;
 import org.springframework.integration.test.util.TestUtils;
 import org.springframework.integration.xml.DefaultXmlPayloadConverter;
 import org.springframework.integration.xml.util.XmlTestUtil;
@@ -43,12 +49,14 @@ import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.PollableChannel;
 import org.springframework.messaging.support.GenericMessage;
 import org.springframework.test.context.ContextConfiguration;
+import org.springframework.util.MultiValueMap;
 
 /**
  * @author Jonas Partner
  * @author Mark Fisher
  * @author Oleg Zhurakousky
  * @author Gunnar Hillert
+ * @author Gary Russell
  */
 @ContextConfiguration
 public class XPathRouterParserTests {
@@ -68,8 +76,8 @@ public class XPathRouterParserTests {
 
 	ConfigurableApplicationContext appContext;
 
-	public EventDrivenConsumer buildContext(String routerDef){
-		appContext = TestXmlApplicationContextHelper.getTestAppContext( channelConfig + routerDef);
+	public EventDrivenConsumer buildContext(String routerDef) {
+		appContext = TestXmlApplicationContextHelper.getTestAppContext(channelConfig + routerDef);
 		appContext.getAutowireCapableBeanFactory().autowireBeanProperties(this, AutowireCapableBeanFactory.AUTOWIRE_BY_TYPE, false);
 		EventDrivenConsumer consumer = (EventDrivenConsumer) appContext.getBean("router");
 		consumer.start();
@@ -78,10 +86,27 @@ public class XPathRouterParserTests {
 
 
 	@After
-	public void tearDown(){
-		if(appContext != null){
+	public void tearDown() {
+		if (appContext != null) {
 			appContext.close();
 		}
+	}
+
+	@Test
+	public void testParse() throws Exception {
+		ClassPathXmlApplicationContext context =
+				new ClassPathXmlApplicationContext("XPathRouterTests-context.xml", this.getClass());
+		EventDrivenConsumer consumer = (EventDrivenConsumer) context.getBean("parseOnly");
+		assertEquals(2, TestUtils.getPropertyValue(consumer, "handler.order"));
+		assertEquals(123L, TestUtils.getPropertyValue(consumer, "handler.messagingTemplate.sendTimeout"));
+		assertEquals(-1, TestUtils.getPropertyValue(consumer, "phase"));
+		assertFalse(TestUtils.getPropertyValue(consumer, "autoStartup", Boolean.class));
+		SmartLifecycleRoleController roleController = context.getBean(SmartLifecycleRoleController.class);
+		@SuppressWarnings("unchecked")
+		List<SmartLifecycle> list = (List<SmartLifecycle>) TestUtils.getPropertyValue(roleController, "lifecycles",
+				MultiValueMap.class).get("foo");
+		assertThat(list, contains((SmartLifecycle) consumer));
+		context.close();
 	}
 
 	@Test
@@ -166,8 +191,9 @@ public class XPathRouterParserTests {
 		Object defaultOutputChannelValue = accessor.getPropertyValue("defaultOutputChannel");
 		assertEquals("Default output channel not correctly set ", defaultOutput, defaultOutputChannelValue);
 		inputChannel.send(MessageBuilder.withPayload("<unrelated/>").build());
-		assertEquals("Wrong count of messages on default output channel",1, defaultOutput.getQueueSize());
+		assertEquals("Wrong count of messages on default output channel", 1, defaultOutput.getQueueSize());
 	}
+
 	@Test
 	public void testWithDynamicChanges() throws Exception {
 		ClassPathXmlApplicationContext ac = new ClassPathXmlApplicationContext("XPathRouterTests-context.xml", this.getClass());
@@ -187,7 +213,9 @@ public class XPathRouterParserTests {
 		inputChannel.send(docMessage);
 		assertNotNull(channelB.receive(10));
 		assertNull(channelA.receive(10));
+		ac.close();
 	}
+
 	@Test
 	public void testWithDynamicChangesWithExistingMappings() throws Exception {
 		ClassPathXmlApplicationContext ac = new ClassPathXmlApplicationContext("XPathRouterTests-context.xml", this.getClass());
@@ -207,6 +235,7 @@ public class XPathRouterParserTests {
 		inputChannel.send(docMessage);
 		assertNotNull(channelA.receive(10));
 		assertNull(channelB.receive(10));
+		ac.close();
 	}
 
 	@Test
@@ -230,7 +259,9 @@ public class XPathRouterParserTests {
 		inputChannel.send(docMessage);
 		assertNotNull(channelA.receive(10));
 		assertNotNull(channelB.receive(10));
+		ac.close();
 	}
+
 	@Test
 	public void testWithStringEvaluationType() throws Exception {
 		ClassPathXmlApplicationContext ac = new ClassPathXmlApplicationContext("XPathRouterTests-context.xml", this.getClass());
@@ -240,6 +271,7 @@ public class XPathRouterParserTests {
 		GenericMessage<Document> docMessage = new GenericMessage<Document>(doc);
 		inputChannel.send(docMessage);
 		assertNotNull(channelA.receive(10));
+		ac.close();
 	}
 
 	@Test
@@ -252,6 +284,7 @@ public class XPathRouterParserTests {
 		Message<?> result = channelZ.receive(0);
 		assertNotNull(result);
 		assertEquals("<name>channelA</name>", result.getPayload());
+		ac.close();
 	}
 
 

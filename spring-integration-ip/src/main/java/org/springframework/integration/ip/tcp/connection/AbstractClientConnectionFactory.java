@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,8 @@ import java.net.Socket;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
+import org.springframework.context.ApplicationEventPublisher;
+
 /**
  * Abstract class for client connection factories; client connection factories
  * establish outgoing connections.
@@ -34,6 +36,8 @@ public abstract class AbstractClientConnectionFactory extends AbstractConnection
 
 	private volatile TcpConnectionSupport theConnection;
 
+	private volatile boolean manualListenerRegistration;
+
 	/**
 	 * Constructs a factory that will established connections to the host and port.
 	 * @param host The host.
@@ -44,6 +48,17 @@ public abstract class AbstractClientConnectionFactory extends AbstractConnection
 	}
 
 	/**
+	 * Set whether to automatically (default) or manually add a {@link TcpListener} to the
+	 * connections created by this factory. By default, the factory automatically configures
+	 * the listener. When manual registration is in place, incoming messages will be delayed
+	 * until the listener is registered.
+	 * @since 1.4.5
+	 */
+	public void enableManualListenerRegistration() {
+		this.manualListenerRegistration = true;
+	}
+
+	/**
 	 * Obtains a connection - if {@link #setSingleUse(boolean)} was called with
 	 * true, a new connection is returned; otherwise a single connection is
 	 * reused for all requests while the connection remains open.
@@ -51,7 +66,7 @@ public abstract class AbstractClientConnectionFactory extends AbstractConnection
 	@Override
 	public TcpConnectionSupport getConnection() throws Exception {
 		this.checkActive();
-		return this.obtainConnection();
+		return obtainConnection();
 	}
 
 	protected TcpConnectionSupport obtainConnection() throws Exception {
@@ -61,7 +76,7 @@ public abstract class AbstractClientConnectionFactory extends AbstractConnection
 				return connection;
 			}
 		}
-		return this.obtainNewConnection();
+		return obtainNewConnection();
 	}
 
 	protected final TcpConnectionSupport obtainSharedConnection() throws InterruptedException {
@@ -105,6 +120,13 @@ public abstract class AbstractClientConnectionFactory extends AbstractConnection
 			connection.publishConnectionOpenEvent();
 			return connection;
 		}
+		catch (Exception e) {
+			ApplicationEventPublisher applicationEventPublisher = getApplicationEventPublisher();
+			if (applicationEventPublisher != null) {
+				applicationEventPublisher.publishEvent(new TcpConnectionFailedEvent(this, e));
+			}
+			throw e;
+		}
 		finally {
 			if (!singleUse) {
 				this.theConnectionLock.writeLock().unlock();
@@ -126,9 +148,14 @@ public abstract class AbstractClientConnectionFactory extends AbstractConnection
 	 * @param socket The new socket.
 	 */
 	protected void initializeConnection(TcpConnectionSupport connection, Socket socket) {
-		TcpListener listener = this.getListener();
-		if (listener != null) {
-			connection.registerListener(listener);
+		if (this.manualListenerRegistration) {
+			connection.enableManualListenerRegistration();
+		}
+		else {
+			TcpListener listener = this.getListener();
+			if (listener != null) {
+				connection.registerListener(listener);
+			}
 		}
 		TcpSender sender = this.getSender();
 		if (sender != null) {
@@ -137,7 +164,6 @@ public abstract class AbstractClientConnectionFactory extends AbstractConnection
 		connection.setMapper(this.getMapper());
 		connection.setDeserializer(this.getDeserializer());
 		connection.setSerializer(this.getSerializer());
-		connection.setSingleUse(this.isSingleUse());
 	}
 
 	/**
@@ -151,7 +177,7 @@ public abstract class AbstractClientConnectionFactory extends AbstractConnection
 	 * @return the theConnection
 	 */
 	protected TcpConnectionSupport getTheConnection() {
-		return theConnection;
+		return this.theConnection;
 	}
 
 	/**

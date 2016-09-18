@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,6 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertSame;
-import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 
 import java.util.Date;
@@ -28,7 +27,6 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
-import org.hamcrest.Matchers;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
@@ -37,7 +35,7 @@ import org.springframework.integration.IntegrationMessageHeaderAccessor;
 import org.springframework.integration.support.MessageBuilder;
 import org.springframework.integration.support.MessageBuilderFactory;
 import org.springframework.integration.support.MutableMessageBuilder;
-import org.springframework.integration.support.MutableMessageBuilderFacfory;
+import org.springframework.integration.support.MutableMessageBuilderFactory;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.MessageHeaders;
@@ -63,8 +61,8 @@ public class MessageBuilderTests {
 	@Autowired
 	private MessageBuilderFactory messageBuilderFactory;
 
-	@Test(expected= IllegalArgumentException.class) // priority must be an Integer
-	public void testPriorityHeader(){
+	@Test(expected = IllegalArgumentException.class) // priority must be an Integer
+	public void testPriorityHeader() {
 		MessageBuilder.withPayload("ha").setHeader("priority", "10").build();
 	}
 
@@ -147,11 +145,11 @@ public class MessageBuilderTests {
 
 	@Test
 	public void mutate() {
-		assertTrue(messageBuilderFactory instanceof MutableMessageBuilderFacfory);
+		assertTrue(messageBuilderFactory instanceof MutableMessageBuilderFactory);
 		in.send(new GenericMessage<String>("foo"));
 		Message<?> m1 = out.receive(0);
 		Message<?> m2 = out.receive(0);
-		assertThat(m1, Matchers.instanceOf(MutableMessage.class));
+		assertEquals("org.springframework.integration.support.MutableMessage", m1.getClass().getName());
 		assertTrue(m1 == m2);
 	}
 
@@ -181,7 +179,7 @@ public class MessageBuilderTests {
 	public void mutableFromImmutableMutate() {
 		Message<String> message1 = MessageBuilder.withPayload("test")
 				.setHeader("foo", "bar").build();
-		Message<String> message2 = new MutableMessageBuilderFacfory().fromMessage(message1).setHeader("another", 1).build();
+		Message<String> message2 = new MutableMessageBuilderFactory().fromMessage(message1).setHeader("another", 1).build();
 		assertEquals("bar", message2.getHeaders().get("foo"));
 		assertSame(message1.getHeaders().getId(), message2.getHeaders().getId());
 		assertNotSame(message1, message2);

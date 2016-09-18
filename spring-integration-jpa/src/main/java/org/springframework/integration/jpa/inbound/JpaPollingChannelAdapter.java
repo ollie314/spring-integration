@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.jpa.inbound;
 
 import org.springframework.integration.context.IntegrationObjectSupport;
@@ -47,7 +48,7 @@ import org.springframework.util.Assert;
  * @since 2.2
  *
  */
-public class JpaPollingChannelAdapter extends IntegrationObjectSupport implements MessageSource<Object>{
+public class JpaPollingChannelAdapter extends IntegrationObjectSupport implements MessageSource<Object> {
 
 	private final JpaExecutor jpaExecutor;
 
@@ -80,7 +81,7 @@ public class JpaPollingChannelAdapter extends IntegrationObjectSupport implement
 	 */
 	public Message<Object> receive() {
 
-		final Object payload = jpaExecutor.poll();
+		final Object payload = this.jpaExecutor.poll();
 
 		if (payload == null) {
 			return null;
@@ -90,7 +91,7 @@ public class JpaPollingChannelAdapter extends IntegrationObjectSupport implement
 	}
 
 	@Override
-	public String getComponentType(){
+	public String getComponentType() {
 		return "jpa:inbound-channel-adapter";
 	}
 

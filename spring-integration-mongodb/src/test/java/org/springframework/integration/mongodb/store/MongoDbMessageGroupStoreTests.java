@@ -1,18 +1,19 @@
 /*
- * Copyright 2007-2013 the original author or authors
+ * Copyright 2007-2016 the original author or authors.
  *
- *     Licensed under the Apache License, Version 2.0 (the "License");
- *     you may not use this file except in compliance with the License.
- *     You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
- *     Unless required by applicable law or agreed to in writing, software
- *     distributed under the License is distributed on an "AS IS" BASIS,
- *     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *     See the License for the specific language governing permissions and
- *     limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
+
 package org.springframework.integration.mongodb.store;
 
 import org.junit.Test;
@@ -21,7 +22,7 @@ import org.springframework.data.mongodb.core.SimpleMongoDbFactory;
 import org.springframework.integration.mongodb.rules.MongoDbAvailable;
 import org.springframework.integration.store.MessageStore;
 
-import com.mongodb.Mongo;
+import com.mongodb.MongoClient;
 
 /**
  * @author Oleg Zhurakousky
@@ -33,7 +34,10 @@ public class MongoDbMessageGroupStoreTests extends AbstractMongoDbMessageGroupSt
 
 	@Override
 	protected MongoDbMessageStore getMessageGroupStore() throws Exception {
-		return new MongoDbMessageStore( new SimpleMongoDbFactory(new Mongo(), "test"));
+		MongoDbMessageStore mongoDbMessageStore =
+				new MongoDbMessageStore(new SimpleMongoDbFactory(new MongoClient(), "test"));
+		mongoDbMessageStore.afterPropertiesSet();
+		return mongoDbMessageStore;
 	}
 
 	@Override
@@ -46,4 +50,5 @@ public class MongoDbMessageGroupStoreTests extends AbstractMongoDbMessageGroupSt
 	public void testWithAggregatorWithShutdown() throws Exception {
 		super.testWithAggregatorWithShutdown("mongo-aggregator-config.xml");
 	}
+
 }

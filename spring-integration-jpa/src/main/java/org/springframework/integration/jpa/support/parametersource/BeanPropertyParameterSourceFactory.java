@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.jpa.support.parametersource;
 
 import java.util.Collections;
@@ -22,6 +23,7 @@ import java.util.Map;
 /**
  *
  * @author Gunnar Hillert
+ * @author Gary Russell
  * @since 2.2
  *
  */
@@ -43,30 +45,33 @@ public class BeanPropertyParameterSourceFactory implements ParameterSourceFactor
 		this.staticParameters = staticParameters;
 	}
 
+	@Override
 	public ParameterSource createParameterSource(Object input) {
-		ParameterSource toReturn = new StaticBeanPropertyParameterSource(input, staticParameters);
+		ParameterSource toReturn = new StaticBeanPropertyParameterSource(input, this.staticParameters);
 		return toReturn;
 	}
 
-	private static class StaticBeanPropertyParameterSource implements
+	private static final class StaticBeanPropertyParameterSource implements
 			ParameterSource {
 
 		private final BeanPropertyParameterSource input;
 
 		private final Map<String, Object> staticParameters;
 
-		public StaticBeanPropertyParameterSource(Object input, Map<String, Object> staticParameters) {
+		private StaticBeanPropertyParameterSource(Object input, Map<String, Object> staticParameters) {
 			this.input = new BeanPropertyParameterSource(input);
 			this.staticParameters = staticParameters;
 		}
 
+		@Override
 		public Object getValue(String paramName) {
-			return staticParameters.containsKey(paramName) ? staticParameters.get(paramName) : input
+			return this.staticParameters.containsKey(paramName) ? this.staticParameters.get(paramName) : this.input
 					.getValue(paramName);
 		}
 
+		@Override
 		public boolean hasValue(String paramName) {
-			return staticParameters.containsKey(paramName) || input.hasValue(paramName);
+			return this.staticParameters.containsKey(paramName) || this.input.hasValue(paramName);
 		}
 
 	}

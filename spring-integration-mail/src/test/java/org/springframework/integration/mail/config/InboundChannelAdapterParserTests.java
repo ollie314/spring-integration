@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,7 +37,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
-import org.springframework.messaging.MessageChannel;
 import org.springframework.integration.endpoint.SourcePollingChannelAdapter;
 import org.springframework.integration.mail.AbstractMailReceiver;
 import org.springframework.integration.mail.ImapIdleChannelAdapter;
@@ -45,16 +44,20 @@ import org.springframework.integration.mail.ImapMailReceiver;
 import org.springframework.integration.mail.Pop3MailReceiver;
 import org.springframework.integration.mail.SearchTermStrategy;
 import org.springframework.integration.test.util.TestUtils;
+import org.springframework.messaging.MessageChannel;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 
 /**
  * @author Mark Fisher
  * @author Oleg Zhurakousky
+ * @author Gary Russell
  * @since 1.0.5
  */
 @ContextConfiguration
 @RunWith(SpringJUnit4ClassRunner.class)
+@DirtiesContext
 public class InboundChannelAdapterParserTests {
 
 	@Autowired
@@ -72,16 +75,22 @@ public class InboundChannelAdapterParserTests {
 	public void pop3ShouldDeleteTrue() {
 		AbstractMailReceiver receiver = this.getReceiver("pop3ShouldDeleteTrue");
 		assertEquals(Pop3MailReceiver.class, receiver.getClass());
-		Boolean value = (Boolean) new DirectFieldAccessor(receiver).getPropertyValue("shouldDeleteMessages");
+		DirectFieldAccessor receiverAccessor = new DirectFieldAccessor(receiver);
+		Boolean value = (Boolean) receiverAccessor.getPropertyValue("shouldDeleteMessages");
 		assertTrue(value);
+		assertEquals(Boolean.FALSE, receiverAccessor.getPropertyValue("embeddedPartsAsBytes"));
+		assertNotNull(receiverAccessor.getPropertyValue("headerMapper"));
 	}
 
 	@Test
 	public void imapShouldMarkMessagesAsRead() {
 		AbstractMailReceiver receiver = this.getReceiver("imapShouldMarkAsReadTrue");
 		assertEquals(ImapMailReceiver.class, receiver.getClass());
-		Boolean value = (Boolean) new DirectFieldAccessor(receiver).getPropertyValue("shouldMarkMessagesAsRead");
+		DirectFieldAccessor receiverAccessor = new DirectFieldAccessor(receiver);
+		Boolean value = (Boolean) receiverAccessor.getPropertyValue("shouldMarkMessagesAsRead");
 		assertTrue(value);
+		assertEquals(Boolean.TRUE, receiverAccessor.getPropertyValue("embeddedPartsAsBytes"));
+		assertNull(receiverAccessor.getPropertyValue("headerMapper"));
 	}
 
 	@Test
@@ -96,16 +105,20 @@ public class InboundChannelAdapterParserTests {
 	public void imapShouldDeleteTrue() {
 		AbstractMailReceiver receiver = this.getReceiver("imapShouldDeleteTrue");
 		assertEquals(ImapMailReceiver.class, receiver.getClass());
-		Boolean value = (Boolean) new DirectFieldAccessor(receiver).getPropertyValue("shouldDeleteMessages");
+		DirectFieldAccessor receiverAccessor = new DirectFieldAccessor(receiver);
+		Boolean value = (Boolean) receiverAccessor.getPropertyValue("shouldDeleteMessages");
 		assertTrue(value);
+		assertEquals(Boolean.TRUE, receiverAccessor.getPropertyValue("simpleContent"));
 	}
 
 	@Test
 	public void imapShouldDeleteFalse() {
 		AbstractMailReceiver receiver = this.getReceiver("imapShouldDeleteFalse");
 		assertEquals(ImapMailReceiver.class, receiver.getClass());
-		Boolean value = (Boolean) new DirectFieldAccessor(receiver).getPropertyValue("shouldDeleteMessages");
+		DirectFieldAccessor receiverAccessor = new DirectFieldAccessor(receiver);
+		Boolean value = (Boolean) receiverAccessor.getPropertyValue("shouldDeleteMessages");
 		assertFalse(value);
+		assertEquals(Boolean.FALSE, receiverAccessor.getPropertyValue("simpleContent"));
 	}
 
 
@@ -278,10 +291,11 @@ public class InboundChannelAdapterParserTests {
 	public void inboundChannelAdapterRequiresShouldDeleteMessages() {
 		try {
 			new ClassPathXmlApplicationContext(
-					"org/springframework/integration/mail/config/InboundChannelAdapterParserTests-invalidContext.xml");
+					"org/springframework/integration/mail/config/InboundChannelAdapterParserTests-invalidContext.xml")
+				.close();
 			fail("expected a parser error");
 		}
-		catch(BeanDefinitionStoreException e) {
+		catch (BeanDefinitionStoreException e) {
 			assertEquals(SAXParseException.class, e.getCause().getClass());
 		}
 	}
@@ -293,19 +307,22 @@ public class InboundChannelAdapterParserTests {
 	public void imapWithSearchTermStrategy() {
 		AbstractMailReceiver receiver = this.getReceiver("imapWithSearch");
 		assertEquals(ImapMailReceiver.class, receiver.getClass());
-		Object sts = new DirectFieldAccessor(receiver).getPropertyValue("searchTermStrategy");
+		DirectFieldAccessor receiverAccessor = new DirectFieldAccessor(receiver);
+		Object sts = receiverAccessor.getPropertyValue("searchTermStrategy");
 		assertNotNull(sts);
 		assertSame(context.getBean(SearchTermStrategy.class), sts);
+		assertEquals("flagged", receiverAccessor.getPropertyValue("userFlag"));
 	}
 
 	@Test
 	public void pop3WithSearchTermStrategy() {
 		try {
 			new ClassPathXmlApplicationContext(
-					"org/springframework/integration/mail/config/InboundChannelAdapterParserTests-pop3Search-context.xml");
+				"org/springframework/integration/mail/config/InboundChannelAdapterParserTests-pop3Search-context.xml")
+					.close();
 			fail("expected a parser error");
 		}
-		catch(BeanCreationException e) {
+		catch (BeanCreationException e) {
 			assertTrue(e.getMessage().contains("searchTermStrategy is only allowed with imap"));
 		}
 	}

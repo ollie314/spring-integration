@@ -1,14 +1,17 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
- * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
- * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
- * specific language governing permissions and limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package org.springframework.integration.handler;
@@ -21,7 +24,6 @@ import org.apache.commons.logging.LogFactory;
 
 import org.springframework.expression.EvaluationContext;
 import org.springframework.expression.Expression;
-import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.integration.dispatcher.AggregateMessageDeliveryException;
 import org.springframework.integration.expression.ExpressionUtils;
 import org.springframework.messaging.Message;
@@ -35,16 +37,14 @@ import org.springframework.util.StringUtils;
  *
  * @author Mark Fisher
  * @author Gary Russell
+ * @author Artem Bilan
  * @since 1.0.1
  */
 public class LoggingHandler extends AbstractMessageHandler {
 
-	public static enum Level {
+	public enum Level {
 		FATAL, ERROR, WARN, INFO, DEBUG, TRACE
 	}
-
-	private static final SpelExpressionParser EXPRESSION_PARSER = new SpelExpressionParser();
-
 
 	private volatile Expression expression;
 
@@ -65,9 +65,10 @@ public class LoggingHandler extends AbstractMessageHandler {
 	 * The valid levels are: FATAL, ERROR, WARN, INFO, DEBUG, or TRACE
 	 * </p>
 	 * @param level The level.
+	 * @see #LoggingHandler(Level)
 	 */
 	public LoggingHandler(String level) {
-		Assert.notNull(level, "'level' cannot be null");
+		Assert.hasText(level, "'level' cannot be empty");
 		try {
 			this.level = Level.valueOf(level.toUpperCase());
 		}
@@ -76,26 +77,51 @@ public class LoggingHandler extends AbstractMessageHandler {
 					+ "'. The (case-insensitive) supported values are: "
 					+ StringUtils.arrayToCommaDelimitedString(Level.values()));
 		}
-		this.evaluationContext = ExpressionUtils.createStandardEvaluationContext();
-		this.expression = EXPRESSION_PARSER.parseExpression("payload");
 	}
 
-	public void setExpression(String expressionString) {
-		Assert.isTrue(!(this.shouldLogFullMessageSet), "Cannot set both 'expression' AND 'shouldLogFullMessage' properties");
+	/**
+	 * Create a {@link LoggingHandler} with the given log {@link Level}.
+	 * @param level the {@link Level} to use.
+	 * @since 4.3
+	 */
+	public LoggingHandler(Level level) {
+		Assert.notNull(level, "'level' cannot be null");
+		this.level = level;
+	}
+
+	/**
+	 * Set a SpEL expression string to use.
+	 * @param expressionString the SpEL expression string to use.
+	 * @since 4.3
+	 * @see #setLogExpression(Expression)
+	 */
+	public void setLogExpressionString(String expressionString) {
+		Assert.hasText(expressionString, "'expressionString' must not be empty");
+		setLogExpression(EXPRESSION_PARSER.parseExpression(expressionString));
+	}
+
+	/**
+	 * Set an {@link Expression} to evaluate a log entry at runtime against the request {@link Message}.
+	 * @param expression the {@link Expression} to use.
+	 * @since 4.3
+	 * @see #setLogExpressionString(String)
+	 */
+	public void setLogExpression(Expression expression) {
+		Assert.isTrue(!(this.shouldLogFullMessageSet),
+				"Cannot set both 'expression' AND 'shouldLogFullMessage' properties");
 		this.expressionSet = true;
-		this.expression = EXPRESSION_PARSER.parseExpression(expressionString);
+		this.expression = expression;
 	}
 
 	/**
 	 * @return The current logging {@link Level}.
 	 */
 	public Level getLevel() {
-		return level;
+		return this.level;
 	}
 
 	/**
-	 * Set the logging {@link Level}.
-	 *
+	 * Set the logging {@link Level} to change the behavior at runtime.
 	 * @param level the level.
 	 */
 	public void setLevel(Level level) {
@@ -111,14 +137,14 @@ public class LoggingHandler extends AbstractMessageHandler {
 	/**
 	 * Specify whether to log the full Message. Otherwise, only the payload will be logged. This value is
 	 * <code>false</code> by default.
-	 *
 	 * @param shouldLogFullMessage true if the complete message should be logged.
 	 */
 	public void setShouldLogFullMessage(boolean shouldLogFullMessage) {
 		Assert.isTrue(!(this.expressionSet), "Cannot set both 'expression' AND 'shouldLogFullMessage' properties");
 		this.shouldLogFullMessageSet = true;
-		this.expression = (shouldLogFullMessage) ? EXPRESSION_PARSER.parseExpression("#root") : EXPRESSION_PARSER
-				.parseExpression("payload");
+		this.expression = (shouldLogFullMessage)
+				? EXPRESSION_PARSER.parseExpression("#root")
+				: EXPRESSION_PARSER.parseExpression("payload");
 	}
 
 	@Override
@@ -129,40 +155,43 @@ public class LoggingHandler extends AbstractMessageHandler {
 	@Override
 	protected void onInit() throws Exception {
 		super.onInit();
-		this.evaluationContext = ExpressionUtils.createStandardEvaluationContext(this.getBeanFactory());
+		this.evaluationContext = ExpressionUtils.createStandardEvaluationContext(getBeanFactory());
+		if (this.expression == null) {
+			this.expression = EXPRESSION_PARSER.parseExpression("payload");
+		}
 	}
 
 	@Override
 	protected void handleMessageInternal(Message<?> message) throws Exception {
 		switch (this.level) {
 		case FATAL:
-			if (messageLogger.isFatalEnabled()) {
-				messageLogger.fatal(createLogMessage(message));
+			if (this.messageLogger.isFatalEnabled()) {
+				this.messageLogger.fatal(createLogMessage(message));
 			}
 			break;
 		case ERROR:
-			if (messageLogger.isErrorEnabled()) {
-				messageLogger.error(createLogMessage(message));
+			if (this.messageLogger.isErrorEnabled()) {
+				this.messageLogger.error(createLogMessage(message));
 			}
 			break;
 		case WARN:
-			if (messageLogger.isWarnEnabled()) {
-				messageLogger.warn(createLogMessage(message));
+			if (this.messageLogger.isWarnEnabled()) {
+				this.messageLogger.warn(createLogMessage(message));
 			}
 			break;
 		case INFO:
-			if (messageLogger.isInfoEnabled()) {
-				messageLogger.info(createLogMessage(message));
+			if (this.messageLogger.isInfoEnabled()) {
+				this.messageLogger.info(createLogMessage(message));
 			}
 			break;
 		case DEBUG:
-			if (messageLogger.isDebugEnabled()) {
-				messageLogger.debug(createLogMessage(message));
+			if (this.messageLogger.isDebugEnabled()) {
+				this.messageLogger.debug(createLogMessage(message));
 			}
 			break;
 		case TRACE:
-			if (messageLogger.isTraceEnabled()) {
-				messageLogger.trace(createLogMessage(message));
+			if (this.messageLogger.isTraceEnabled()) {
+				this.messageLogger.trace(createLogMessage(message));
 			}
 			break;
 		default:
@@ -177,7 +206,7 @@ public class LoggingHandler extends AbstractMessageHandler {
 			StringWriter stringWriter = new StringWriter();
 			if (logMessage instanceof AggregateMessageDeliveryException) {
 				stringWriter.append(((Throwable) logMessage).getMessage());
-				for (Exception exception : ((AggregateMessageDeliveryException)logMessage).getAggregatedExceptions()) {
+				for (Exception exception : ((AggregateMessageDeliveryException) logMessage).getAggregatedExceptions()) {
 					exception.printStackTrace(new PrintWriter(stringWriter, true));
 				}
 			}

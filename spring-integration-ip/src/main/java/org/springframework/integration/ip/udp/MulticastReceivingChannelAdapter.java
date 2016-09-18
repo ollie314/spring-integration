@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2011 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,17 +26,18 @@ import org.springframework.messaging.MessagingException;
 /**
  * Channel adapter that joins a multicast group and receives incoming packets and
  * sends them to an output channel.
- * 
+ *
  * @author Gary Russell
+ * @author Marcin Pilaczynski
  * @since 2.0
  */
 public class MulticastReceivingChannelAdapter extends UnicastReceivingChannelAdapter {
 
-	private String group;
+	private final String group;
 
 
 	/**
-	 * Constructs a MulticastReceivingChannelAdapter that listens for packets on the 
+	 * Constructs a MulticastReceivingChannelAdapter that listens for packets on the
 	 * specified multichannel address (group) and port.
 	 * @param group The multichannel address.
 	 * @param port The port.
@@ -47,7 +48,7 @@ public class MulticastReceivingChannelAdapter extends UnicastReceivingChannelAda
 	}
 
 	/**
-	 * Constructs a MulticastReceivingChannelAdapter that listens for packets on the 
+	 * Constructs a MulticastReceivingChannelAdapter that listens for packets on the
 	 * specified multichannel address (group) and port. Enables setting the lengthCheck
 	 * option, which expects a length to precede the incoming packets.
 	 * @param group The multichannel address.
@@ -60,18 +61,19 @@ public class MulticastReceivingChannelAdapter extends UnicastReceivingChannelAda
 	}
 
 	@Override
-	protected synchronized DatagramSocket getSocket() {
-		if (this.getTheSocket() == null) {
+	public synchronized DatagramSocket getSocket() {
+		if (getTheSocket() == null) {
 			try {
-				MulticastSocket socket = new MulticastSocket(this.getPort());
+				int port = getPort();
+				MulticastSocket socket = port == 0 ? new MulticastSocket() : new MulticastSocket(port);
 				String localAddress = this.getLocalAddress();
 				if (localAddress != null) {
 					InetAddress whichNic = InetAddress.getByName(localAddress);
 					socket.setInterface(whichNic);
 				}
-				this.setSocketAttributes(socket);
+				setSocketAttributes(socket);
 				socket.joinGroup(InetAddress.getByName(this.group));
-				this.setSocket(socket);
+				setSocket(socket);
 			}
 			catch (IOException e) {
 				throw new MessagingException("failed to create DatagramSocket", e);

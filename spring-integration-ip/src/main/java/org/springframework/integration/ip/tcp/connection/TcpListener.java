@@ -1,5 +1,5 @@
 /*
- * Copyright 2001-2011 the original author or authors.
+ * Copyright 2001-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,13 +19,14 @@ package org.springframework.integration.ip.tcp.connection;
 import org.springframework.messaging.Message;
 
 /**
- * Classes that implement this interface may register with a 
- * connection factory to receive messages retrieved from a 
+ * Classes that implement this interface may register with a
+ * connection factory to receive messages retrieved from a
  * {@link TcpConnection}
  * @author Gary Russell
  * @since 2.0
  *
  */
+@FunctionalInterface
 public interface TcpListener {
 
 	/**
@@ -33,6 +34,6 @@ public interface TcpListener {
 	 * @param message The message.
 	 * @return true if the message was intercepted
 	 */
-	abstract boolean onMessage(Message<?> message);
-	
+	boolean onMessage(Message<?> message);
+
 }

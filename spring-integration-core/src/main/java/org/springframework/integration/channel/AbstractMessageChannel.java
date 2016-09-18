@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,17 +16,29 @@
 
 package org.springframework.integration.channel;
 
+import java.util.ArrayDeque;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.Deque;
+import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
+import org.apache.commons.logging.Log;
+
 import org.springframework.core.OrderComparator;
-import org.springframework.core.convert.ConversionService;
 import org.springframework.integration.context.IntegrationContextUtils;
 import org.springframework.integration.context.IntegrationObjectSupport;
 import org.springframework.integration.history.MessageHistory;
-import org.springframework.integration.history.TrackableComponent;
 import org.springframework.integration.support.converter.DefaultDatatypeChannelMessageConverter;
+import org.springframework.integration.support.management.AbstractMessageChannelMetrics;
+import org.springframework.integration.support.management.ConfigurableMetricsAware;
+import org.springframework.integration.support.management.DefaultMessageChannelMetrics;
+import org.springframework.integration.support.management.IntegrationManagedResource;
+import org.springframework.integration.support.management.MessageChannelMetrics;
+import org.springframework.integration.support.management.MetricsContext;
+import org.springframework.integration.support.management.Statistics;
+import org.springframework.integration.support.management.TrackableComponent;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.MessageDeliveryException;
@@ -47,18 +59,34 @@ import org.springframework.util.StringUtils;
  * @author Gary Russell
  * @author Artem Bilan
  */
+@IntegrationManagedResource
 public abstract class AbstractMessageChannel extends IntegrationObjectSupport
-		implements MessageChannel, TrackableComponent, ChannelInterceptorAware {
+		implements MessageChannel, TrackableComponent, ChannelInterceptorAware, MessageChannelMetrics,
+		ConfigurableMetricsAware<AbstractMessageChannelMetrics> {
+
+	protected final ChannelInterceptorList interceptors;
+
+	private final Comparator<Object> orderComparator = new OrderComparator();
 
 	private volatile boolean shouldTrack = false;
 
 	private volatile Class<?>[] datatypes = new Class<?>[0];
 
-	private final ChannelInterceptorList interceptors = new ChannelInterceptorList();
-
 	private volatile String fullChannelName;
 
 	private volatile MessageConverter messageConverter;
+
+	private volatile boolean countsEnabled;
+
+	private volatile boolean statsEnabled;
+
+	private volatile boolean loggingEnabled = true;
+
+	private volatile AbstractMessageChannelMetrics channelMetrics = new DefaultMessageChannelMetrics();
+
+	public AbstractMessageChannel() {
+		this.interceptors = new ChannelInterceptorList(logger);
+	}
 
 	@Override
 	public String getComponentType() {
@@ -68,6 +96,53 @@ public abstract class AbstractMessageChannel extends IntegrationObjectSupport
 	@Override
 	public void setShouldTrack(boolean shouldTrack) {
 		this.shouldTrack = shouldTrack;
+	}
+
+	@Override
+	public void setCountsEnabled(boolean countsEnabled) {
+		this.countsEnabled = countsEnabled;
+		if (!countsEnabled) {
+			this.statsEnabled = false;
+		}
+	}
+
+	@Override
+	public boolean isCountsEnabled() {
+		return this.countsEnabled;
+	}
+
+	@Override
+	public void setStatsEnabled(boolean statsEnabled) {
+		if (statsEnabled) {
+			this.countsEnabled = true;
+		}
+		this.statsEnabled = statsEnabled;
+		this.channelMetrics.setFullStatsEnabled(statsEnabled);
+	}
+
+	@Override
+	public boolean isStatsEnabled() {
+		return this.statsEnabled;
+	}
+
+	@Override
+	public boolean isLoggingEnabled() {
+		return this.loggingEnabled;
+	}
+
+	@Override
+	public void setLoggingEnabled(boolean loggingEnabled) {
+		this.loggingEnabled = loggingEnabled;
+	}
+
+	protected AbstractMessageChannelMetrics getMetrics() {
+		return this.channelMetrics;
+	}
+
+	@Override
+	public void configureMetrics(AbstractMessageChannelMetrics metrics) {
+		Assert.notNull(metrics, "'metrics' must not be null");
+		this.channelMetrics = metrics;
 	}
 
 	/**
@@ -96,7 +171,7 @@ public abstract class AbstractMessageChannel extends IntegrationObjectSupport
 	 */
 	@Override
 	public void setInterceptors(List<ChannelInterceptor> interceptors) {
-		Collections.sort(interceptors, new OrderComparator());
+		Collections.sort(interceptors, this.orderComparator);
 		this.interceptors.set(interceptors);
 	}
 
@@ -119,24 +194,6 @@ public abstract class AbstractMessageChannel extends IntegrationObjectSupport
 	@Override
 	public void addInterceptor(int index, ChannelInterceptor interceptor) {
 		this.interceptors.add(index, interceptor);
-	}
-
-	/**
-	 * Specify the {@link ConversionService} to use when trying to convert to
-	 * one of this channel's supported datatypes for a Message whose payload
-	 * does not already match. If this property is not set explicitly but
-	 * the channel is managed within a context, it will attempt to locate a
-	 * bean named "integrationConversionService" defined within that context.
-	 *
-	 * @param conversionService The conversion service.
-	 * @deprecated No longer used; see {@link DefaultDatatypeChannelMessageConverter}.
-	 */
-	@Deprecated
-	@Override
-	public void setConversionService(ConversionService conversionService) {
-		if (logger.isWarnEnabled()) {
-			logger.warn("The conversion service is no longer used; see setMessageConverter()");
-		}
 	}
 
 	/**
@@ -167,6 +224,16 @@ public abstract class AbstractMessageChannel extends IntegrationObjectSupport
 		return this.interceptors.getInterceptors();
 	}
 
+	@Override
+	public boolean removeInterceptor(ChannelInterceptor interceptor) {
+		return this.interceptors.remove(interceptor);
+	}
+
+	@Override
+	public ChannelInterceptor removeInterceptor(int index) {
+		return this.interceptors.remove(index);
+	}
+
 	/**
 	 * Exposes the interceptor list for subclasses.
 	 *
@@ -174,6 +241,86 @@ public abstract class AbstractMessageChannel extends IntegrationObjectSupport
 	 */
 	protected ChannelInterceptorList getInterceptors() {
 		return this.interceptors;
+	}
+
+	@Override
+	public void reset() {
+		this.channelMetrics.reset();
+	}
+
+	@Override
+	public int getSendCount() {
+		return this.channelMetrics.getSendCount();
+	}
+
+	@Override
+	public long getSendCountLong() {
+		return this.channelMetrics.getSendCountLong();
+	}
+
+	@Override
+	public int getSendErrorCount() {
+		return this.channelMetrics.getSendErrorCount();
+	}
+
+	@Override
+	public long getSendErrorCountLong() {
+		return this.channelMetrics.getSendErrorCountLong();
+	}
+
+	@Override
+	public double getTimeSinceLastSend() {
+		return this.channelMetrics.getTimeSinceLastSend();
+	}
+
+	@Override
+	public double getMeanSendRate() {
+		return this.channelMetrics.getMeanSendRate();
+	}
+
+	@Override
+	public double getMeanErrorRate() {
+		return this.channelMetrics.getMeanErrorRate();
+	}
+
+	@Override
+	public double getMeanErrorRatio() {
+		return this.channelMetrics.getMeanErrorRatio();
+	}
+
+	@Override
+	public double getMeanSendDuration() {
+		return this.channelMetrics.getMeanSendDuration();
+	}
+
+	@Override
+	public double getMinSendDuration() {
+		return this.channelMetrics.getMinSendDuration();
+	}
+
+	@Override
+	public double getMaxSendDuration() {
+		return this.channelMetrics.getMaxSendDuration();
+	}
+
+	@Override
+	public double getStandardDeviationSendDuration() {
+		return this.channelMetrics.getStandardDeviationSendDuration();
+	}
+
+	@Override
+	public Statistics getSendDuration() {
+		return this.channelMetrics.getSendDuration();
+	}
+
+	@Override
+	public Statistics getSendRate() {
+		return this.channelMetrics.getSendRate();
+	}
+
+	@Override
+	public Statistics getErrorRate() {
+		return this.channelMetrics.getErrorRate();
 	}
 
 	@Override
@@ -188,6 +335,9 @@ public abstract class AbstractMessageChannel extends IntegrationObjectSupport
 							MessageConverter.class);
 				}
 			}
+		}
+		if (this.statsEnabled) {
+			this.channelMetrics.setFullStatsEnabled(true);
 		}
 	}
 
@@ -244,19 +394,54 @@ public abstract class AbstractMessageChannel extends IntegrationObjectSupport
 		if (this.shouldTrack) {
 			message = MessageHistory.write(message, this, this.getMessageBuilderFactory());
 		}
+
+		Deque<ChannelInterceptor> interceptorStack = null;
+		boolean sent = false;
+		boolean metricsProcessed = false;
+		MetricsContext metrics = null;
+		boolean countsEnabled = this.countsEnabled;
+		ChannelInterceptorList interceptors = this.interceptors;
+		AbstractMessageChannelMetrics channelMetrics = this.channelMetrics;
 		try {
 			if (this.datatypes.length > 0) {
 				message = this.convertPayloadIfNecessary(message);
 			}
-			message = this.interceptors.preSend(message, this);
-			if (message == null) {
-				return false;
+			boolean debugEnabled = this.loggingEnabled && logger.isDebugEnabled();
+			if (debugEnabled) {
+				logger.debug("preSend on channel '" + this + "', message: " + message);
 			}
-			boolean sent = this.doSend(message, timeout);
-			this.interceptors.postSend(message, this, sent);
+			if (interceptors.getSize() > 0) {
+				interceptorStack = new ArrayDeque<ChannelInterceptor>();
+				message = interceptors.preSend(message, this, interceptorStack);
+				if (message == null) {
+					return false;
+				}
+			}
+			if (countsEnabled) {
+				metrics = channelMetrics.beforeSend();
+			}
+			sent = this.doSend(message, timeout);
+			if (countsEnabled) {
+				channelMetrics.afterSend(metrics, sent);
+				metricsProcessed = true;
+			}
+
+			if (debugEnabled) {
+				logger.debug("postSend (sent=" + sent + ") on channel '" + this + "', message: " + message);
+			}
+			if (interceptorStack != null) {
+				interceptors.postSend(message, this, sent);
+				interceptors.afterSendCompletion(message, this, sent, null, interceptorStack);
+			}
 			return sent;
 		}
 		catch (Exception e) {
+			if (countsEnabled && !metricsProcessed) {
+				channelMetrics.afterSend(metrics, false);
+			}
+			if (interceptorStack != null) {
+				interceptors.afterSendCompletion(message, this, sent, e, interceptorStack);
+			}
 			if (e instanceof MessagingException) {
 				throw (MessagingException) e;
 			}
@@ -281,7 +466,10 @@ public abstract class AbstractMessageChannel extends IntegrationObjectSupport
 						return (Message<?>) converted;
 					}
 					else {
-						return this.getMessageBuilderFactory().withPayload(converted).copyHeaders(message.getHeaders()).build();
+						return getMessageBuilderFactory()
+								.withPayload(converted)
+								.copyHeaders(message.getHeaders())
+								.build();
 					}
 				}
 			}
@@ -309,75 +497,96 @@ public abstract class AbstractMessageChannel extends IntegrationObjectSupport
 	/**
 	 * A convenience wrapper class for the list of ChannelInterceptors.
 	 */
-	protected class ChannelInterceptorList {
+	protected static class ChannelInterceptorList {
 
-		private final List<ChannelInterceptor> interceptors = new CopyOnWriteArrayList<ChannelInterceptor>();
+		private final Log logger;
 
+		protected final List<ChannelInterceptor> interceptors = new CopyOnWriteArrayList<ChannelInterceptor>();
+
+		private volatile int size;
+
+		public ChannelInterceptorList(Log logger) {
+			this.logger = logger;
+		}
 
 		public boolean set(List<ChannelInterceptor> interceptors) {
 			synchronized (this.interceptors) {
 				this.interceptors.clear();
+				this.size = interceptors.size();
 				return this.interceptors.addAll(interceptors);
 			}
 		}
 
+		public int getSize() {
+			return this.size;
+		}
+
 		public boolean add(ChannelInterceptor interceptor) {
+			this.size++;
 			return this.interceptors.add(interceptor);
 		}
 
 		public void add(int index, ChannelInterceptor interceptor) {
+			this.size++;
 			this.interceptors.add(index, interceptor);
 		}
 
-		public Message<?> preSend(Message<?> message, MessageChannel channel) {
-			if (logger.isDebugEnabled()) {
-				logger.debug("preSend on channel '" + channel + "', message: " + message);
-			}
-			if (this.interceptors.size() > 0) {
+		public Message<?> preSend(Message<?> message, MessageChannel channel,
+				Deque<ChannelInterceptor> interceptorStack) {
+			if (this.size > 0) {
 				for (ChannelInterceptor interceptor : this.interceptors) {
 					message = interceptor.preSend(message, channel);
 					if (message == null) {
+						if (this.logger.isDebugEnabled()) {
+							this.logger.debug(interceptor.getClass().getSimpleName()
+									+ " returned null from preSend, i.e. precluding the send.");
+						}
+						afterSendCompletion(null, channel, false, null, interceptorStack);
 						return null;
 					}
+					interceptorStack.add(interceptor);
 				}
 			}
 			return message;
 		}
 
 		public void postSend(Message<?> message, MessageChannel channel, boolean sent) {
-			if (logger.isDebugEnabled()) {
-				logger.debug("postSend (sent=" + sent + ") on channel '" + channel + "', message: " + message);
-			}
-			if (this.interceptors.size() > 0) {
-				for (ChannelInterceptor interceptor : interceptors) {
+			if (this.size > 0) {
+				for (ChannelInterceptor interceptor : this.interceptors) {
 					interceptor.postSend(message, channel, sent);
 				}
 			}
 		}
 
-		public boolean preReceive(MessageChannel channel) {
-			if (logger.isTraceEnabled()) {
-				logger.trace("preReceive on channel '" + channel + "'");
+		public void afterSendCompletion(Message<?> message, MessageChannel channel, boolean sent, Exception ex,
+				Deque<ChannelInterceptor> interceptorStack) {
+			for (Iterator<ChannelInterceptor> iterator = interceptorStack.descendingIterator(); iterator.hasNext(); ) {
+				ChannelInterceptor interceptor = iterator.next();
+				try {
+					interceptor.afterSendCompletion(message, channel, sent, ex);
+				}
+				catch (Exception ex2) {
+					this.logger.error("Exception from afterSendCompletion in " + interceptor, ex2);
+				}
 			}
-			if (this.interceptors.size() > 0) {
-				for (ChannelInterceptor interceptor : interceptors) {
+		}
+
+		public boolean preReceive(MessageChannel channel, Deque<ChannelInterceptor> interceptorStack) {
+			if (this.size > 0) {
+				for (ChannelInterceptor interceptor : this.interceptors) {
 					if (!interceptor.preReceive(channel)) {
+						afterReceiveCompletion(null, channel, null, interceptorStack);
 						return false;
 					}
+					interceptorStack.add(interceptor);
 				}
 			}
 			return true;
 		}
 
 		public Message<?> postReceive(Message<?> message, MessageChannel channel) {
-			if (message != null && logger.isDebugEnabled()) {
-				logger.debug("postReceive on channel '" + channel + "', message: " + message);
-			}
-			else if (logger.isTraceEnabled()) {
-				logger.trace("postReceive on channel '" + channel + "', message is null");
-			}
-			if (this.interceptors.size() > 0) {
-				for (ChannelInterceptor interceptor : interceptors) {
+			if (this.size > 0) {
+				for (ChannelInterceptor interceptor : this.interceptors) {
 					message = interceptor.postReceive(message, channel);
 					if (message == null) {
 						return null;
@@ -387,8 +596,41 @@ public abstract class AbstractMessageChannel extends IntegrationObjectSupport
 			return message;
 		}
 
+		public void afterReceiveCompletion(Message<?> message, MessageChannel channel, Exception ex,
+				Deque<ChannelInterceptor> interceptorStack) {
+			for (Iterator<ChannelInterceptor> iterator = interceptorStack.descendingIterator(); iterator.hasNext(); ) {
+				ChannelInterceptor interceptor = iterator.next();
+				try {
+					interceptor.afterReceiveCompletion(message, channel, ex);
+				}
+				catch (Exception ex2) {
+					this.logger.error("Exception from afterReceiveCompletion in " + interceptor, ex2);
+				}
+			}
+		}
+
 		public List<ChannelInterceptor> getInterceptors() {
 			return Collections.unmodifiableList(this.interceptors);
 		}
+
+		public boolean remove(ChannelInterceptor interceptor) {
+			if (this.interceptors.remove(interceptor)) {
+				this.size--;
+				return true;
+			}
+			else {
+				return false;
+			}
+		}
+
+		public ChannelInterceptor remove(int index) {
+			ChannelInterceptor removed = this.interceptors.remove(index);
+			if (removed != null) {
+				this.size--;
+			}
+			return removed;
+		}
+
 	}
+
 }

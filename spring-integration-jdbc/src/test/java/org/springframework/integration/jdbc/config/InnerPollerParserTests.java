@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2011 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,12 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.jdbc.config;
 
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import org.junit.Test;
+
 import org.springframework.beans.factory.parsing.BeanDefinitionParsingException;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
 import org.springframework.context.support.GenericXmlApplicationContext;
@@ -35,7 +37,7 @@ public class InnerPollerParserTests {
 	@Test
 	public void testRefGood() {
 		// Just load the context to test the parse of a 'good' inner parser
-		new ClassPathXmlApplicationContext("InnerPollerParserTests-context.xml", InnerPollerParserTests.class);
+		new ClassPathXmlApplicationContext("InnerPollerParserTests-context.xml", InnerPollerParserTests.class).close();
 	}
 
 	@Test
@@ -56,7 +58,7 @@ public class InnerPollerParserTests {
 				"" +
 				"	<int:channel id=\"someChannel\"/>" +
 				"" +
-				"	<int-jdbc:inbound-channel-adapter channel=\"someChannel\" jdbc-operations=\"ops\"" + 
+				"	<int-jdbc:inbound-channel-adapter channel=\"someChannel\" jdbc-operations=\"ops\"" +
 				"			query=\"select 1\">" +
 				"		<int:poller ref=\"outer\" fixed-rate=\"1000\"/>" + // <<<<< fixed-rate not allowed here
 				"	</int-jdbc:inbound-channel-adapter>" +
@@ -67,9 +69,10 @@ public class InnerPollerParserTests {
 				"</beans>";
 
 			Resource resource = new ByteArrayResource(badContext.getBytes());
-			new GenericXmlApplicationContext(resource);
+			new GenericXmlApplicationContext(resource).close();
 			fail("Expected Failure to load ApplicationContext");
-		} catch (BeanDefinitionParsingException bdpe) {
+		}
+		catch (BeanDefinitionParsingException bdpe) {
 			assertTrue(bdpe.getMessage().startsWith("Configuration problem: A 'poller' element that provides a 'ref' must have no other attributes."));
 		}
 	}
@@ -92,7 +95,7 @@ public class InnerPollerParserTests {
 				"" +
 				"	<int:channel id=\"someChannel\"/>" +
 				"" +
-				"	<int-jdbc:inbound-channel-adapter channel=\"someChannel\" jdbc-operations=\"ops\"" + 
+				"	<int-jdbc:inbound-channel-adapter channel=\"someChannel\" jdbc-operations=\"ops\"" +
 				"			query=\"select 1\">" +
 				"		<int:poller ref=\"outer\" default=\"true\"/>" + // <<<<< default true not allowed here
 				"	</int-jdbc:inbound-channel-adapter>" +
@@ -103,9 +106,10 @@ public class InnerPollerParserTests {
 				"</beans>";
 
 			Resource resource = new ByteArrayResource(badContext.getBytes());
-			new GenericXmlApplicationContext(resource);
+			new GenericXmlApplicationContext(resource).close();
 			fail("Expected Failure to load ApplicationContext");
-		} catch (BeanDefinitionParsingException bdpe) {
+		}
+		catch (BeanDefinitionParsingException bdpe) {
 			assertTrue(bdpe.getMessage().startsWith("Configuration problem: A 'poller' element that provides a 'ref' must have no other attributes."));
 		}
 	}
@@ -128,7 +132,7 @@ public class InnerPollerParserTests {
 				"" +
 				"	<int:channel id=\"someChannel\"/>" +
 				"" +
-				"	<int-jdbc:inbound-channel-adapter channel=\"someChannel\" jdbc-operations=\"ops\"" + 
+				"	<int-jdbc:inbound-channel-adapter channel=\"someChannel\" jdbc-operations=\"ops\"" +
 				"			query=\"select 1\">" +
 				"		<int:poller ref=\"outer\" default=\"false\" fixed-rate=\"1000\"/>" + // <<<<< fixed-rate not allowed here
 				"	</int-jdbc:inbound-channel-adapter>" +
@@ -139,9 +143,10 @@ public class InnerPollerParserTests {
 				"</beans>";
 
 			Resource resource = new ByteArrayResource(badContext.getBytes());
-			new GenericXmlApplicationContext(resource);
+			new GenericXmlApplicationContext(resource).close();
 			fail("Expected Failure to load ApplicationContext");
-		} catch (BeanDefinitionParsingException bdpe) {
+		}
+		catch (BeanDefinitionParsingException bdpe) {
 			assertTrue(bdpe.getMessage().startsWith("Configuration problem: A 'poller' element that provides a 'ref' must have no other attributes."));
 		}
 	}

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.jms.request_reply;
 
 import static org.junit.Assert.assertEquals;
@@ -21,16 +22,23 @@ import static org.junit.Assert.assertTrue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.junit.Rule;
 import org.junit.Test;
+
 import org.springframework.context.support.ClassPathXmlApplicationContext;
 import org.springframework.integration.gateway.RequestReplyExchanger;
 import org.springframework.integration.jms.config.ActiveMqTestUtils;
+import org.springframework.integration.test.support.LongRunningIntegrationTest;
 import org.springframework.messaging.support.GenericMessage;
 import org.springframework.util.StopWatch;
 /**
  * @author Oleg Zhurakousky
+ * @author Gary Russell
  */
 public class MiscellaneousTests {
+
+	@Rule
+	public LongRunningIntegrationTest longRunning = new LongRunningIntegrationTest();
 
 	/**
 	 * Asserts that receive-timeout is honored even if
@@ -38,7 +46,7 @@ public class MiscellaneousTests {
 	 * when requests are queued up (e.g., single consumer receiver)
 	 */
 	@Test
-	public void testTimeoutHonoringWhenRequestsQueuedUp() throws Exception{
+	public void testTimeoutHonoringWhenRequestsQueuedUp() throws Exception {
 		ActiveMqTestUtils.prepare();
 		ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext("honor-timeout.xml", this.getClass());
 		final RequestReplyExchanger gateway = context.getBean(RequestReplyExchanger.class);
@@ -51,18 +59,21 @@ public class MiscellaneousTests {
 		}
 		latch.await();
 		stopWatch.stop();
-		assertTrue(stopWatch.getTotalTimeMillis() <= 12000);
+		assertTrue(stopWatch.getTotalTimeMillis() <= 18000);
 		assertEquals(1, replies.get());
+		context.close();
 	}
 
 
 	private void exchange(final CountDownLatch latch, final RequestReplyExchanger gateway, final AtomicInteger replies) {
 		new Thread(new Runnable() {
+			@Override
 			public void run() {
 				try {
 					gateway.exchange(new GenericMessage<String>(""));
 					replies.incrementAndGet();
-				} catch (Exception e) {
+				}
+				catch (Exception e) {
 					//ignore
 				}
 				latch.countDown();

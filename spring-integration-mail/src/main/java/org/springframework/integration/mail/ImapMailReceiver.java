@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,12 @@
 
 package org.springframework.integration.mail;
 
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+import java.util.Properties;
+import java.util.concurrent.ScheduledFuture;
+
 import javax.mail.Flags;
 import javax.mail.Flags.Flag;
 import javax.mail.Folder;
@@ -29,10 +35,11 @@ import javax.mail.search.FlagTerm;
 import javax.mail.search.NotTerm;
 import javax.mail.search.SearchTerm;
 
+import org.springframework.scheduling.TaskScheduler;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.util.Assert;
 
 import com.sun.mail.imap.IMAPFolder;
-import com.sun.mail.imap.IMAPMessage;
 
 /**
  * A {@link MailReceiver} implementation for receiving mail messages from a
@@ -46,14 +53,25 @@ import com.sun.mail.imap.IMAPMessage;
  * @author Mark Fisher
  * @author Oleg Zhurakousky
  * @author Gary Russell
+ * @author Artem Bilan
  */
 public class ImapMailReceiver extends AbstractMailReceiver {
+
+	private static final int DEFAULT_CANCEL_IDLE_INTERVAL = 120000;
+
+	private final MessageCountListener messageCountListener = new SimpleMessageCountListener();
+
+	private final IdleCanceler idleCanceler = new IdleCanceler();
 
 	private volatile boolean shouldMarkMessagesAsRead = true;
 
 	private volatile SearchTermStrategy searchTermStrategy = new DefaultSearchTermStrategy();
 
-	private final MessageCountListener messageCountListener = new SimpleMessageCountListener();
+	private volatile long cancelIdleInterval = DEFAULT_CANCEL_IDLE_INTERVAL;
+
+	private volatile TaskScheduler scheduler;
+
+	private volatile ScheduledFuture<?> pingTask;
 
 	public ImapMailReceiver() {
 		super();
@@ -78,7 +96,7 @@ public class ImapMailReceiver extends AbstractMailReceiver {
 	 * @return true if messages should be marked as read.
 	 */
 	public Boolean isShouldMarkMessagesAsRead() {
-		return shouldMarkMessagesAsRead;
+		return this.shouldMarkMessagesAsRead;
 	}
 
 	/**
@@ -99,6 +117,35 @@ public class ImapMailReceiver extends AbstractMailReceiver {
 	 */
 	public void setShouldMarkMessagesAsRead(Boolean shouldMarkMessagesAsRead) {
 		this.shouldMarkMessagesAsRead = shouldMarkMessagesAsRead;
+	}
+
+	/**
+	 * IDLE commands will be terminated after this interval; useful in cases where a connection
+	 * might be silently dropped. A new IDLE will usually immediately be processed. Specified
+	 * in seconds; default 120 (2 minutes). RFC 2177 recommends an interval no larger than 29 minutes.
+	 * @param cancelIdleInterval the cancelIdleInterval to set
+	 * @since 3.0.5
+	 */
+	public void setCancelIdleInterval(long cancelIdleInterval) {
+		this.cancelIdleInterval = cancelIdleInterval * 1000;
+	}
+
+	@Override
+	protected void onInit() throws Exception {
+		super.onInit();
+		this.scheduler = getTaskScheduler();
+		if (this.scheduler == null) {
+			ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
+			scheduler.initialize();
+			this.scheduler = scheduler;
+		}
+		Properties javaMailProperties = getJavaMailProperties();
+		for (String name : new String[]{"imap", "imaps"}) {
+			String peek = "mail." + name + ".peek";
+			if (javaMailProperties.getProperty(peek) == null) {
+				javaMailProperties.setProperty(peek, "true");
+			}
+		}
 	}
 
 	/**
@@ -123,10 +170,15 @@ public class ImapMailReceiver extends AbstractMailReceiver {
 		}
 		imapFolder.addMessageCountListener(this.messageCountListener);
 		try {
+			this.pingTask = this.scheduler.schedule(this.idleCanceler,
+					new Date(System.currentTimeMillis() + this.cancelIdleInterval));
 			imapFolder.idle();
 		}
 		finally {
 			imapFolder.removeMessageCountListener(this.messageCountListener);
+			if (this.pingTask != null) {
+				this.pingTask.cancel(true);
+			}
 		}
 	}
 
@@ -147,13 +199,32 @@ public class ImapMailReceiver extends AbstractMailReceiver {
 		SearchTerm searchTerm = this.compileSearchTerms(supportedFlags);
 		Folder folder = this.getFolder();
 		if (folder.isOpen()) {
-			Message[] messages = searchTerm != null ? folder.search(searchTerm) : folder.getMessages();
-			for (Message message : messages) {
-				((IMAPMessage) message).setPeek(true);
-			}
-			return messages;
+			return nullSafeMessages(searchTerm != null ? folder.search(searchTerm) : folder.getMessages());
 		}
 		throw new MessagingException("Folder is closed");
+	}
+
+	// INT-3859
+	private Message[] nullSafeMessages(Message[] messageArray) {
+		boolean hasNulls = false;
+		for (Message message : messageArray) {
+			if (message == null) {
+				hasNulls = true;
+				break;
+			}
+		}
+		if (!hasNulls) {
+			return messageArray;
+		}
+		else {
+			List<Message> messages = new ArrayList<Message>();
+			for (Message message : messageArray) {
+				if (message != null) {
+					messages.add(message);
+				}
+			}
+			return messages.toArray(new Message[messages.size()]);
+		}
 	}
 
 	private SearchTerm compileSearchTerms(Flags supportedFlags) {
@@ -168,23 +239,32 @@ public class ImapMailReceiver extends AbstractMailReceiver {
 		}
 	}
 
+	private class IdleCanceler implements Runnable {
+		@Override
+		public void run() {
+			try {
+				Folder folder = getFolder();
+				logger.debug("Canceling IDLE");
+				if (folder != null) {
+					folder.isOpen(); // resets idle state
+				}
+			}
+			catch (Exception ignore) {
+			}
+		}
+	}
 
 	/**
 	 * Callback used for handling the event-driven idle response.
 	 */
-	private static class SimpleMessageCountListener extends MessageCountAdapter {
+	private class SimpleMessageCountListener extends MessageCountAdapter {
 
 		@Override
 		public void messagesAdded(MessageCountEvent event) {
 			Message[] messages = event.getMessages();
-			for (Message message : messages) {
-				try {
-					// this will return the flow to the idle call
-					message.getLineCount();
-				}
-				catch (MessagingException e) {
-					// ignored;
-				}
+			if (messages.length > 0) {
+				// this will return the flow to the idle call
+				messages[0].getFolder().isOpen();
 			}
 		}
 	}
@@ -233,9 +313,10 @@ public class ImapMailReceiver extends AbstractMailReceiver {
 				NotTerm notFlagged = null;
 				if (folder.getPermanentFlags().contains(Flags.Flag.USER)) {
 					logger.debug("This email server does not support RECENT flag, but it does support " +
-							"USER flags which will be used to prevent duplicates during email fetch.");
+							"USER flags which will be used to prevent duplicates during email fetch." +
+							" This receiver instance uses flag: " + getUserFlag());
 					Flags siFlags = new Flags();
-					siFlags.add(AbstractMailReceiver.SI_USER_FLAG);
+					siFlags.add(getUserFlag());
 					notFlagged = new NotTerm(new FlagTerm(siFlags, true));
 				}
 				else {
@@ -254,6 +335,5 @@ public class ImapMailReceiver extends AbstractMailReceiver {
 		}
 
 	}
-
 
 }

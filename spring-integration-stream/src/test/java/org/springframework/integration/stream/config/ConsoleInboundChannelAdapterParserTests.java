@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,9 @@
 
 package org.springframework.integration.stream.config;
 
-import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
@@ -59,8 +59,8 @@ public class ConsoleInboundChannelAdapterParserTests {
 		MessageSource<?> source = (MessageSource<?>) new DirectFieldAccessor(adapter).getPropertyValue("source");
 		assertTrue(source instanceof NamedComponent);
 		assertEquals("adapterWithDefaultCharset.adapter", adapter.getComponentName());
-		assertEquals("stream:stdin-channel-adapter", adapter.getComponentType());
-		assertEquals("stream:stdin-channel-adapter", ((NamedComponent)source).getComponentType());
+		assertEquals("stream:stdin-channel-adapter(character)", adapter.getComponentType());
+		assertEquals("stream:stdin-channel-adapter(character)", ((NamedComponent) source).getComponentType());
 		DirectFieldAccessor sourceAccessor = new DirectFieldAccessor(source);
 		Reader bufferedReader = (Reader) sourceAccessor.getPropertyValue("reader");
 		assertEquals(BufferedReader.class, bufferedReader.getClass());
@@ -70,9 +70,9 @@ public class ConsoleInboundChannelAdapterParserTests {
 		Charset readerCharset = Charset.forName(((InputStreamReader) reader).getEncoding());
 		assertEquals(Charset.defaultCharset(), readerCharset);
 		Message<?> message = source.receive();
-		System.out.println(message);
 		assertNotNull(message);
 		assertEquals("foo", message.getPayload());
+		context.close();
 	}
 
 	@Test
@@ -93,14 +93,15 @@ public class ConsoleInboundChannelAdapterParserTests {
 		Message<?> message = source.receive();
 		assertNotNull(message);
 		assertEquals("foo", message.getPayload());
+		context.close();
 	}
 
 	@Test
 	public void testConsoleSourceWithInvalidCharset() {
 		BeanCreationException beanCreationException = null;
 		try {
-			new ClassPathXmlApplicationContext(
-					"invalidConsoleInboundChannelAdapterParserTests.xml", ConsoleInboundChannelAdapterParserTests.class);
+			new ClassPathXmlApplicationContext("invalidConsoleInboundChannelAdapterParserTests.xml",
+					ConsoleInboundChannelAdapterParserTests.class).close();
 		}
 		catch (BeanCreationException e) {
 			beanCreationException = e;

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,7 +35,6 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.integration.ip.util.TestingUtilities;
 import org.springframework.integration.support.MessageBuilder;
 import org.springframework.integration.test.support.LongRunningIntegrationTest;
-import org.springframework.integration.test.util.SocketUtils;
 import org.springframework.integration.test.util.TestUtils;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.support.ErrorMessage;
@@ -51,12 +50,12 @@ public class ConnectionTimeoutTests {
 
 	@Test
 	public void testDefaultTimeout() throws Exception {
-		int port = SocketUtils.findAvailableServerSocket();
-		TcpNetServerConnectionFactory server = new TcpNetServerConnectionFactory(port);
-		TcpNetClientConnectionFactory client = new TcpNetClientConnectionFactory("localhost", port);
-		this.setupCallbacks(server, client, 0);
+		TcpNetServerConnectionFactory server = new TcpNetServerConnectionFactory(0);
+		this.setupServerCallbacks(server, 0);
 		server.start();
 		TestingUtilities.waitListening(server, null);
+		TcpNetClientConnectionFactory client = new TcpNetClientConnectionFactory("localhost", server.getPort());
+		setupClientCallback(client);
 		client.start();
 		TcpConnection connection = client.getConnection();
 		Socket socket = TestUtils.getPropertyValue(connection, "socket", Socket.class);
@@ -69,20 +68,15 @@ public class ConnectionTimeoutTests {
 
 	@Test
 	public void testNetSimpleTimeout() throws Exception {
-		int port = SocketUtils.findAvailableServerSocket();
-		TcpNetServerConnectionFactory server = new TcpNetServerConnectionFactory(port);
-		TcpNetClientConnectionFactory client = new TcpNetClientConnectionFactory("localhost", port);
-		this.setupCallbacks(server, client, 0);
-		client.registerListener(new TcpListener() {
-			@Override
-			public boolean onMessage(Message<?> message) {
-				return false;
-			}
-		});
-		client.setSoTimeout(1000);
+		TcpNetServerConnectionFactory server = new TcpNetServerConnectionFactory(0);
+		this.setupServerCallbacks(server, 0);
 		server.start();
 		TestingUtilities.waitListening(server, null);
+		TcpNetClientConnectionFactory client = new TcpNetClientConnectionFactory("localhost", server.getPort());
+		client.registerListener(message -> false);
+		client.setSoTimeout(1000);
 		CountDownLatch clientCloseLatch = getCloseLatch(client);
+		setupClientCallback(client);
 		client.start();
 		TcpConnection connection = client.getConnection();
 		Socket socket = TestUtils.getPropertyValue(connection, "socket", Socket.class);
@@ -100,9 +94,9 @@ public class ConnectionTimeoutTests {
 	 */
 	@Test
 	public void testNetReplyNotTimeout() throws Exception {
-		int port = SocketUtils.findAvailableServerSocket();
-		TcpNetServerConnectionFactory server = new TcpNetServerConnectionFactory(port);
-		TcpNetClientConnectionFactory client = new TcpNetClientConnectionFactory("localhost", port);
+		TcpNetServerConnectionFactory server = new TcpNetServerConnectionFactory(0);
+		setupAndStartServer(server);
+		TcpNetClientConnectionFactory client = new TcpNetClientConnectionFactory("localhost", server.getPort());
 		this.notTimeoutGuts(server, client);
 	}
 
@@ -113,31 +107,26 @@ public class ConnectionTimeoutTests {
 	 */
 	@Test
 	public void testNioReplyNotTimeout() throws Exception {
-		int port = SocketUtils.findAvailableServerSocket();
-		TcpNetServerConnectionFactory server = new TcpNetServerConnectionFactory(port);
-		TcpNioClientConnectionFactory client = new TcpNioClientConnectionFactory("localhost", port);
+		TcpNetServerConnectionFactory server = new TcpNetServerConnectionFactory(0);
+		setupAndStartServer(server);
+		TcpNioClientConnectionFactory client = new TcpNioClientConnectionFactory("localhost", server.getPort());
 		this.notTimeoutGuts(server, client);
 	}
 
 	private void notTimeoutGuts(AbstractServerConnectionFactory server, AbstractClientConnectionFactory client)
 			throws Exception, InterruptedException {
-		this.setupCallbacks(server, client, 1200);
 		final AtomicReference<Message<?>> reply = new AtomicReference<Message<?>>();
 		final CountDownLatch replyLatch = new CountDownLatch(1);
-		client.registerListener(new TcpListener() {
-			@Override
-			public boolean onMessage(Message<?> message) {
-				if (!(message instanceof ErrorMessage)) {
-					reply.set(message);
-					replyLatch.countDown();
-				}
-				return false;
+		client.registerListener(message -> {
+			if (!(message instanceof ErrorMessage)) {
+				reply.set(message);
+				replyLatch.countDown();
 			}
+			return false;
 		});
 		client.setSoTimeout(2000);
-		server.start();
-		TestingUtilities.waitListening(server, null);
 		CountDownLatch clientClosedLatch = getCloseLatch(client);
+		setupClientCallback(client);
 		client.start();
 		TcpConnection connection = client.getConnection();
 		Thread.sleep(1000);
@@ -150,6 +139,12 @@ public class ConnectionTimeoutTests {
 		client.stop();
 	}
 
+	private void setupAndStartServer(AbstractServerConnectionFactory server) {
+		this.setupServerCallbacks(server, 1200);
+		server.start();
+		TestingUtilities.waitListening(server, null);
+	}
+
 	/**
 	 * Ensure we do timeout on the read side (client) if we sent a message within the
 	 * first timeout but the reply takes > 2 timeouts.
@@ -157,24 +152,21 @@ public class ConnectionTimeoutTests {
 	 */
 	@Test
 	public void testNetReplyTimeout() throws Exception {
-		int port = SocketUtils.findAvailableServerSocket();
-		TcpNetServerConnectionFactory server = new TcpNetServerConnectionFactory(port);
-		TcpNetClientConnectionFactory client = new TcpNetClientConnectionFactory("localhost", port);
-		this.setupCallbacks(server, client, 4500);
+		TcpNetServerConnectionFactory server = new TcpNetServerConnectionFactory(0);
+		this.setupServerCallbacks(server, 4500);
 		final AtomicReference<Message<?>> reply = new AtomicReference<Message<?>>();
-		client.registerListener(new TcpListener() {
-			@Override
-			public boolean onMessage(Message<?> message) {
-				if (!(message instanceof ErrorMessage)) {
-					reply.set(message);
-				}
-				return false;
-			}
-		});
-		client.setSoTimeout(2000);
 		server.start();
 		TestingUtilities.waitListening(server, null);
+		TcpNetClientConnectionFactory client = new TcpNetClientConnectionFactory("localhost", server.getPort());
+		client.registerListener(message -> {
+			if (!(message instanceof ErrorMessage)) {
+				reply.set(message);
+			}
+			return false;
+		});
+		client.setSoTimeout(2000);
 		CountDownLatch clientCloseLatch = getCloseLatch(client);
+		setupClientCallback(client);
 		client.start();
 		TcpConnection connection = client.getConnection();
 		Socket socket = TestUtils.getPropertyValue(connection, "socket", Socket.class);
@@ -197,24 +189,21 @@ public class ConnectionTimeoutTests {
 	 */
 	@Test
 	public void testNioReplyTimeout() throws Exception {
-		int port = SocketUtils.findAvailableServerSocket();
-		TcpNetServerConnectionFactory server = new TcpNetServerConnectionFactory(port);
-		TcpNioClientConnectionFactory client = new TcpNioClientConnectionFactory("localhost", port);
-		this.setupCallbacks(server, client, 2100);
+		TcpNetServerConnectionFactory server = new TcpNetServerConnectionFactory(0);
+		this.setupServerCallbacks(server, 2100);
 		final AtomicReference<Message<?>> reply = new AtomicReference<Message<?>>();
-		client.registerListener(new TcpListener() {
-			@Override
-			public boolean onMessage(Message<?> message) {
-				if (!(message instanceof ErrorMessage)) {
-					reply.set(message);
-				}
-				return false;
-			}
-		});
-		client.setSoTimeout(1000);
 		server.start();
 		TestingUtilities.waitListening(server, null);
+		TcpNioClientConnectionFactory client = new TcpNioClientConnectionFactory("localhost", server.getPort());
+		client.registerListener(message -> {
+			if (!(message instanceof ErrorMessage)) {
+				reply.set(message);
+			}
+			return false;
+		});
+		client.setSoTimeout(1000);
 		CountDownLatch clientCloseLatch = getCloseLatch(client);
+		setupClientCallback(client);
 		client.start();
 		TcpConnection connection = client.getConnection();
 		Thread.sleep(500);
@@ -228,23 +217,18 @@ public class ConnectionTimeoutTests {
 		client.stop();
 	}
 
-	private void setupCallbacks(AbstractServerConnectionFactory server, AbstractClientConnectionFactory client,
-			final int serverDelay) {
-		client.setComponentName("clientFactory");
+	private void setupServerCallbacks(AbstractServerConnectionFactory server, final int serverDelay) {
 		server.setComponentName("serverFactory");
 		final AtomicReference<TcpConnection> serverConnection = new AtomicReference<TcpConnection>();
-		server.registerListener(new TcpListener() {
-			@Override
-			public boolean onMessage(Message<?> message) {
-				try {
-					Thread.sleep(serverDelay);
-					serverConnection.get().send(message);
-				}
-				catch (Exception e) {
-					e.printStackTrace();
-				}
-				return false;
+		server.registerListener(message -> {
+			try {
+				Thread.sleep(serverDelay);
+				serverConnection.get().send(message);
 			}
+			catch (Exception e) {
+				e.printStackTrace();
+			}
+			return false;
 		});
 		server.registerSender(new TcpSender() {
 			@Override
@@ -255,6 +239,10 @@ public class ConnectionTimeoutTests {
 			public void removeDeadConnection(TcpConnection connection) {
 			}
 		});
+	}
+
+	public void setupClientCallback(AbstractClientConnectionFactory client) {
+		client.setComponentName("clientFactory");
 		client.registerSender(new TcpSender() {
 			@Override
 			public void addNewConnection(TcpConnection connection) {
@@ -269,13 +257,19 @@ public class ConnectionTimeoutTests {
 		final CountDownLatch clientClosedLatch;
 		clientClosedLatch = new CountDownLatch(1);
 		client.setApplicationEventPublisher(new ApplicationEventPublisher() {
+
 			@Override
 			public void publishEvent(ApplicationEvent event) {
-				TcpConnectionEvent tcpEvent = (TcpConnectionEvent) event;
-				if (tcpEvent instanceof TcpConnectionCloseEvent) {
+				if (event instanceof TcpConnectionCloseEvent) {
 					clientClosedLatch.countDown();
 				}
 			}
+
+			@Override
+			public void publishEvent(Object event) {
+
+			}
+
 		});
 		return clientClosedLatch;
 	}

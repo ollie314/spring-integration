@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ import org.apache.commons.logging.LogFactory;
 
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.integration.util.SimplePool;
+import org.springframework.util.Assert;
 
 /**
  * A {@link SessionFactory} implementation that caches Sessions for reuse without
@@ -62,6 +63,8 @@ public class CachingSessionFactory<F> implements SessionFactory<F>, DisposableBe
 	 * Create a CachingSessionFactory with the specified session limit. By default, if
 	 * no sessions are available in the cache, and the size limit has been reached,
 	 * calling threads will block until a session is available.
+	 * <p>
+	 * Do not cache a {@link DelegatingSessionFactory}, cache each delegate therein instead.
 	 * @see #setSessionWaitTimeout(long)
 	 * @see #setPoolSize(int)
 	 *
@@ -69,6 +72,8 @@ public class CachingSessionFactory<F> implements SessionFactory<F>, DisposableBe
 	 * @param sessionCacheSize The maximum cache size.
 	 */
 	public CachingSessionFactory(SessionFactory<F> sessionFactory, int sessionCacheSize) {
+		Assert.isTrue(!(sessionFactory instanceof DelegatingSessionFactory),
+				"'sessionFactory' cannot be a 'DelegatingSessionFactory'; cache each delegate instead");
 		this.sessionFactory = sessionFactory;
 		this.pool = new SimplePool<Session<F>>(sessionCacheSize, new SimplePool.PoolItemCallback<Session<F>>() {
 			@Override
@@ -152,7 +157,7 @@ public class CachingSessionFactory<F> implements SessionFactory<F>, DisposableBe
 		this.pool.removeAllIdleItems();
 	}
 
-	public class CachedSession implements Session<F> {
+	public class CachedSession implements Session<F> { //NOSONAR (final)
 
 		private final Session<F> targetSession;
 
@@ -172,47 +177,60 @@ public class CachingSessionFactory<F> implements SessionFactory<F>, DisposableBe
 
 		@Override
 		public synchronized void close() {
-			if (released) {
-				if (logger.isDebugEnabled()){
-					logger.debug("Session " + targetSession + " already released.");
+			if (this.released) {
+				if (logger.isDebugEnabled()) {
+					logger.debug("Session " + this.targetSession + " already released.");
 				}
 			}
 			else {
-				if (logger.isDebugEnabled()){
-					logger.debug("Releasing Session " + targetSession + " back to the pool.");
+				if (logger.isDebugEnabled()) {
+					logger.debug("Releasing Session " + this.targetSession + " back to the pool.");
 				}
 				if (this.sharedSessionEpoch != CachingSessionFactory.this.sharedSessionEpoch) {
-					if (logger.isDebugEnabled()){
-						logger.debug("Closing session " + targetSession + " after reset.");
+					if (logger.isDebugEnabled()) {
+						logger.debug("Closing session " + this.targetSession + " after reset.");
 					}
 					this.targetSession.close();
 				}
 				else if (this.dirty) {
 					this.targetSession.close();
 				}
-				pool.releaseItem(targetSession);
-				released = true;
+				if (this.targetSession.isOpen()) {
+					try {
+						this.targetSession.finalizeRaw();
+					}
+					catch (IOException e) {
+						//No-op in this context
+					}
+				}
+				CachingSessionFactory.this.pool.releaseItem(this.targetSession);
+				this.released = true;
 			}
 		}
 
 		@Override
-		public boolean remove(String path) throws IOException{
+		public boolean remove(String path) throws IOException {
 			return this.targetSession.remove(path);
 		}
 
 		@Override
-		public F[] list(String path) throws IOException{
+		public F[] list(String path) throws IOException {
 			return this.targetSession.list(path);
 		}
 
 		@Override
-		public void read(String source, OutputStream os) throws IOException{
+		public void read(String source, OutputStream os) throws IOException {
 			this.targetSession.read(source, os);
 		}
 
 		@Override
-		public void write(InputStream inputStream, String destination) throws IOException{
+		public void write(InputStream inputStream, String destination) throws IOException {
 			this.targetSession.write(inputStream, destination);
+		}
+
+		@Override
+		public void append(InputStream inputStream, String destination) throws IOException {
+			this.targetSession.append(inputStream, destination);
 		}
 
 		@Override
@@ -231,7 +249,12 @@ public class CachingSessionFactory<F> implements SessionFactory<F>, DisposableBe
 		}
 
 		@Override
-		public boolean exists(String path) throws IOException{
+		public boolean rmdir(String directory) throws IOException {
+			return this.targetSession.rmdir(directory);
+		}
+
+		@Override
+		public boolean exists(String path) throws IOException {
 			return this.targetSession.exists(path);
 		}
 
@@ -252,6 +275,11 @@ public class CachingSessionFactory<F> implements SessionFactory<F>, DisposableBe
 
 		public void dirty() {
 			this.dirty = true;
+		}
+
+		@Override
+		public Object getClientInstance() {
+			return this.targetSession.getClientInstance();
 		}
 
 	}

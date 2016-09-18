@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.Matchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
@@ -48,20 +49,20 @@ import org.mockito.stubbing.Answer;
 
 import org.springframework.beans.DirectFieldAccessor;
 import org.springframework.beans.factory.BeanFactory;
-import org.springframework.context.ApplicationContext;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
 import org.springframework.expression.common.LiteralExpression;
-import org.springframework.messaging.Message;
-import org.springframework.messaging.MessageChannel;
-import org.springframework.messaging.PollableChannel;
 import org.springframework.integration.file.FileNameGenerator;
 import org.springframework.integration.file.remote.FileInfo;
 import org.springframework.integration.file.remote.RemoteFileTemplate;
 import org.springframework.integration.file.remote.handler.FileTransferringMessageHandler;
 import org.springframework.integration.ftp.session.AbstractFtpSessionFactory;
-import org.springframework.messaging.support.GenericMessage;
 import org.springframework.integration.support.MessageBuilder;
 import org.springframework.integration.test.util.TestUtils;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.MessageChannel;
+import org.springframework.messaging.PollableChannel;
+import org.springframework.messaging.support.GenericMessage;
 import org.springframework.util.FileCopyUtils;
 
 /**
@@ -76,7 +77,7 @@ public class FtpOutboundTests {
 	private TestFtpSessionFactory sessionFactory;
 
 	@Before
-	public void prepare(){
+	public void prepare() {
 		ftpClient = mock(FTPClient.class);
 		sessionFactory = new TestFtpSessionFactory();
 		sessionFactory.setUsername("kermit");
@@ -88,7 +89,7 @@ public class FtpOutboundTests {
 	@Test
 	public void testHandleFileContentMessage() throws Exception {
 		File file = new File("remote-target-dir/handlerContent.test");
-		if (file.exists()){
+		if (file.exists()) {
 			file.delete();
 		}
 		assertFalse(file.exists());
@@ -112,7 +113,7 @@ public class FtpOutboundTests {
 	@Test
 	public void testHandleFileAsByte() throws Exception {
 		File file = new File("remote-target-dir/handlerContent.test");
-		if (file.exists()){
+		if (file.exists()) {
 			file.delete();
 		}
 		assertFalse(file.exists());
@@ -143,7 +144,7 @@ public class FtpOutboundTests {
 		handler.setFileNameGenerator(new FileNameGenerator() {
 			@Override
 			public String generateFileName(Message<?> message) {
-				return ((File)message.getPayload()).getName() + ".test";
+				return ((File) message.getPayload()).getName() + ".test";
 			}
 		});
 		handler.setBeanFactory(mock(BeanFactory.class));
@@ -169,7 +170,7 @@ public class FtpOutboundTests {
 		handler.setFileNameGenerator(new FileNameGenerator() {
 			@Override
 			public String generateFileName(Message<?> message) {
-				return ((File)message.getPayload()).getName() + ".test";
+				return ((File) message.getPayload()).getName() + ".test";
 			}
 		});
 		handler.setBeanFactory(mock(BeanFactory.class));
@@ -180,7 +181,7 @@ public class FtpOutboundTests {
 		Log logger = spy(TestUtils.getPropertyValue(handler, "remoteFileTemplate.logger", Log.class));
 		when(logger.isWarnEnabled()).thenReturn(true);
 		final AtomicReference<String> logged = new AtomicReference<String>();
-		doAnswer(new Answer<Object>(){
+		doAnswer(new Answer<Object>() {
 
 			@Override
 			public Object answer(InvocationOnMock invocation) throws Throwable {
@@ -189,7 +190,8 @@ public class FtpOutboundTests {
 				return null;
 			}
 		}).when(logger).warn(Mockito.anyString());
-		RemoteFileTemplate<?> template = TestUtils.getPropertyValue(handler, "remoteFileTemplate", RemoteFileTemplate.class);
+		RemoteFileTemplate<?> template = TestUtils.getPropertyValue(handler, "remoteFileTemplate",
+				RemoteFileTemplate.class);
 		new DirectFieldAccessor(template).setPropertyValue("logger", logger);
 		handler.handleMessage(new GenericMessage<File>(srcFile));
 		assertNotNull(logged.get());
@@ -207,17 +209,20 @@ public class FtpOutboundTests {
 		File destFile = new File(targetDir, srcFile.getName());
 		destFile.deleteOnExit();
 
-		ApplicationContext context = new ClassPathXmlApplicationContext("FtpOutboundInsideChainTests-context.xml", getClass());
+		ConfigurableApplicationContext context = new ClassPathXmlApplicationContext(
+				"FtpOutboundInsideChainTests-context.xml", getClass());
 
 		MessageChannel channel = context.getBean("outboundChainChannel", MessageChannel.class);
 
 		channel.send(new GenericMessage<File>(srcFile));
 		assertTrue("destination file was not created", destFile.exists());
+		context.close();
 	}
 
 	@Test //INT-2275
 	public void testFtpOutboundGatewayInsideChain() throws Exception {
-		ApplicationContext context = new ClassPathXmlApplicationContext("FtpOutboundInsideChainTests-context.xml", getClass());
+		ConfigurableApplicationContext context = new ClassPathXmlApplicationContext(
+				"FtpOutboundInsideChainTests-context.xml", getClass());
 
 		MessageChannel channel = context.getBean("ftpOutboundGatewayInsideChain", MessageChannel.class);
 
@@ -235,6 +240,7 @@ public class FtpOutboundTests {
 		for (FileInfo<?> remoteFile : remoteFiles) {
 			assertTrue(files.contains(remoteFile.getFilename()));
 		}
+		context.close();
 	}
 
 
@@ -247,7 +253,7 @@ public class FtpOutboundTests {
 				when(ftpClient.login("kermit", "frog")).thenReturn(true);
 				when(ftpClient.changeWorkingDirectory(Mockito.anyString())).thenReturn(true);
 				when(ftpClient.printWorkingDirectory()).thenReturn("remote-target-dir");
-				when(ftpClient.storeFile(Mockito.anyString(), Mockito.any(InputStream.class))).thenAnswer(new Answer<Boolean>() {
+				when(ftpClient.storeFile(Mockito.anyString(), any(InputStream.class))).thenAnswer(new Answer<Boolean>() {
 					@Override
 					public Boolean answer(InvocationOnMock invocation) throws Throwable {
 						String fileName = (String) invocation.getArguments()[0];
@@ -274,11 +280,13 @@ public class FtpOutboundTests {
 					file.setType(FTPFile.FILE_TYPE);
 					file.setTimestamp(Calendar.getInstance());
 					ftpFiles.add(file);
-					when(ftpClient.retrieveFile(Mockito.eq("remote-test-dir/" + fileName) , Mockito.any(OutputStream.class))).thenReturn(true);
+					when(ftpClient.retrieveFile(Mockito.eq("remote-test-dir/" + fileName),
+							any(OutputStream.class))).thenReturn(true);
 				}
 				when(ftpClient.listFiles("remote-test-dir/")).thenReturn(ftpFiles.toArray(new FTPFile[]{}));
 				return ftpClient;
-			} catch (Exception e) {
+			}
+			catch (Exception e) {
 				throw new RuntimeException("Failed to create mock client", e);
 			}
 		}

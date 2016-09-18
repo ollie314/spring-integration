@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,10 +13,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.springframework.integration.jpa.support;
 
-import static java.util.regex.Pattern.CASE_INSENSITIVE;
-import static java.util.regex.Pattern.compile;
+package org.springframework.integration.jpa.support;
 
 import java.util.Iterator;
 import java.util.regex.Matcher;
@@ -36,6 +34,7 @@ import org.springframework.util.Assert;
  *
  * @author Oliver Gierke
  * @author Gunnar Hillert
+ * @author Gary Russell
  *
  * @since 2.2
  *
@@ -59,7 +58,7 @@ public final class JpaUtils {
 		builder.append("(?: )+"); // at least one space separating
 		builder.append("(\\w*)"); // the actual alias
 
-		ALIAS_MATCH = compile(builder.toString(), CASE_INSENSITIVE);
+		ALIAS_MATCH = Pattern.compile(builder.toString(), Pattern.CASE_INSENSITIVE);
 
 		builder = new StringBuilder();
 		builder.append("(select\\s+((distinct )?.+?)\\s+)?(from\\s+");

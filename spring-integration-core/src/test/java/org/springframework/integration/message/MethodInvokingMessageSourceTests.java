@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,9 +30,9 @@ import org.springframework.beans.factory.BeanFactory;
 import org.springframework.expression.Expression;
 import org.springframework.expression.common.LiteralExpression;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
+import org.springframework.integration.endpoint.MethodInvokingMessageSource;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessagingException;
-import org.springframework.integration.endpoint.MethodInvokingMessageSource;
 
 /**
  * @author Mark Fisher
@@ -43,6 +43,7 @@ public class MethodInvokingMessageSourceTests {
 	@Test
 	public void testValidMethod() {
 		MethodInvokingMessageSource source = new MethodInvokingMessageSource();
+		source.setBeanFactory(mock(BeanFactory.class));
 		source.setObject(new TestBean());
 		source.setMethodName("validMethod");
 		Message<?> result = source.receive();
@@ -69,25 +70,28 @@ public class MethodInvokingMessageSourceTests {
 		assertEquals(123, result.getHeaders().get("bar"));
 	}
 
-	@Test(expected=MessagingException.class)
+	@Test(expected = MessagingException.class)
 	public void testNoMatchingMethodName() {
 		MethodInvokingMessageSource source = new MethodInvokingMessageSource();
+		source.setBeanFactory(mock(BeanFactory.class));
 		source.setObject(new TestBean());
 		source.setMethodName("noMatchingMethod");
 		source.receive();
 	}
 
-	@Test(expected=MessagingException.class)
+	@Test(expected = MessagingException.class)
 	public void testInvalidMethodWithArg() {
 		MethodInvokingMessageSource source = new MethodInvokingMessageSource();
+		source.setBeanFactory(mock(BeanFactory.class));
 		source.setObject(new TestBean());
 		source.setMethodName("invalidMethodWithArg");
 		source.receive();
 	}
 
-	@Test(expected=MessagingException.class)
+	@Test(expected = MessagingException.class)
 	public void testInvalidMethodWithNoReturnValue() {
 		MethodInvokingMessageSource source = new MethodInvokingMessageSource();
+		source.setBeanFactory(mock(BeanFactory.class));
 		source.setObject(new TestBean());
 		source.setMethodName("invalidMethodWithNoReturnValue");
 		source.receive();
@@ -96,6 +100,7 @@ public class MethodInvokingMessageSourceTests {
 	@Test
 	public void testNullReturningMethodReturnsNullMessage() {
 		MethodInvokingMessageSource source = new MethodInvokingMessageSource();
+		source.setBeanFactory(mock(BeanFactory.class));
 		source.setObject(new TestBean());
 		source.setMethodName("nullReturningMethod");
 		Message<?> message = source.receive();

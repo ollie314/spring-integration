@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2010 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,43 +22,46 @@ import org.springframework.beans.factory.BeanFactory;
 import org.springframework.beans.factory.BeanFactoryAware;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.core.convert.ConversionService;
-import org.springframework.core.convert.converter.Converter;
 import org.springframework.core.convert.support.ConversionServiceFactory;
 import org.springframework.core.convert.support.GenericConversionService;
+import org.springframework.integration.support.utils.IntegrationUtils;
 import org.springframework.util.Assert;
 
 /**
  * Utility class that keeps track of a set of Converters in order to register
  * them with the "integrationConversionService" upon initialization.
- * 
+ *
  * @author Oleg Zhurakousky
  * @author Mark Fisher
+ * @author Gary Russell
  * @since 2.0
  */
 class ConverterRegistrar implements InitializingBean, BeanFactoryAware {
 
-	private final Set<Converter<?, ?>> converters;
+	private final Set<?> converters;
 
 	private BeanFactory beanFactory;
 
 
-	public ConverterRegistrar(Set<Converter<?, ?>> converters) {
+	ConverterRegistrar(Set<?> converters) {
 		this.converters = converters;
 	}
 
 
+	@Override
 	public void setBeanFactory(BeanFactory beanFactory) {
 		this.beanFactory = beanFactory;
 	}
 
+	@Override
 	public void afterPropertiesSet() throws Exception {
-		Assert.notNull(beanFactory, "BeanFactory is required");
-		ConversionService conversionService = IntegrationContextUtils.getConversionService(beanFactory);
+		Assert.notNull(this.beanFactory, "BeanFactory is required");
+		ConversionService conversionService = IntegrationUtils.getConversionService(this.beanFactory);
 		if (conversionService instanceof GenericConversionService) {
-			ConversionServiceFactory.registerConverters(converters, (GenericConversionService) conversionService);			
+			ConversionServiceFactory.registerConverters(this.converters, (GenericConversionService) conversionService);
 		}
 		else {
-			Assert.notNull(conversionService, "Failed to locate '" + IntegrationContextUtils.INTEGRATION_CONVERSION_SERVICE_BEAN_NAME + "'");
+			Assert.notNull(conversionService, "Failed to locate '" + IntegrationUtils.INTEGRATION_CONVERSION_SERVICE_BEAN_NAME + "'");
 		}
 	}
 

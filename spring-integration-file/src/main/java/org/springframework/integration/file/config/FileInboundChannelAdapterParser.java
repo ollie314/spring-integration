@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,6 +35,8 @@ import org.springframework.util.xml.DomUtils;
  * @author Iwein Fuld
  * @author Mark Fisher
  * @author Gary Russell
+ * @author Gunnar Hillert
+ * @author Artem Bilan
  */
 public class FileInboundChannelAdapterParser extends AbstractPollingInboundChannelAdapterParser {
 
@@ -44,15 +46,19 @@ public class FileInboundChannelAdapterParser extends AbstractPollingInboundChann
 				BeanDefinitionBuilder.genericBeanDefinition(FileReadingMessageSourceFactoryBean.class);
 		IntegrationNamespaceUtils.setReferenceIfAttributeDefined(builder, element, "comparator");
 		IntegrationNamespaceUtils.setReferenceIfAttributeDefined(builder, element, "scanner");
+		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "use-watch-service");
+		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "watch-events");
 		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "directory");
 		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "auto-create-directory");
 		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "queue-size");
 		String filterBeanName = this.registerFilter(element, parserContext);
 		String lockerBeanName = registerLocker(element, parserContext);
+		if (filterBeanName != null) {
+			builder.addPropertyReference("filter", filterBeanName);
+		}
 		if (lockerBeanName != null) {
 			builder.addPropertyReference("locker", lockerBeanName);
 		}
-		builder.addPropertyReference("filter", filterBeanName);
 
 		return builder.getBeanDefinition();
 	}
@@ -76,27 +82,37 @@ public class FileInboundChannelAdapterParser extends AbstractPollingInboundChann
 	}
 
 	private String registerFilter(Element element, ParserContext parserContext) {
+		String filenamePattern = element.getAttribute("filename-pattern");
+		String filenameRegex = element.getAttribute("filename-regex");
+		String preventDuplicates = element.getAttribute("prevent-duplicates");
+		String ignoreHidden = element.getAttribute("ignore-hidden");
+		String filter = element.getAttribute("filter");
+		if (!StringUtils.hasText(filter) && !StringUtils.hasText(filenamePattern) && !StringUtils.hasText(filenameRegex)
+				&& !StringUtils.hasText(preventDuplicates) && !StringUtils.hasText(ignoreHidden)) {
+			return null;
+		}
 		BeanDefinitionBuilder factoryBeanBuilder =
 				BeanDefinitionBuilder.genericBeanDefinition(FileListFilterFactoryBean.class);
 		factoryBeanBuilder.setRole(BeanDefinition.ROLE_SUPPORT);
-		IntegrationNamespaceUtils.setReferenceIfAttributeDefined(factoryBeanBuilder, element, "filter");
-		String filenamePattern = element.getAttribute("filename-pattern");
+		if (StringUtils.hasText(filter)) {
+			factoryBeanBuilder.addPropertyReference("filter", filter);
+		}
 		if (StringUtils.hasText(filenamePattern)) {
-			if (element.hasAttribute("filter")) {
+			if (StringUtils.hasText(filter)) {
 				parserContext.getReaderContext().error(
 						"At most one of 'filter' and 'filename-pattern' may be provided.", element);
 			}
 			factoryBeanBuilder.addPropertyValue("filenamePattern", filenamePattern);
 		}
-		String filenameRegex = element.getAttribute("filename-regex");
 		if (StringUtils.hasText(filenameRegex)) {
-			if (element.hasAttribute("filter")) {
+			if (StringUtils.hasText(filter)) {
 				parserContext.getReaderContext().error(
 						"At most one of 'filter' and 'filename-regex' may be provided.", element);
 			}
 			factoryBeanBuilder.addPropertyValue("filenameRegex", filenameRegex);
 		}
 		IntegrationNamespaceUtils.setValueIfAttributeDefined(factoryBeanBuilder, element, "prevent-duplicates");
+		IntegrationNamespaceUtils.setValueIfAttributeDefined(factoryBeanBuilder, element, "ignore-hidden");
 		return BeanDefinitionReaderUtils.registerWithGeneratedName(
 				factoryBeanBuilder.getBeanDefinition(), parserContext.getRegistry());
 	}

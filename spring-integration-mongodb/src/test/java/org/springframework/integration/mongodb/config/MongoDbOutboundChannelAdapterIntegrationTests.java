@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.mongodb.config;
 
 import static org.junit.Assert.assertNotNull;
@@ -23,12 +24,12 @@ import org.springframework.context.support.ClassPathXmlApplicationContext;
 import org.springframework.data.mongodb.MongoDbFactory;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.BasicQuery;
-import org.springframework.messaging.Message;
-import org.springframework.messaging.MessageChannel;
-import org.springframework.messaging.support.GenericMessage;
 import org.springframework.integration.mongodb.rules.MongoDbAvailable;
 import org.springframework.integration.mongodb.rules.MongoDbAvailableTests;
 import org.springframework.integration.support.MessageBuilder;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.MessageChannel;
+import org.springframework.messaging.support.GenericMessage;
 
 import com.mongodb.BasicDBObject;
 import com.mongodb.util.JSON;
@@ -39,7 +40,7 @@ public class MongoDbOutboundChannelAdapterIntegrationTests extends MongoDbAvaila
 
 	@Test
 	@MongoDbAvailable
-	public void testWithDefaultMongoFactory() throws Exception{
+	public void testWithDefaultMongoFactory() throws Exception {
 		ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext("outbound-adapter-config.xml", this.getClass());
 
 		MessageChannel channel = context.getBean("simpleAdapter", MessageChannel.class);
@@ -49,11 +50,12 @@ public class MongoDbOutboundChannelAdapterIntegrationTests extends MongoDbAvaila
 		MongoDbFactory mongoDbFactory = this.prepareMongoFactory();
 		MongoTemplate template = new MongoTemplate(mongoDbFactory);
 		assertNotNull(template.find(new BasicQuery("{'name' : 'Bob'}"), Person.class, "data"));
+		context.close();
 	}
 
 	@Test
 	@MongoDbAvailable
-	public void testWithNamedCollection() throws Exception{
+	public void testWithNamedCollection() throws Exception {
 		MongoDbFactory mongoDbFactory = this.prepareMongoFactory("foo");
 		ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext("outbound-adapter-config.xml", this.getClass());
 
@@ -63,11 +65,12 @@ public class MongoDbOutboundChannelAdapterIntegrationTests extends MongoDbAvaila
 
 		MongoTemplate template = new MongoTemplate(mongoDbFactory);
 		assertNotNull(template.find(new BasicQuery("{'name' : 'Bob'}"), Person.class, "foo"));
+		context.close();
 	}
 
 	@Test
 	@MongoDbAvailable
-	public void testWithTemplate() throws Exception{
+	public void testWithTemplate() throws Exception {
 		MongoDbFactory mongoDbFactory = this.prepareMongoFactory("foo");
 		ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext("outbound-adapter-config.xml", this.getClass());
 
@@ -77,11 +80,12 @@ public class MongoDbOutboundChannelAdapterIntegrationTests extends MongoDbAvaila
 
 		MongoTemplate template = new MongoTemplate(mongoDbFactory);
 		assertNotNull(template.find(new BasicQuery("{'name' : 'Bob'}"), Person.class, "foo"));
+		context.close();
 	}
 
 	@Test
 	@MongoDbAvailable
-	public void testSavingDbObject() throws Exception{
+	public void testSavingDbObject() throws Exception {
 
 		BasicDBObject dbObject = (BasicDBObject) JSON.parse("{'foo' : 'bar'}");
 
@@ -94,11 +98,12 @@ public class MongoDbOutboundChannelAdapterIntegrationTests extends MongoDbAvaila
 
 		MongoTemplate template = new MongoTemplate(mongoDbFactory);
 		assertNotNull(template.find(new BasicQuery("{'foo' : 'bar'}"), BasicDBObject.class, "foo"));
+		context.close();
 	}
 
 	@Test
 	@MongoDbAvailable
-	public void testSavingJSONString() throws Exception{
+	public void testSavingJSONString() throws Exception {
 
 		String object = "{'foo' : 'bar'}";
 
@@ -111,11 +116,12 @@ public class MongoDbOutboundChannelAdapterIntegrationTests extends MongoDbAvaila
 
 		MongoTemplate template = new MongoTemplate(mongoDbFactory);
 		assertNotNull(template.find(new BasicQuery("{'foo' : 'bar'}"), BasicDBObject.class, "foo"));
+		context.close();
 	}
 
 	@Test
 	@MongoDbAvailable
-	public void testWithMongoConverter() throws Exception{
+	public void testWithMongoConverter() throws Exception {
 		ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext("outbound-adapter-config.xml", this.getClass());
 
 		MessageChannel channel = context.getBean("simpleAdapterWithConverter", MessageChannel.class);
@@ -125,5 +131,6 @@ public class MongoDbOutboundChannelAdapterIntegrationTests extends MongoDbAvaila
 		MongoDbFactory mongoDbFactory = this.prepareMongoFactory();
 		MongoTemplate template = new MongoTemplate(mongoDbFactory);
 		assertNotNull(template.find(new BasicQuery("{'name' : 'Bob'}"), Person.class, "data"));
+		context.close();
 	}
 }

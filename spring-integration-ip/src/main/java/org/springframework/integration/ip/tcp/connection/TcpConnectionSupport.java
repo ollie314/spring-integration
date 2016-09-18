@@ -1,5 +1,5 @@
 /*
- * Copyright 2001-2014 the original author or authors.
+ * Copyright 2001-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +18,11 @@ package org.springframework.integration.ip.tcp.connection;
 
 import java.net.InetAddress;
 import java.net.Socket;
-import java.net.SocketException;
 import java.util.Collections;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -33,7 +34,7 @@ import org.springframework.core.serializer.Deserializer;
 import org.springframework.core.serializer.Serializer;
 import org.springframework.integration.ip.IpHeaders;
 import org.springframework.integration.ip.tcp.serializer.AbstractByteArraySerializer;
-import org.springframework.messaging.Message;
+import org.springframework.messaging.MessagingException;
 import org.springframework.messaging.support.ErrorMessage;
 import org.springframework.util.Assert;
 
@@ -50,6 +51,20 @@ public abstract class TcpConnectionSupport implements TcpConnection {
 
 	protected final Log logger = LogFactory.getLog(this.getClass());
 
+	private final CountDownLatch listenerRegisteredLatch = new CountDownLatch(1);
+
+	private final boolean server;
+
+	private final AtomicLong sequence = new AtomicLong();
+
+	private final ApplicationEventPublisher applicationEventPublisher;
+
+	private final AtomicBoolean closePublished = new AtomicBoolean();
+
+	private final AtomicBoolean exceptionSent = new AtomicBoolean();
+
+	private final SocketInfo socketInfo;
+
 	@SuppressWarnings("rawtypes")
 	private volatile Deserializer deserializer;
 
@@ -60,19 +75,9 @@ public abstract class TcpConnectionSupport implements TcpConnection {
 
 	private volatile TcpListener listener;
 
-	private volatile TcpListener actualListener;
-
 	private volatile TcpSender sender;
 
-	private volatile boolean singleUse;
-
-	private final boolean server;
-
 	private volatile String connectionId;
-
-	private final AtomicLong sequence = new AtomicLong();
-
-	private volatile int soLinger = -1;
 
 	private volatile String hostName = "unknown";
 
@@ -80,13 +85,9 @@ public abstract class TcpConnectionSupport implements TcpConnection {
 
 	private volatile String connectionFactoryName = "unknown";
 
-	private final ApplicationEventPublisher applicationEventPublisher;
-
-	private final AtomicBoolean closePublished = new AtomicBoolean();
-
-	private final AtomicBoolean exceptionSent = new AtomicBoolean();
-
 	private volatile boolean noReadErrorOnClose;
+
+	private volatile boolean manualListenerRegistration;
 
 	public TcpConnectionSupport() {
 		this(null);
@@ -95,6 +96,7 @@ public abstract class TcpConnectionSupport implements TcpConnection {
 	public TcpConnectionSupport(ApplicationEventPublisher applicationEventPublisher) {
 		this.server = false;
 		this.applicationEventPublisher = applicationEventPublisher;
+		this.socketInfo = null;
 	}
 
 	/**
@@ -112,6 +114,7 @@ public abstract class TcpConnectionSupport implements TcpConnection {
 	public TcpConnectionSupport(Socket socket, boolean server, boolean lookupHost,
 			ApplicationEventPublisher applicationEventPublisher,
 			String connectionFactoryName) {
+		this.socketInfo = new SocketInfo(socket);
 		this.server = server;
 		InetAddress inetAddress = socket.getInetAddress();
 		if (inetAddress != null) {
@@ -126,31 +129,12 @@ public abstract class TcpConnectionSupport implements TcpConnection {
 		int port = socket.getPort();
 		int localPort = socket.getLocalPort();
 		this.connectionId = this.hostName + ":" + port + ":" + localPort + ":" + UUID.randomUUID().toString();
-		try {
-			this.soLinger = socket.getSoLinger();
-		}
-		catch (SocketException e) { }
 		this.applicationEventPublisher = applicationEventPublisher;
 		if (connectionFactoryName != null) {
 			this.connectionFactoryName = connectionFactoryName;
 		}
-		if (logger.isDebugEnabled()) {
-			logger.debug("New connection " + this.getConnectionId());
-		}
-	}
-
-	public void afterSend(Message<?> message) throws Exception {
-		if (logger.isDebugEnabled()) {
-			logger.debug("Message sent " + message);
-		}
-		if (this.singleUse) {
-			// if (we're a server socket, or a send-only socket), and soLinger <> 0, close
-			if ((this.isServer() || this.actualListener == null) && this.soLinger != 0) {
-				if (logger.isDebugEnabled()) {
-					logger.debug("Closing single-use connection" + this.getConnectionId());
-				}
-				this.closeConnection(false);
-			}
+		if (this.logger.isDebugEnabled()) {
+			this.logger.debug("New connection " + this.getConnectionId());
 		}
 	}
 
@@ -171,22 +155,24 @@ public abstract class TcpConnectionSupport implements TcpConnection {
 	/**
 	 * If we have been intercepted, propagate the close from the outermost interceptor;
 	 * otherwise, just call close().
-	 * 
+	 *
 	 * @param isException true when this call is the result of an Exception.
 	 */
 	protected void closeConnection(boolean isException) {
-		if (!(this.listener instanceof TcpConnectionInterceptor)) {
+		TcpListener listener = getListener();
+		if (!(listener instanceof TcpConnectionInterceptor)) {
 			close();
-			return;
 		}
-		TcpConnectionInterceptor outerInterceptor = (TcpConnectionInterceptor) this.listener;
-		while (outerInterceptor.getListener() instanceof TcpConnectionInterceptor) {
-			outerInterceptor = (TcpConnectionInterceptor) outerInterceptor.getListener();
-		}
-		outerInterceptor.close();
-		if (isException) {
-			// ensure physical close in case the interceptor did not close
-			this.close();
+		else {
+			TcpConnectionInterceptor outerInterceptor = (TcpConnectionInterceptor) listener;
+			while (outerInterceptor.getListener() instanceof TcpConnectionInterceptor) {
+				outerInterceptor = (TcpConnectionInterceptor) outerInterceptor.getListener();
+			}
+			outerInterceptor.close();
+			if (isException) {
+				// ensure physical close in case the interceptor did not close
+				this.close();
+			}
 		}
 	}
 
@@ -194,7 +180,7 @@ public abstract class TcpConnectionSupport implements TcpConnection {
 	 * @return the mapper
 	 */
 	public TcpMessageMapper getMapper() {
-		return mapper;
+		return this.mapper;
 	}
 
 	/**
@@ -245,21 +231,23 @@ public abstract class TcpConnectionSupport implements TcpConnection {
 	}
 
 	/**
-	 * Sets the listener that will receive incoming Messages.
+	 * Set the listener that will receive incoming Messages.
 	 * @param listener The listener.
 	 */
 	public void registerListener(TcpListener listener) {
 		this.listener = listener;
-		// Determine the actual listener for this connection
-		if (!(this.listener instanceof TcpConnectionInterceptor)) {
-			this.actualListener = this.listener;
-		} else {
-			TcpConnectionInterceptor outerInterceptor = (TcpConnectionInterceptor) this.listener;
-			while (outerInterceptor.getListener() instanceof TcpConnectionInterceptor) {
-				outerInterceptor = (TcpConnectionInterceptor) outerInterceptor.getListener();
-			}
-			this.actualListener = outerInterceptor.getListener();
-		}
+		this.listenerRegisteredLatch.countDown();
+	}
+
+	/**
+	 * Set whether or not automatic or manual registration of the {@link TcpListener} is to be
+	 * used. (Default automatic). When manual registration is in place, incoming messages will
+	 * be delayed until the listener is registered.
+	 * @since 1.4.5
+	 */
+	public void enableManualListenerRegistration() {
+		this.manualListenerRegistration = true;
+		this.listener = message -> getListener().onMessage(message);
 	}
 
 	/**
@@ -280,36 +268,36 @@ public abstract class TcpConnectionSupport implements TcpConnection {
 	 */
 	@Override
 	public TcpListener getListener() {
+		if (this.manualListenerRegistration) {
+			if (this.logger.isDebugEnabled()) {
+				this.logger.debug(getConnectionId() + " Waiting for listener registration");
+			}
+			waitForListenerRegistration();
+		}
 		return this.listener;
+	}
+
+	private void waitForListenerRegistration() {
+		try {
+			Assert.state(this.listenerRegisteredLatch.await(1, TimeUnit.MINUTES), "TcpListener not registered");
+			this.manualListenerRegistration = false;
+		}
+		catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new MessagingException("Interrupted while waiting for listener registration", e);
+		}
 	}
 
 	/**
 	 * @return the sender
 	 */
 	public TcpSender getSender() {
-		return sender;
-	}
-
-	/**
-	 * @param singleUse true if this socket is to used once and
-	 * discarded.
-	 */
-	public void setSingleUse(boolean singleUse) {
-		this.singleUse = singleUse;
-	}
-
-	/**
-	 *
-	 * @return True if connection is used once.
-	 */
-	@Override
-	public boolean isSingleUse() {
-		return this.singleUse;
+		return this.sender;
 	}
 
 	@Override
 	public boolean isServer() {
-		return server;
+		return this.server;
 	}
 
 	@Override
@@ -332,8 +320,16 @@ public abstract class TcpConnectionSupport implements TcpConnection {
 		return this.connectionId;
 	}
 
+	/**
+	 * @since 4.2.5
+	 */
+	@Override
+	public SocketInfo getSocketInfo() {
+		return this.socketInfo;
+	}
+
 	protected boolean isNoReadErrorOnClose() {
-		return noReadErrorOnClose;
+		return this.noReadErrorOnClose;
 	}
 
 	protected void setNoReadErrorOnClose(boolean noReadErrorOnClose) {
@@ -380,18 +376,21 @@ public abstract class TcpConnectionSupport implements TcpConnection {
 	private void doPublish(TcpConnectionEvent event) {
 		try {
 			if (this.applicationEventPublisher == null) {
-				logger.warn("No publisher available to publish " + event);
+				this.logger.warn("No publisher available to publish " + event);
 			}
 			else {
 				this.applicationEventPublisher.publishEvent(event);
+				if (this.logger.isTraceEnabled()) {
+					this.logger.trace("Published: " + event);
+				}
 			}
 		}
 		catch (Exception e) {
-			if (logger.isDebugEnabled()) {
-				logger.debug("Failed to publish " + event, e);
+			if (this.logger.isDebugEnabled()) {
+				this.logger.debug("Failed to publish " + event, e);
 			}
-			else if (logger.isWarnEnabled()) {
-				logger.warn("Failed to publish " + event + ":" + e.getMessage());
+			else if (this.logger.isWarnEnabled()) {
+				this.logger.warn("Failed to publish " + event + ":" + e.getMessage());
 			}
 		}
 	}

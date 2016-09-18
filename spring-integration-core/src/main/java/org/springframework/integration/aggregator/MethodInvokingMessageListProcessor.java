@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2010 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,18 +18,19 @@ package org.springframework.integration.aggregator;
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Map;
 
-import org.springframework.messaging.Message;
+import org.springframework.beans.factory.BeanFactory;
 import org.springframework.integration.util.AbstractExpressionEvaluator;
 import org.springframework.integration.util.MessagingMethodInvokerHelper;
+import org.springframework.messaging.Message;
 
 /**
  * A MessageListProcessor implementation that invokes a method on a target POJO.
- * 
+ *
  * @author Dave Syer
+ * @author Artem Bilan
  * @since 2.0
  */
 public class MethodInvokingMessageListProcessor<T> extends AbstractExpressionEvaluator {
@@ -37,33 +38,39 @@ public class MethodInvokingMessageListProcessor<T> extends AbstractExpressionEva
 	private final MessagingMethodInvokerHelper<T> delegate;
 
 	public MethodInvokingMessageListProcessor(Object targetObject, Method method, Class<T> expectedType) {
-		delegate = new MessagingMethodInvokerHelper<T>(targetObject, method, expectedType, true);
+		this.delegate = new MessagingMethodInvokerHelper<T>(targetObject, method, expectedType, true);
 	}
 
 	public MethodInvokingMessageListProcessor(Object targetObject, Method method) {
-		delegate = new MessagingMethodInvokerHelper<T>(targetObject, method, true);
+		this.delegate = new MessagingMethodInvokerHelper<T>(targetObject, method, true);
 	}
 
 	public MethodInvokingMessageListProcessor(Object targetObject, String methodName, Class<T> expectedType) {
-		delegate = new MessagingMethodInvokerHelper<T>(targetObject, methodName,
+		this.delegate = new MessagingMethodInvokerHelper<T>(targetObject, methodName,
 				expectedType, true);
 	}
 
 	public MethodInvokingMessageListProcessor(Object targetObject, String methodName) {
-		delegate = new MessagingMethodInvokerHelper<T>(targetObject, methodName, true);
+		this.delegate = new MessagingMethodInvokerHelper<T>(targetObject, methodName, true);
 	}
 
 	public MethodInvokingMessageListProcessor(Object targetObject, Class<? extends Annotation> annotationType) {
-		delegate = new MessagingMethodInvokerHelper<T>(targetObject, annotationType, Object.class, true);
+		this.delegate = new MessagingMethodInvokerHelper<T>(targetObject, annotationType, Object.class, true);
+	}
+
+	@Override
+	public void setBeanFactory(BeanFactory beanFactory) {
+		super.setBeanFactory(beanFactory);
+		this.delegate.setBeanFactory(beanFactory);
 	}
 
 	public String toString() {
-		return delegate.toString();
+		return this.delegate.toString();
 	}
 
-	public T process(Collection<? extends Message<?>> messages, Map<String, Object> aggregateHeaders) {
+	public T process(Collection<Message<?>> messages, Map<String, Object> aggregateHeaders) {
 		try {
-			return delegate.process(new ArrayList<Message<?>>(messages), aggregateHeaders);
+			return this.delegate.process(messages, aggregateHeaders);
 		}
 		catch (RuntimeException e) {
 			throw e;

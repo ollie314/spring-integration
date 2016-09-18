@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,6 +44,7 @@ import org.springframework.xml.transform.TransformerObjectSupport;
  * @author Mark Fisher
  * @author Oleg Zhurakousky
  * @author Artem Bilan
+ * @author Gary Russell
  */
 public class SimpleWebServiceOutboundGateway extends AbstractWebServiceOutboundGateway {
 
@@ -53,11 +54,13 @@ public class SimpleWebServiceOutboundGateway extends AbstractWebServiceOutboundG
 		this(destinationProvider, null, null);
 	}
 
-	public SimpleWebServiceOutboundGateway(DestinationProvider destinationProvider, SourceExtractor<?> sourceExtractor) {
+	public SimpleWebServiceOutboundGateway(DestinationProvider destinationProvider,
+			SourceExtractor<?> sourceExtractor) {
 		this(destinationProvider, sourceExtractor, (WebServiceMessageFactory) null);
 	}
 
-	public SimpleWebServiceOutboundGateway(DestinationProvider destinationProvider, SourceExtractor<?> sourceExtractor, WebServiceMessageFactory messageFactory) {
+	public SimpleWebServiceOutboundGateway(DestinationProvider destinationProvider, SourceExtractor<?> sourceExtractor,
+			WebServiceMessageFactory messageFactory) {
 		super(destinationProvider, messageFactory);
 		this.sourceExtractor = (sourceExtractor != null) ? sourceExtractor : new DefaultSourceExtractor();
 	}
@@ -70,14 +73,20 @@ public class SimpleWebServiceOutboundGateway extends AbstractWebServiceOutboundG
 		this(uri, sourceExtractor, (WebServiceMessageFactory) null);
 	}
 
-	public SimpleWebServiceOutboundGateway(String uri, SourceExtractor<?> sourceExtractor, WebServiceMessageFactory messageFactory) {
+	public SimpleWebServiceOutboundGateway(String uri, SourceExtractor<?> sourceExtractor,
+			WebServiceMessageFactory messageFactory) {
 		super(uri, messageFactory);
 		this.sourceExtractor = (sourceExtractor != null) ? sourceExtractor : new DefaultSourceExtractor();
 	}
 
+	@Override
+	public String getComponentType() {
+		return "ws:outbound-gateway(simple)";
+	}
 
 	@Override
-	protected Object doHandle(String uri, final Message<?> requestMessage, final WebServiceMessageCallback requestCallback) {
+	protected Object doHandle(String uri, final Message<?> requestMessage,
+			final WebServiceMessageCallback requestCallback) {
 		Object requestPayload = requestMessage.getPayload();
 		Result responseResultInstance = null;
 		if (requestPayload instanceof String) {
@@ -87,27 +96,29 @@ public class SimpleWebServiceOutboundGateway extends AbstractWebServiceOutboundG
 			responseResultInstance = new DOMResult();
 		}
 		return this.getWebServiceTemplate().sendAndReceive(uri,
-				new SimpleRequestMessageCallback(requestCallback, requestMessage), new SimpleResponseMessageExtractor(responseResultInstance));
+				new SimpleRequestMessageCallback(requestCallback, requestMessage),
+				new SimpleResponseMessageExtractor(responseResultInstance));
 	}
 
-	private class SimpleRequestMessageCallback extends RequestMessageCallback {
+	private final class SimpleRequestMessageCallback extends RequestMessageCallback {
 
-		public SimpleRequestMessageCallback(WebServiceMessageCallback requestCallback, Message<?> requestMessage){
+		private SimpleRequestMessageCallback(WebServiceMessageCallback requestCallback, Message<?> requestMessage) {
 			super(requestCallback, requestMessage);
 		}
 
 		@Override
-		public void doWithMessageInternal(WebServiceMessage message, Object payload) throws IOException, TransformerException {
+		public void doWithMessageInternal(WebServiceMessage message, Object payload)
+				throws IOException, TransformerException {
 			Source source = this.extractSource(payload);
 			this.transform(source, message.getPayloadResult());
 		}
 
-		private Source extractSource(Object requestPayload) throws IOException, TransformerException{
+		private Source extractSource(Object requestPayload) throws IOException, TransformerException {
 			Source source = null;
 
 			if (requestPayload instanceof Source) {
 				source = (Source) requestPayload;
-				Object o = sourceExtractor.extractData(source);
+				Object o = SimpleWebServiceOutboundGateway.this.sourceExtractor.extractData(source);
 				Assert.isInstanceOf(Source.class, o);
 				source = (Source) o;
 			}
@@ -119,7 +130,8 @@ public class SimpleWebServiceOutboundGateway extends AbstractWebServiceOutboundG
 			}
 			else {
 				throw new MessagingException("Unsupported payload type '" + requestPayload.getClass() +
-						"'. " + this.getClass().getName() + " only supports 'java.lang.String', '" + Source.class.getName() +
+						"'. " + this.getClass().getName() + " only supports 'java.lang.String', '" +
+						Source.class.getName() +
 						"', and '" + Document.class.getName() + "'. Consider either using the '"
 						+ MarshallingWebServiceOutboundGateway.class.getName() + "' or a Message Transformer.");
 			}
@@ -129,26 +141,26 @@ public class SimpleWebServiceOutboundGateway extends AbstractWebServiceOutboundG
 
 	}
 
-	private class SimpleResponseMessageExtractor extends ResponseMessageExtractor {
+	private final class SimpleResponseMessageExtractor extends ResponseMessageExtractor {
 
 		private final Result result;
 
-		public SimpleResponseMessageExtractor(Result result){
+		private SimpleResponseMessageExtractor(Result result) {
 			super();
 			this.result = result;
 		}
 
 		@Override
-		public Object doExtractData(WebServiceMessage message) throws IOException, TransformerException{
+		public Object doExtractData(WebServiceMessage message) throws IOException, TransformerException {
 			Source payloadSource = message.getPayloadSource();
 
 			if (payloadSource != null && this.result != null) {
 				this.transform(payloadSource, this.result);
-				if (this.result instanceof StringResult){
+				if (this.result instanceof StringResult) {
 					return this.result.toString();
 				}
-				else if (this.result instanceof DOMResult){
-					return  ((DOMResult)this.result).getNode();
+				else if (this.result instanceof DOMResult) {
+					return  ((DOMResult) this.result).getNode();
 				}
 				else {
 					return this.result;
@@ -163,9 +175,10 @@ public class SimpleWebServiceOutboundGateway extends AbstractWebServiceOutboundG
 
 	private static class DefaultSourceExtractor extends TransformerObjectSupport implements SourceExtractor<DOMSource> {
 
+		@Override
 		public DOMSource extractData(Source source) throws IOException, TransformerException {
 			if (source instanceof DOMSource) {
-				return (DOMSource)source;
+				return (DOMSource) source;
 			}
 			DOMResult result = new DOMResult();
 			this.transform(source, result);

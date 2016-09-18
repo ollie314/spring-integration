@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.parsing.BeanDefinitionParsingException;
 import org.springframework.context.ApplicationContext;
@@ -32,6 +33,7 @@ import org.springframework.data.redis.support.collections.RedisCollectionFactory
 import org.springframework.expression.spel.standard.SpelExpression;
 import org.springframework.integration.redis.inbound.RedisStoreMessageSource;
 import org.springframework.integration.test.util.TestUtils;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 
@@ -42,35 +44,36 @@ import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
  */
 @ContextConfiguration
 @RunWith(SpringJUnit4ClassRunner.class)
+@DirtiesContext
 public class RedisStoreInboundChannelAdapterParserTests {
 
 	@Autowired
 	private ApplicationContext context;
 
 	@Autowired
-	private RedisTemplate<?,?> redisTemplate;
+	private RedisTemplate<?, ?> redisTemplate;
 
 	@Test
-	public void validateWithStringTemplate(){
+	public void validateWithStringTemplate() {
 		RedisStoreMessageSource withStringTemplate =
 				TestUtils.getPropertyValue(context.getBean("withStringTemplate"), "source", RedisStoreMessageSource.class);
-		assertEquals("'presidents'", ((SpelExpression)TestUtils.getPropertyValue(withStringTemplate, "keyExpression")).getExpressionString());
-		assertEquals("LIST", ((CollectionType)TestUtils.getPropertyValue(withStringTemplate, "collectionType")).toString());
+		assertEquals("'presidents'", ((SpelExpression) TestUtils.getPropertyValue(withStringTemplate, "keyExpression")).getExpressionString());
+		assertEquals("LIST", ((CollectionType) TestUtils.getPropertyValue(withStringTemplate, "collectionType")).toString());
 		assertTrue(TestUtils.getPropertyValue(withStringTemplate, "redisTemplate") instanceof StringRedisTemplate);
 	}
 
 	@Test
-	public void validateWithExternalTemplate(){
+	public void validateWithExternalTemplate() {
 		RedisStoreMessageSource withExternalTemplate =
 				TestUtils.getPropertyValue(context.getBean("withExternalTemplate"), "source", RedisStoreMessageSource.class);
-		assertEquals("'presidents'", ((SpelExpression)TestUtils.getPropertyValue(withExternalTemplate, "keyExpression")).getExpressionString());
-		assertEquals("LIST", ((CollectionType)TestUtils.getPropertyValue(withExternalTemplate, "collectionType")).toString());
+		assertEquals("'presidents'", ((SpelExpression) TestUtils.getPropertyValue(withExternalTemplate, "keyExpression")).getExpressionString());
+		assertEquals("LIST", ((CollectionType) TestUtils.getPropertyValue(withExternalTemplate, "collectionType")).toString());
 		assertSame(redisTemplate, TestUtils.getPropertyValue(withExternalTemplate, "redisTemplate"));
 	}
 
-	@Test(expected=BeanDefinitionParsingException.class)
-	public void testTemplateAndCfMutualExclusivity(){
-		new ClassPathXmlApplicationContext("inbound-template-cf-fail.xml", this.getClass());
+	@Test(expected = BeanDefinitionParsingException.class)
+	public void testTemplateAndCfMutualExclusivity() {
+		new ClassPathXmlApplicationContext("inbound-template-cf-fail.xml", this.getClass()).close();
 	}
 
 }

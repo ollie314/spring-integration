@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -56,6 +56,7 @@ public class AmqpChannelParser extends AbstractChannelParser {
 		IntegrationNamespaceUtils.setReferenceIfAttributeDefined(builder, element, "amqp-admin");
 		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "auto-startup");
 		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "channel-transacted");
+		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "template-channel-transacted");
 		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "concurrent-consumers");
 		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "encoding");
 		IntegrationNamespaceUtils.setReferenceIfAttributeDefined(builder, element, "error-handler");
@@ -68,11 +69,16 @@ public class AmqpChannelParser extends AbstractChannelParser {
 		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "queue-name");
 		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "receive-timeout");
 		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "recovery-interval");
+		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "missing-queues-fatal");
 		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "shutdown-timeout");
 		IntegrationNamespaceUtils.setReferenceIfAttributeDefined(builder, element, "task-executor");
 		IntegrationNamespaceUtils.setReferenceIfAttributeDefined(builder, element, "transaction-attribute");
 		IntegrationNamespaceUtils.setReferenceIfAttributeDefined(builder, element, "transaction-manager");
 		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "tx-size");
+		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "default-delivery-mode");
+		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "extract-payload");
+		IntegrationNamespaceUtils.setReferenceIfAttributeDefined(builder, element, "outbound-header-mapper");
+		IntegrationNamespaceUtils.setReferenceIfAttributeDefined(builder, element, "inbound-header-mapper");
 		return builder;
 	}
 

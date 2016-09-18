@@ -1,5 +1,5 @@
 /*
- * Copyright 2013 the original author or authors.
+ * Copyright 2013-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.file.remote.session;
 
 
@@ -28,12 +29,12 @@ public interface SharedSessionCapable {
 	/**
 	 * @return true if this factory uses a shared session.
 	 */
-	public abstract boolean isSharedSession();
+	boolean isSharedSession();
 
 	/**
 	 * Resets the shared session so the next {@code #getSession()} will return a session
 	 * using a new connection.
 	 */
-	public abstract void resetSharedSession();
+	void resetSharedSession();
 
 }

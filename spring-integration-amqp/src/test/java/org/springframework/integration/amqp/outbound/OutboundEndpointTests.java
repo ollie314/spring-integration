@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package org.springframework.integration.amqp.outbound;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.mockito.Matchers.any;
 import static org.mockito.Matchers.anyString;
 import static org.mockito.Mockito.doAnswer;
@@ -34,11 +35,14 @@ import org.springframework.amqp.core.Message;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.rabbit.support.CorrelationData;
-import org.springframework.messaging.MessageHeaders;
+import org.springframework.integration.amqp.support.DefaultAmqpHeaderMapper;
+import org.springframework.integration.channel.QueueChannel;
 import org.springframework.integration.support.MessageBuilder;
+import org.springframework.messaging.MessageHeaders;
 
 /**
  * @author Gary Russell
+ * @author Artem Bilan
  * @since 3.0
  */
 public class OutboundEndpointTests {
@@ -73,6 +77,9 @@ public class OutboundEndpointTests {
 		TestRabbitTemplate amqpTemplate = spy(new TestRabbitTemplate(connectionFactory));
 		AmqpOutboundEndpoint endpoint = new AmqpOutboundEndpoint(amqpTemplate);
 		endpoint.setExpectReply(true);
+		DefaultAmqpHeaderMapper mapper = DefaultAmqpHeaderMapper.inboundMapper();
+		mapper.setRequestHeaderNames("*");
+		endpoint.setHeaderMapper(mapper);
 		final AtomicReference<Message> amqpMessage =
 				new AtomicReference<Message>();
 		doAnswer(new Answer<Object>() {
@@ -82,13 +89,16 @@ public class OutboundEndpointTests {
 				amqpMessage.set((Message) invocation.getArguments()[2]);
 				return null;
 			}
-		}).when(amqpTemplate).doSendAndReceiveWithTemporary(anyString(), anyString(), any(Message.class));
+		}).when(amqpTemplate)
+				.doSendAndReceiveWithTemporary(anyString(), anyString(), any(Message.class), any(CorrelationData.class));
 		org.springframework.messaging.Message<?> message = MessageBuilder.withPayload("foo")
 				.setHeader(MessageHeaders.CONTENT_TYPE, "bar")
+				.setReplyChannel(new QueueChannel())
 				.build();
 		endpoint.handleMessage(message);
 		assertNotNull(amqpMessage.get());
 		assertEquals("bar", amqpMessage.get().getMessageProperties().getContentType());
+		assertNull(amqpMessage.get().getMessageProperties().getHeaders().get(MessageHeaders.REPLY_CHANNEL));
 	}
 
 	/**
@@ -102,8 +112,8 @@ public class OutboundEndpointTests {
 
 		@Override
 		public org.springframework.amqp.core.Message doSendAndReceiveWithTemporary(String exchange,
-				String routingKey, org.springframework.amqp.core.Message message) {
-			return super.doSendAndReceiveWithTemporary(exchange, routingKey, message);
+				String routingKey, org.springframework.amqp.core.Message message, CorrelationData correlationData) {
+			return super.doSendAndReceiveWithTemporary(exchange, routingKey, message, correlationData);
 		}
 
 	}

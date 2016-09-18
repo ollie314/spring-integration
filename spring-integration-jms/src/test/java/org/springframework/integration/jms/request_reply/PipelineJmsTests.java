@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.jms.request_reply;
 
 import static org.junit.Assert.assertEquals;
@@ -36,8 +37,8 @@ import org.springframework.integration.MessageTimeoutException;
 import org.springframework.integration.gateway.RequestReplyExchanger;
 import org.springframework.integration.jms.ActiveMQMultiContextTests;
 import org.springframework.integration.jms.config.ActiveMqTestUtils;
-import org.springframework.messaging.support.GenericMessage;
 import org.springframework.integration.test.support.LongRunningIntegrationTest;
+import org.springframework.messaging.support.GenericMessage;
 /**
  * @author Oleg Zhurakousky
  * @author Gary Russell
@@ -65,7 +66,7 @@ public class PipelineJmsTests extends ActiveMQMultiContextTests {
 	 * All reply queues are TEMPORARY
 	 */
 	@Test
-	public void testPipeline1() throws Exception{
+	public void testPipeline1() throws Exception {
 		this.test("pipeline-01.xml");
 	}
 
@@ -75,7 +76,7 @@ public class PipelineJmsTests extends ActiveMQMultiContextTests {
 	 * All reply queues are TEMPORARY
 	 */
 	@Test
-	public void testPipeline2() throws Exception{
+	public void testPipeline2() throws Exception {
 		this.test("pipeline-02.xml");
 	}
 
@@ -85,7 +86,7 @@ public class PipelineJmsTests extends ActiveMQMultiContextTests {
 	 * All reply queues are TEMPORARY
 	 */
 	@Test
-	public void testPipeline3() throws Exception{
+	public void testPipeline3() throws Exception {
 		this.test("pipeline-03.xml");
 	}
 
@@ -95,7 +96,7 @@ public class PipelineJmsTests extends ActiveMQMultiContextTests {
 	 * All reply queues are TEMPORARY
 	 */
 	@Test
-	public void testPipeline4() throws Exception{
+	public void testPipeline4() throws Exception {
 		this.test("pipeline-04.xml");
 	}
 
@@ -105,7 +106,7 @@ public class PipelineJmsTests extends ActiveMQMultiContextTests {
 	 * All reply queues are TEMPORARY
 	 */
 	@Test
-	public void testPipeline5() throws Exception{
+	public void testPipeline5() throws Exception {
 		this.test("pipeline-05.xml");
 	}
 
@@ -115,7 +116,7 @@ public class PipelineJmsTests extends ActiveMQMultiContextTests {
 	 * All reply queues are TEMPORARY
 	 */
 	@Test
-	public void testPipeline6() throws Exception{
+	public void testPipeline6() throws Exception {
 		this.test("pipeline-06.xml");
 	}
 
@@ -125,7 +126,7 @@ public class PipelineJmsTests extends ActiveMQMultiContextTests {
 	 * All reply queues are TEMPORARY
 	 */
 	@Test
-	public void testPipeline7() throws Exception{
+	public void testPipeline7() throws Exception {
 		this.test("pipeline-07.xml");
 	}
 
@@ -135,7 +136,7 @@ public class PipelineJmsTests extends ActiveMQMultiContextTests {
 	 * All reply queues are TEMPORARY
 	 */
 	@Test
-	public void testPipeline8() throws Exception{
+	public void testPipeline8() throws Exception {
 		this.test("pipeline-08.xml");
 	}
 
@@ -145,7 +146,7 @@ public class PipelineJmsTests extends ActiveMQMultiContextTests {
 	 * All reply queues are TEMPORARY
 	 */
 	@Test
-	public void testPipeline9() throws Exception{
+	public void testPipeline9() throws Exception {
 		this.test("pipeline-09.xml");
 	}
 
@@ -161,15 +162,19 @@ public class PipelineJmsTests extends ActiveMQMultiContextTests {
 			for (int i = 0; i < requests; i++) {
 				final int y = i;
 				executor.execute(new Runnable() {
+					@Override
 					public void run() {
 						try {
 							assertEquals(y, gateway.exchange(new GenericMessage<Integer>(y)).getPayload());
 							successCounter.incrementAndGet();
-						} catch (MessageTimeoutException e) {
+						}
+						catch (MessageTimeoutException e) {
 							timeoutCounter.incrementAndGet();
-						} catch (Throwable t) {
+						}
+						catch (Throwable t) {
 							failureCounter.incrementAndGet();
-						} finally {
+						}
+						finally {
 							latch.countDown();
 						}
 					}
@@ -187,7 +192,7 @@ public class PipelineJmsTests extends ActiveMQMultiContextTests {
 			assertTrue(successCounter.get() > 10);
 			assertEquals(0, failureCounter.get());
 			assertEquals(requests, successCounter.get() + timeoutCounter.get());
-			context.destroy();
+			context.close();
 		}
 	}
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,13 @@
 
 package org.springframework.integration.mail;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.Date;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 
 import javax.mail.Authenticator;
@@ -26,6 +31,8 @@ import javax.mail.Flags;
 import javax.mail.Folder;
 import javax.mail.Message;
 import javax.mail.MessagingException;
+import javax.mail.Multipart;
+import javax.mail.Part;
 import javax.mail.Session;
 import javax.mail.Store;
 import javax.mail.URLName;
@@ -39,7 +46,10 @@ import org.springframework.expression.Expression;
 import org.springframework.expression.spel.support.StandardEvaluationContext;
 import org.springframework.integration.context.IntegrationObjectSupport;
 import org.springframework.integration.expression.ExpressionUtils;
+import org.springframework.integration.mapping.HeaderMapper;
+import org.springframework.messaging.MessageHeaders;
 import org.springframework.util.Assert;
+import org.springframework.util.FileCopyUtils;
 
 /**
  * Base class for {@link MailReceiver} implementations.
@@ -51,13 +61,19 @@ import org.springframework.util.Assert;
  * @author Oleg Zhurakousky
  * @author Gary Russell
  */
-public abstract class AbstractMailReceiver extends IntegrationObjectSupport implements MailReceiver, DisposableBean{
+public abstract class AbstractMailReceiver extends IntegrationObjectSupport implements MailReceiver, DisposableBean {
 
-	public final static String SI_USER_FLAG = "spring-integration-mail-adapter";
+	/**
+	 * Default user flag for marking messages as seen by this receiver:
+	 * {@value #DEFAULT_SI_USER_FLAG}.
+	 */
+	public final static String DEFAULT_SI_USER_FLAG = "spring-integration-mail-adapter";
 
-	protected final Log logger = LogFactory.getLog(this.getClass());
+	protected final Log logger = LogFactory.getLog(getClass());
 
 	private final URLName url;
+
+	private final Object folderMonitor = new Object();
 
 	private volatile String protocol;
 
@@ -81,10 +97,15 @@ public abstract class AbstractMailReceiver extends IntegrationObjectSupport impl
 
 	private volatile Expression selectorExpression;
 
+	private volatile HeaderMapper<MimeMessage> headerMapper;
+
 	protected volatile boolean initialized;
 
-	private final Object folderMonitor = new Object();
+	private volatile String userFlag = DEFAULT_SI_USER_FLAG;
 
+	private volatile boolean embeddedPartsAsBytes = true;
+
+	private volatile boolean simpleContent;
 
 	public AbstractMailReceiver() {
 		this.url = null;
@@ -143,6 +164,10 @@ public abstract class AbstractMailReceiver extends IntegrationObjectSupport impl
 		this.javaMailProperties = javaMailProperties;
 	}
 
+	protected Properties getJavaMailProperties() {
+		return this.javaMailProperties;
+	}
+
 	/**
 	 * Optional, sets the Authenticator to be used to obtain a session. This will not be used if
 	 * {@link AbstractMailReceiver#setSession} has been used to configure the {@link Session} directly.
@@ -181,6 +206,79 @@ public abstract class AbstractMailReceiver extends IntegrationObjectSupport impl
 		return this.shouldDeleteMessages;
 	}
 
+	protected String getUserFlag() {
+		return this.userFlag;
+	}
+
+	/**
+	 * Set the name of the flag to use to flag messages when the server does
+	 * not support \Recent but supports user flags; default {@value #DEFAULT_SI_USER_FLAG}.
+	 * @param userFlag the flag.
+	 * @since 4.2.2
+	 */
+	public void setUserFlag(String userFlag) {
+		this.userFlag = userFlag;
+	}
+
+	/**
+	 * Set the header mapper; if a header mapper is not provided, the message payload is
+	 * a {@link MimeMessage}, when provided, the headers are mapped and the payload is
+	 * the {@link MimeMessage} content.
+	 * @param headerMapper the header mapper.
+	 * @since 4.3
+	 * @see #setEmbeddedPartsAsBytes(boolean)
+	 */
+	public void setHeaderMapper(HeaderMapper<MimeMessage> headerMapper) {
+		this.headerMapper = headerMapper;
+	}
+
+	/**
+	 * When a header mapper is provided determine whether an embedded {@link Part} (e.g
+	 * {@link Message} or {@link Multipart} content is rendered as a byte[] in the
+	 * payload. Otherwise, leave as a {@link Part}. These objects are not suitable for
+	 * downstream serialization. Default: true.
+	 * <p>This has no effect if there is no header mapper, in that case the payload is the
+	 * {@link MimeMessage}.
+	 * @param embeddedPartsAsBytes the embeddedPartsAsBytes to set.
+	 * @since 4.3
+	 * @see #setHeaderMapper(HeaderMapper)
+	 */
+	public void setEmbeddedPartsAsBytes(boolean embeddedPartsAsBytes) {
+		this.embeddedPartsAsBytes = embeddedPartsAsBytes;
+	}
+
+	/**
+	 * {@link MimeMessage#getContent()} returns just the email body.
+	 *
+	 * <pre class="code">
+	 * foo
+	 * </pre>
+	 *
+	 * Some subclasses, such as {@code IMAPMessage} return some headers with the body.
+	 *
+	 * <pre class="code">
+	 * To: foo@bar
+	 * From: bar@baz
+	 * Subject: Test Email
+	 *
+	 *  foo
+	 * </pre>
+	 *
+	 * Starting with version 5.0, messages emitted by mail receivers will render the
+	 * content in the same way as the {@link MimeMessage} implementation returned by
+	 * javamail. In versions 2.2 through 4.3, the content was always just the body,
+	 * regardless of the underlying message type (unless a header mapper was provided,
+	 * in which case the payload was rendered by the underlying {@link MimeMessage}.
+	 * <p>To revert to the previous behavior, set this flag to true. In addition, even
+	 * if a header mapper is provided, the payload will just be the email body.
+	 * @param simpleContent true to render simple content.
+	 *
+	 * @since 5.0
+	 */
+	public void setSimpleContent(boolean simpleContent) {
+		this.simpleContent = simpleContent;
+	}
+
 	protected Folder getFolder() {
 		return this.folder;
 	}
@@ -202,6 +300,9 @@ public abstract class AbstractMailReceiver extends IntegrationObjectSupport impl
 				this.session = Session.getInstance(this.javaMailProperties);
 			}
 		}
+	}
+
+	private void connectStoreIfNecessary() throws MessagingException {
 		if (this.store == null) {
 			if (this.url != null) {
 				this.store = this.session.getStore(this.url);
@@ -214,17 +315,21 @@ public abstract class AbstractMailReceiver extends IntegrationObjectSupport impl
 			}
 		}
 		if (!this.store.isConnected()) {
-			if (logger.isDebugEnabled()) {
-				logger.debug("connecting to store [" + MailTransportUtils.toPasswordProtectedString(this.url) + "]");
+			if (this.logger.isDebugEnabled()) {
+				this.logger.debug("connecting to store [" + MailTransportUtils.toPasswordProtectedString(this.url) + "]");
 			}
 			this.store.connect();
 		}
 	}
 
 	protected void openFolder() throws MessagingException {
-		this.openSession();
 		if (this.folder == null) {
+			openSession();
+			connectStoreIfNecessary();
 			this.folder = obtainFolderInstance();
+		}
+		else {
+			connectStoreIfNecessary();
 		}
 		if (this.folder == null || !this.folder.exists()) {
 			throw new IllegalStateException("no such folder [" + this.url.getFile() + "]");
@@ -232,8 +337,8 @@ public abstract class AbstractMailReceiver extends IntegrationObjectSupport impl
 		if (this.folder.isOpen()) {
 			return;
 		}
-		if (logger.isDebugEnabled()) {
-			logger.debug("opening folder [" + MailTransportUtils.toPasswordProtectedString(this.url) + "]");
+		if (this.logger.isDebugEnabled()) {
+			this.logger.debug("opening folder [" + MailTransportUtils.toPasswordProtectedString(this.url) + "]");
 		}
 		this.folder.open(this.folderOpenMode);
 	}
@@ -243,35 +348,49 @@ public abstract class AbstractMailReceiver extends IntegrationObjectSupport impl
 	}
 
 	@Override
-	public Message[] receive() throws javax.mail.MessagingException {
+	public Object[] receive() throws javax.mail.MessagingException {
 		synchronized (this.folderMonitor) {
 			try {
 				this.openFolder();
-				if (logger.isInfoEnabled()) {
-					logger.info("attempting to receive mail from folder [" + this.getFolder().getFullName() + "]");
+				if (this.logger.isInfoEnabled()) {
+					this.logger.info("attempting to receive mail from folder [" + this.getFolder().getFullName() + "]");
 				}
-				Message[] messages = this.searchForNewMessages();
+				Message[] messages = searchForNewMessages();
 				if (this.maxFetchSize > 0 && messages.length > this.maxFetchSize) {
 					Message[] reducedMessages = new Message[this.maxFetchSize];
 					System.arraycopy(messages, 0, reducedMessages, 0, this.maxFetchSize);
 					messages = reducedMessages;
 				}
-				if (logger.isDebugEnabled()) {
-					logger.debug("found " + messages.length + " new messages");
+				if (this.logger.isDebugEnabled()) {
+					this.logger.debug("found " + messages.length + " new messages");
 				}
 				if (messages.length > 0) {
-					this.fetchMessages(messages);
+					fetchMessages(messages);
 				}
 
-				if (logger.isDebugEnabled()) {
-					logger.debug("Received " + messages.length + " messages");
+				if (this.logger.isDebugEnabled()) {
+					this.logger.debug("Received " + messages.length + " messages");
 				}
 
-				Message[] filteredMessages = this.filterMessagesThruSelector(messages);
+				MimeMessage[] filteredMessages = filterMessagesThruSelector(messages);
 
-				this.postProcessFilteredMessages(filteredMessages);
+				postProcessFilteredMessages(filteredMessages);
 
-				return filteredMessages;
+				if (this.headerMapper != null) {
+					org.springframework.messaging.Message<?>[] converted =
+							new org.springframework.messaging.Message<?>[filteredMessages.length];
+					int n = 0;
+					for (MimeMessage message : filteredMessages) {
+						Map<String, Object> headers = this.headerMapper.toHeaders(message);
+						converted[n++] = getMessageBuilderFactory().withPayload(extractContent(message, headers))
+								.copyHeaders(headers)
+								.build();
+					}
+					return converted;
+				}
+				else {
+					return filteredMessages;
+				}
 			}
 			finally {
 				MailTransportUtils.closeFolder(this.folder, this.shouldDeleteMessages);
@@ -279,45 +398,96 @@ public abstract class AbstractMailReceiver extends IntegrationObjectSupport impl
 		}
 	}
 
-	private void postProcessFilteredMessages(Message[] filteredMessages) throws MessagingException {
-		this.setMessageFlags(filteredMessages);
-
-		if (this.shouldDeleteMessages()) {
-			this.deleteMessages(filteredMessages);
+	private Object extractContent(MimeMessage message, Map<String, Object> headers) {
+		Object content;
+		try {
+			MimeMessage theMessage;
+			if (this.simpleContent) {
+				theMessage = new IntegrationMimeMessage(message);
+			}
+			else {
+				theMessage = message;
+			}
+			content = theMessage.getContent();
+			if (content instanceof String) {
+				String mailContentType = (String) headers.get(MailHeaders.CONTENT_TYPE);
+				if (mailContentType != null && mailContentType.toLowerCase().startsWith("text")) {
+					headers.put(MessageHeaders.CONTENT_TYPE, mailContentType);
+				}
+				else {
+					headers.put(MessageHeaders.CONTENT_TYPE, "text/plain");
+				}
+			}
+			else if (content instanceof InputStream) {
+				ByteArrayOutputStream baos = new ByteArrayOutputStream();
+				FileCopyUtils.copy((InputStream) content, baos);
+				content = byteArrayToContent(headers, baos);
+			}
+			else if (content instanceof Multipart && this.embeddedPartsAsBytes) {
+				ByteArrayOutputStream baos = new ByteArrayOutputStream();
+				((Multipart) content).writeTo(baos);
+				content = byteArrayToContent(headers, baos);
+			}
+			else if (content instanceof Part && this.embeddedPartsAsBytes) {
+				ByteArrayOutputStream baos = new ByteArrayOutputStream();
+				((Part) content).writeTo(baos);
+				content = byteArrayToContent(headers, baos);
+			}
+			return content;
 		}
-		// Copy messages to cause an eager fetch
-		for (int i = 0; i < filteredMessages.length; i++) {
-			MimeMessage mimeMessage = new IntegrationMimeMessage((MimeMessage) filteredMessages[i]);
-			filteredMessages[i] = mimeMessage;
+		catch (Exception e) {
+			throw new org.springframework.messaging.MessagingException("Failed to extract content from " + message, e);
+		}
+	}
+
+	private Object byteArrayToContent(Map<String, Object> headers, ByteArrayOutputStream baos) {
+		headers.put(MessageHeaders.CONTENT_TYPE, "application/octet-stream");
+		return baos.toByteArray();
+	}
+
+	private void postProcessFilteredMessages(Message[] filteredMessages) throws MessagingException {
+		setMessageFlags(filteredMessages);
+
+		if (shouldDeleteMessages()) {
+			deleteMessages(filteredMessages);
+		}
+		if (this.headerMapper == null) {
+			// Copy messages to cause an eager fetch
+			for (int i = 0; i < filteredMessages.length; i++) {
+				MimeMessage mimeMessage = new IntegrationMimeMessage((MimeMessage) filteredMessages[i]);
+				filteredMessages[i] = mimeMessage;
+			}
 		}
 	}
 
 	private void setMessageFlags(Message[] filteredMessages) throws MessagingException {
 		boolean recentFlagSupported = false;
 
-		Flags flags = this.getFolder().getPermanentFlags();
+		Flags flags = getFolder().getPermanentFlags();
 
-		if (flags != null){
+		if (flags != null) {
 			recentFlagSupported = flags.contains(Flags.Flag.RECENT);
 		}
 		for (Message message : filteredMessages) {
-			if (!recentFlagSupported){
-				if (flags != null && flags.contains(Flags.Flag.USER)){
-					if (logger.isDebugEnabled()){
-						logger.debug("USER flags are supported by this mail server. Flagging message with '" + SI_USER_FLAG + "' user flag");
+			if (!recentFlagSupported) {
+				if (flags != null && flags.contains(Flags.Flag.USER)) {
+					if (this.logger.isDebugEnabled()) {
+						this.logger.debug("USER flags are supported by this mail server. Flagging message with '"
+										+ this.userFlag + "' user flag");
 					}
 					Flags siFlags = new Flags();
-					siFlags.add(SI_USER_FLAG);
+					siFlags.add(this.userFlag);
 					message.setFlags(siFlags, true);
 				}
 				else {
-					if (logger.isDebugEnabled()){
-						logger.debug("USER flags are not supported by this mail server. Flagging message with system flag");
+					if (this.logger.isDebugEnabled()) {
+						this.logger.debug("USER flags are not supported by this mail server. "
+								+ "Flagging message with system flag");
 					}
 					message.setFlag(Flags.Flag.FLAGGED, true);
 				}
 			}
-			this.setAdditionalFlags(message);
+			setAdditionalFlags(message);
 		}
 	}
 
@@ -325,8 +495,8 @@ public abstract class AbstractMailReceiver extends IntegrationObjectSupport impl
 	 * Will filter Messages thru selector. Messages that did not pass selector filtering criteria
 	 * will be filtered out and remain on the server as never touched.
 	 */
-	private Message[] filterMessagesThruSelector(Message[] messages) throws MessagingException {
-		List<Message> filteredMessages = new LinkedList<Message>();
+	private MimeMessage[] filterMessagesThruSelector(Message[] messages) throws MessagingException {
+		List<MimeMessage> filteredMessages = new LinkedList<MimeMessage>();
 		for (int i = 0; i < messages.length; i++) {
 			MimeMessage message = (MimeMessage) messages[i];
 			if (this.selectorExpression != null) {
@@ -334,8 +504,8 @@ public abstract class AbstractMailReceiver extends IntegrationObjectSupport impl
 					filteredMessages.add(message);
 				}
 				else {
-					if (logger.isDebugEnabled()){
-						logger.debug("Fetched email with subject '" + message.getSubject() + "' will be discarded by the matching filter" +
+					if (this.logger.isDebugEnabled()) {
+						this.logger.debug("Fetched email with subject '" + message.getSubject() + "' will be discarded by the matching filter" +
 										" and will not be flagged as SEEN.");
 					}
 				}
@@ -344,7 +514,7 @@ public abstract class AbstractMailReceiver extends IntegrationObjectSupport impl
 				filteredMessages.add(message);
 			}
 		}
-		return filteredMessages.toArray(new Message[filteredMessages.size()]);
+		return filteredMessages.toArray(new MimeMessage[filteredMessages.size()]);
 	}
 
 	/**
@@ -400,7 +570,7 @@ public abstract class AbstractMailReceiver extends IntegrationObjectSupport impl
 	protected void onInit() throws Exception {
 		super.onInit();
 		this.folderOpenMode = Folder.READ_WRITE;
-		this.evaluationContext = ExpressionUtils.createStandardEvaluationContext(this.getBeanFactory());
+		this.evaluationContext = ExpressionUtils.createStandardEvaluationContext(getBeanFactory());
 		this.initialized = true;
 	}
 
@@ -421,10 +591,29 @@ public abstract class AbstractMailReceiver extends IntegrationObjectSupport impl
 	 * @since 2.2
 	 *
 	 */
-	private class IntegrationMimeMessage extends MimeMessage {
+	private final class IntegrationMimeMessage extends MimeMessage {
 
-		public IntegrationMimeMessage(MimeMessage source) throws MessagingException {
+		private final MimeMessage source;
+
+		private final Object content;
+
+		private IntegrationMimeMessage(MimeMessage source) throws MessagingException {
 			super(source);
+			this.source = source;
+			if (AbstractMailReceiver.this.simpleContent) {
+				this.content = null;
+			}
+			else {
+				Object complexContent;
+				try {
+					complexContent = source.getContent();
+				}
+				catch (IOException e) {
+					complexContent = "Unable to extract content; see logs: " + e.getMessage();
+					AbstractMailReceiver.this.logger.error("Failed to extract content from " + source, e);
+				}
+				this.content = complexContent;
+			}
 		}
 
 		@Override
@@ -437,5 +626,32 @@ public abstract class AbstractMailReceiver extends IntegrationObjectSupport impl
 			}
 		}
 
+		@Override
+		public Date getReceivedDate() throws MessagingException {
+			/*
+			 * Basic MimeMessage always returns null; delegate to the original.
+			 */
+			return this.source.getReceivedDate();
+		}
+
+		@Override
+		public int getLineCount() throws MessagingException {
+			/*
+			 * Basic MimeMessage always returns '-1'; delegate to the original.
+			 */
+			return this.source.getLineCount();
+		}
+
+		@Override
+		public Object getContent() throws IOException, MessagingException {
+			if (AbstractMailReceiver.this.simpleContent) {
+				return super.getContent();
+			}
+			else {
+				return this.content;
+			}
+		}
+
 	}
+
 }

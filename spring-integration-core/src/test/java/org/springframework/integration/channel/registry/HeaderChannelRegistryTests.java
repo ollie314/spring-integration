@@ -1,5 +1,5 @@
 /*
- * Copyright 2013 the original author or authors.
+ * Copyright 2013-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,18 +13,25 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.channel.registry;
 
+import static org.hamcrest.Matchers.allOf;
+import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.instanceOf;
+import static org.hamcrest.Matchers.lessThan;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+
+import java.util.Map;
 
 import org.hamcrest.Matchers;
 import org.junit.Test;
@@ -45,12 +52,14 @@ import org.springframework.integration.handler.AbstractReplyProducingMessageHand
 import org.springframework.integration.support.MessageBuilder;
 import org.springframework.integration.support.channel.BeanFactoryChannelResolver;
 import org.springframework.integration.support.channel.HeaderChannelRegistry;
+import org.springframework.integration.test.util.TestUtils;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.core.DestinationResolutionException;
 import org.springframework.messaging.support.ErrorMessage;
 import org.springframework.messaging.support.GenericMessage;
 import org.springframework.scheduling.TaskScheduler;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 
@@ -61,10 +70,17 @@ import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
  */
 @ContextConfiguration
 @RunWith(SpringJUnit4ClassRunner.class)
+@DirtiesContext
 public class HeaderChannelRegistryTests {
 
 	@Autowired
 	MessageChannel input;
+
+	@Autowired
+	MessageChannel inputTtl;
+
+	@Autowired
+	MessageChannel inputCustomTtl;
 
 	@Autowired
 	MessageChannel inputPolled;
@@ -81,6 +97,9 @@ public class HeaderChannelRegistryTests {
 	@Autowired
 	Gateway gatewayExplicitReplyChannel;
 
+	@Autowired
+	DefaultHeaderChannelRegistry registry;
+
 	@Test
 	public void testReplace() {
 		MessagingTemplate template = new MessagingTemplate();
@@ -88,6 +107,51 @@ public class HeaderChannelRegistryTests {
 		Message<?> reply = template.sendAndReceive(new GenericMessage<String>("foo"));
 		assertNotNull(reply);
 		assertEquals("echo:foo", reply.getPayload());
+		String stringReplyChannel = reply.getHeaders().get("stringReplyChannel", String.class);
+		assertThat(TestUtils.getPropertyValue(
+				TestUtils.getPropertyValue(registry, "channels", Map.class)
+					.get(stringReplyChannel), "expireAt", Long.class) - System.currentTimeMillis(),
+						lessThan(61000L));
+	}
+
+	@Test
+	public void testReplaceTtl() {
+		MessagingTemplate template = new MessagingTemplate();
+		template.setDefaultDestination(this.inputTtl);
+		Message<?> reply = template.sendAndReceive(new GenericMessage<String>("ttl"));
+		assertNotNull(reply);
+		assertEquals("echo:ttl", reply.getPayload());
+		String stringReplyChannel = reply.getHeaders().get("stringReplyChannel", String.class);
+		assertThat(TestUtils.getPropertyValue(
+				TestUtils.getPropertyValue(registry, "channels", Map.class)
+					.get(stringReplyChannel), "expireAt", Long.class) - System.currentTimeMillis(),
+						greaterThan(100000L));
+	}
+
+	@Test
+	public void testReplaceCustomTtl() {
+		MessagingTemplate template = new MessagingTemplate();
+		template.setDefaultDestination(this.inputCustomTtl);
+		Message<String> requestMessage = MessageBuilder.withPayload("ttl")
+				.setHeader("channelTTL", 180000)
+				.build();
+		Message<?> reply = template.sendAndReceive(requestMessage);
+		assertNotNull(reply);
+		assertEquals("echo:ttl", reply.getPayload());
+		String stringReplyChannel = reply.getHeaders().get("stringReplyChannel", String.class);
+		assertThat(TestUtils.getPropertyValue(
+				TestUtils.getPropertyValue(registry, "channels", Map.class)
+					.get(stringReplyChannel), "expireAt", Long.class) - System.currentTimeMillis(),
+						allOf(greaterThan(160000L), lessThan(181000L)));
+		// Now for Elvis...
+		reply = template.sendAndReceive(new GenericMessage<String>("ttl"));
+		assertNotNull(reply);
+		assertEquals("echo:ttl", reply.getPayload());
+		stringReplyChannel = reply.getHeaders().get("stringReplyChannel", String.class);
+		assertThat(TestUtils.getPropertyValue(
+				TestUtils.getPropertyValue(registry, "channels", Map.class)
+					.get(stringReplyChannel), "expireAt", Long.class) - System.currentTimeMillis(),
+						greaterThan(220000L));
 	}
 
 	@Test
@@ -146,10 +210,11 @@ public class HeaderChannelRegistryTests {
 	public void testExpire() throws Exception {
 		DefaultHeaderChannelRegistry registry = new DefaultHeaderChannelRegistry(50);
 		registry.setTaskScheduler(this.taskScheduler);
-		registry.start();
-		Thread.sleep(200);
 		String id = (String) registry.channelToChannelName(new DirectChannel());
-		Thread.sleep(300);
+		int n = 0;
+		while (n++ < 100 && registry.channelNameToChannel(id) != null) {
+			Thread.sleep(100);
+		}
 		assertNull(registry.channelNameToChannel(id));
 		registry.stop();
 	}
@@ -161,7 +226,7 @@ public class HeaderChannelRegistryTests {
 		when(beanFactory.getBean(IntegrationContextUtils.INTEGRATION_HEADER_CHANNEL_REGISTRY_BEAN_NAME,
 						HeaderChannelRegistry.class))
 			.thenReturn(mock(HeaderChannelRegistry.class));
-		doAnswer(new Answer<Object>(){
+		doAnswer(new Answer<Object>() {
 
 			@Override
 			public Object answer(InvocationOnMock invocation) throws Throwable {
@@ -173,9 +238,9 @@ public class HeaderChannelRegistryTests {
 			resolver.resolveDestination("foo");
 			fail("Expected exception");
 		}
-		catch (DestinationResolutionException e){
+		catch (DestinationResolutionException e) {
 			assertThat(e.getMessage(),
-				Matchers.equalTo("failed to look up MessageChannel with name 'foo' in the BeanFactory."));
+				Matchers.containsString("failed to look up MessageChannel with name 'foo' in the BeanFactory."));
 		}
 	}
 
@@ -183,7 +248,7 @@ public class HeaderChannelRegistryTests {
 	public void testBFCRNoRegistry() {
 		BeanFactoryChannelResolver resolver = new BeanFactoryChannelResolver();
 		BeanFactory beanFactory = mock(BeanFactory.class);
-		doAnswer(new Answer<Object>(){
+		doAnswer(new Answer<Object>() {
 
 			@Override
 			public Object answer(InvocationOnMock invocation) throws Throwable {
@@ -195,11 +260,27 @@ public class HeaderChannelRegistryTests {
 			resolver.resolveDestination("foo");
 			fail("Expected exception");
 		}
-		catch (DestinationResolutionException e){
+		catch (DestinationResolutionException e) {
 			assertThat(e.getMessage(),
-				Matchers.equalTo("failed to look up MessageChannel with name 'foo' in the BeanFactory (and there is no HeaderChannelRegistry present)."));
+				Matchers.containsString("failed to look up MessageChannel with name 'foo' in the BeanFactory " +
+						"(and there is no HeaderChannelRegistry present)."));
 		}
 	}
+
+	@Test
+	public void testRemoveOnGet() {
+		DefaultHeaderChannelRegistry registry = new DefaultHeaderChannelRegistry();
+		MessageChannel channel = new DirectChannel();
+		String foo = (String) registry.channelToChannelName(channel);
+		Map<?, ?> map = TestUtils.getPropertyValue(registry, "channels", Map.class);
+		assertEquals(1, map.size());
+		assertSame(channel, registry.channelNameToChannel(foo));
+		assertEquals(1, map.size());
+		registry.setRemoveOnGet(true);
+		assertSame(channel, registry.channelNameToChannel(foo));
+		assertEquals(0, map.size());
+	}
+
 
 	public static class Foo extends AbstractReplyProducingMessageHandler {
 
@@ -212,7 +293,9 @@ public class HeaderChannelRegistryTests {
 			if (requestMessage.getPayload().equals("bar")) {
 				throw new RuntimeException("intentional");
 			}
-			return "echo:" + requestMessage.getPayload();
+			return MessageBuilder.withPayload("echo:" + requestMessage.getPayload())
+					.setHeader("stringReplyChannel", requestMessage.getHeaders().getReplyChannel())
+					.build();
 		}
 
 	}

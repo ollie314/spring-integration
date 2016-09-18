@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2010 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,14 +23,14 @@ import java.io.OutputStream;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
-import org.springframework.messaging.Message;
-import org.springframework.messaging.MessagingException;
-import org.springframework.messaging.MessageHandler;
 import org.springframework.integration.handler.AbstractMessageHandler;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.MessageHandler;
+import org.springframework.messaging.MessagingException;
 
 /**
  * A {@link MessageHandler} that writes a byte array to an {@link OutputStream}.
- * 
+ *
  * @author Mark Fisher
  */
 public class ByteStreamWritingMessageHandler extends AbstractMessageHandler {
@@ -53,12 +53,17 @@ public class ByteStreamWritingMessageHandler extends AbstractMessageHandler {
 		}
 	}
 
+	@Override
+	public String getComponentType() {
+		return "stream:outbound-channel-adapter(byte)";
+	}
 
+	@Override
 	protected void handleMessageInternal(Message<?> message) {
 		Object payload = message.getPayload();
 		if (payload == null) {
-			if (logger.isWarnEnabled()) {
-				logger.warn(this.getClass().getSimpleName() + " received null object");
+			if (this.logger.isWarnEnabled()) {
+				this.logger.warn(this.getClass().getSimpleName() + " received null object");
 			}
 			return;
 		}
@@ -66,7 +71,7 @@ public class ByteStreamWritingMessageHandler extends AbstractMessageHandler {
 			if (payload instanceof String) {
 				this.stream.write(((String) payload).getBytes());
 			}
-			else if (payload instanceof byte[]){
+			else if (payload instanceof byte[]) {
 				this.stream.write((byte[]) payload);
 			}
 			else {

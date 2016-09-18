@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import java.util.List;
 import org.aopalliance.aop.Advice;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.reactivestreams.Subscriber;
 
 import org.springframework.aop.framework.Advised;
 import org.springframework.aop.framework.ProxyFactory;
@@ -39,24 +40,32 @@ import org.springframework.integration.context.IntegrationObjectSupport;
 import org.springframework.integration.endpoint.AbstractEndpoint;
 import org.springframework.integration.endpoint.EventDrivenConsumer;
 import org.springframework.integration.endpoint.PollingConsumer;
+import org.springframework.integration.endpoint.ReactiveConsumer;
 import org.springframework.integration.handler.AbstractReplyProducingMessageHandler;
+import org.springframework.integration.handler.advice.HandleMessageAdvice;
 import org.springframework.integration.scheduling.PollerMetadata;
+import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.MessageHandler;
 import org.springframework.messaging.PollableChannel;
 import org.springframework.messaging.SubscribableChannel;
+import org.springframework.messaging.core.BeanFactoryMessageChannelDestinationResolver;
+import org.springframework.messaging.core.DestinationResolver;
 import org.springframework.util.Assert;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
+
 
 /**
  * @author Mark Fisher
  * @author Oleg Zhurakousky
  * @author Josh Long
  * @author Gary Russell
+ * @author Artem Bilan
  */
 public class ConsumerEndpointFactoryBean
-		implements FactoryBean<AbstractEndpoint>, BeanFactoryAware, BeanNameAware, BeanClassLoaderAware, InitializingBean, SmartLifecycle {
+		implements FactoryBean<AbstractEndpoint>, BeanFactoryAware, BeanNameAware, BeanClassLoaderAware,
+		InitializingBean, SmartLifecycle {
 
 	private volatile MessageHandler handler;
 
@@ -69,6 +78,8 @@ public class ConsumerEndpointFactoryBean
 	private volatile boolean autoStartup = true;
 
 	private volatile int phase = 0;
+
+	private volatile boolean isPhaseSet;
 
 	private volatile MessageChannel inputChannel;
 
@@ -87,6 +98,8 @@ public class ConsumerEndpointFactoryBean
 	private final Log logger = LogFactory.getLog(this.getClass());
 
 	private volatile List<Advice> adviceChain;
+
+	private volatile DestinationResolver<MessageChannel> channelResolver;
 
 	public void setHandler(MessageHandler handler) {
 		Assert.notNull(handler, "handler must not be null");
@@ -108,6 +121,17 @@ public class ConsumerEndpointFactoryBean
 		this.pollerMetadata = pollerMetadata;
 	}
 
+	/**
+	 * Specify the {@link DestinationResolver} strategy to use.
+	 * The default is a BeanFactoryChannelResolver.
+	 * @param channelResolver The channel resolver.
+	 * @since 4.1.3
+	 */
+	public void setChannelResolver(DestinationResolver<MessageChannel> channelResolver) {
+		Assert.notNull(channelResolver, "'channelResolver' must not be null");
+		this.channelResolver = channelResolver;
+	}
+
 	@Override
 	public void setBeanClassLoader(ClassLoader classLoader) {
 		this.beanClassLoader = classLoader;
@@ -119,6 +143,7 @@ public class ConsumerEndpointFactoryBean
 
 	public void setPhase(int phase) {
 		this.phase = phase;
+		this.isPhaseSet = true;
 	}
 
 	@Override
@@ -139,52 +164,63 @@ public class ConsumerEndpointFactoryBean
 
 	@Override
 	public void afterPropertiesSet() throws Exception {
-		try {
-			if (!this.beanName.startsWith("org.springframework")) {
-				MessageHandler targetHandler = this.handler;
-				if (AopUtils.isAopProxy(targetHandler)) {
-					Object target = ((Advised) targetHandler).getTargetSource().getTarget();
-					if (target instanceof MessageHandler) {
-						targetHandler = (MessageHandler) target;
-					}
-				}
-				if (targetHandler instanceof IntegrationObjectSupport) {
-					((IntegrationObjectSupport) targetHandler).setComponentName(this.beanName);
-				}
-			}
-		} catch (Exception e) {
-			if (logger.isDebugEnabled()) {
-				logger.debug("Could not set component name for handler "
-						+ this.handler + " for " + this.beanName + " :" + e.getMessage());
-			}
+		if (this.beanName == null) {
+			this.logger.error("The MessageHandler [" + this.handler + "] will be created without a 'componentName'. " +
+					"Consider specifying the 'beanName' property on this ConsumerEndpointFactoryBean.");
 		}
-		if (!CollectionUtils.isEmpty(this.adviceChain)) {
-			/*
-			 *  ARPMHs advise the handleRequesMessage method internally and already have the advice chain injected.
-			 *  So we only advise handlers that are not reply-producing. If the handler is already advised,
-			 *  add the configured advices to its chain, otherwise create a proxy.
-			 */
-			if (!(this.handler instanceof AbstractReplyProducingMessageHandler)) {
-				if (AopUtils.isAopProxy(this.handler) && this.handler instanceof Advised) {
-					Class<?> targetClass = AopUtils.getTargetClass(this.handler);
-					for (Advice advice : this.adviceChain) {
-						NameMatchMethodPointcutAdvisor handlerAdvice = new NameMatchMethodPointcutAdvisor(advice);
-						handlerAdvice.addMethodName("handleMessage");
-						if (AopUtils.canApply(handlerAdvice.getPointcut(), targetClass)) {
-							((Advised) this.handler).addAdvice(advice);
+		else {
+			try {
+				if (!this.beanName.startsWith("org.springframework")) {
+					MessageHandler targetHandler = this.handler;
+					if (AopUtils.isAopProxy(targetHandler)) {
+						Object target = ((Advised) targetHandler).getTargetSource().getTarget();
+						if (target instanceof MessageHandler) {
+							targetHandler = (MessageHandler) target;
 						}
 					}
-				}
-				else {
-					ProxyFactory proxyFactory = new ProxyFactory(this.handler);
-					for (Advice advice : this.adviceChain) {
-						proxyFactory.addAdvice(advice);
+					if (targetHandler instanceof IntegrationObjectSupport) {
+						((IntegrationObjectSupport) targetHandler).setComponentName(this.beanName);
 					}
-					this.handler = (MessageHandler) proxyFactory.getProxy(this.beanClassLoader);
+				}
+			}
+			catch (Exception e) {
+				if (this.logger.isDebugEnabled()) {
+					this.logger.debug("Could not set component name for handler "
+							+ this.handler + " for " + this.beanName + " :" + e.getMessage());
 				}
 			}
 		}
-		this.initializeEndpoint();
+
+		if (!CollectionUtils.isEmpty(this.adviceChain)) {
+			/*
+			 *  ARPMHs advise the handleRequestMessage method internally and already have the advice chain injected.
+			 *  So we only advise handlers that are not reply-producing.
+			 *  Or if one (or more) of advices is IdempotentReceiverInterceptor.
+			 *  If the handler is already advised,
+			 *  add the configured advices to its chain, otherwise create a proxy.
+			 */
+			Class<?> targetClass = AopUtils.getTargetClass(this.handler);
+			boolean replyMessageHandler = AbstractReplyProducingMessageHandler.class.isAssignableFrom(targetClass);
+
+			for (Advice advice : this.adviceChain) {
+				if (!replyMessageHandler || advice instanceof HandleMessageAdvice) {
+					NameMatchMethodPointcutAdvisor handlerAdvice = new NameMatchMethodPointcutAdvisor(advice);
+					handlerAdvice.addMethodName("handleMessage");
+					if (this.handler instanceof Advised) {
+						((Advised) this.handler).addAdvisor(handlerAdvice);
+					}
+					else {
+						ProxyFactory proxyFactory = new ProxyFactory(this.handler);
+						proxyFactory.addAdvisor(handlerAdvice);
+						this.handler = (MessageHandler) proxyFactory.getProxy(this.beanClassLoader);
+					}
+				}
+			}
+		}
+		if (this.channelResolver == null) {
+			this.channelResolver = new BeanFactoryMessageChannelDestinationResolver(this.beanFactory);
+		}
+		initializeEndpoint();
 	}
 
 	@Override
@@ -208,6 +244,7 @@ public class ConsumerEndpointFactoryBean
 		return this.endpoint.getClass();
 	}
 
+	@SuppressWarnings("unchecked")
 	private void initializeEndpoint() throws Exception {
 		synchronized (this.initializationMonitor) {
 			if (this.initialized) {
@@ -215,9 +252,7 @@ public class ConsumerEndpointFactoryBean
 			}
 			MessageChannel channel = null;
 			if (StringUtils.hasText(this.inputChannelName)) {
-				Assert.isTrue(this.beanFactory.containsBean(this.inputChannelName), "no such input channel '"
-						+ this.inputChannelName + "' for endpoint '" + this.beanName + "'");
-				channel = this.beanFactory.getBean(this.inputChannelName, MessageChannel.class);
+				channel = this.channelResolver.resolveDestination(this.inputChannelName);
 			}
 			if (this.inputChannel != null) {
 				channel = this.inputChannel;
@@ -227,8 +262,8 @@ public class ConsumerEndpointFactoryBean
 				Assert.isNull(this.pollerMetadata, "A poller should not be specified for endpoint '" + this.beanName
 						+ "', since '" + channel + "' is a SubscribableChannel (not pollable).");
 				this.endpoint = new EventDrivenConsumer((SubscribableChannel) channel, this.handler);
-				if (logger.isWarnEnabled() && !this.autoStartup && channel instanceof FixedSubscriberChannel) {
-					logger.warn("'autoStartup=\"false\"' has no effect when using a FixedSubscriberChannel");
+				if (this.logger.isWarnEnabled() && !this.autoStartup && channel instanceof FixedSubscriberChannel) {
+					this.logger.warn("'autoStartup=\"false\"' has no effect when using a FixedSubscriberChannel");
 				}
 			}
 			else if (channel instanceof PollableChannel) {
@@ -246,18 +281,28 @@ public class ConsumerEndpointFactoryBean
 				pollingConsumer.setErrorHandler(this.pollerMetadata.getErrorHandler());
 
 				pollingConsumer.setReceiveTimeout(this.pollerMetadata.getReceiveTimeout());
-				pollingConsumer.setTransactionSynchronizationFactory(this.pollerMetadata.getTransactionSynchronizationFactory());
-				pollingConsumer.setBeanClassLoader(beanClassLoader);
-				pollingConsumer.setBeanFactory(beanFactory);
+				pollingConsumer.setTransactionSynchronizationFactory(
+						this.pollerMetadata.getTransactionSynchronizationFactory());
+				pollingConsumer.setBeanClassLoader(this.beanClassLoader);
+				pollingConsumer.setBeanFactory(this.beanFactory);
 				this.endpoint = pollingConsumer;
 			}
 			else {
-				throw new IllegalArgumentException("unsupported channel type: [" + channel.getClass() + "]");
+				if (this.handler instanceof Subscriber) {
+					this.endpoint = new ReactiveConsumer(channel, (Subscriber<Message<?>>) this.handler);
+				}
+				else {
+					this.endpoint = new ReactiveConsumer(channel, this.handler::handleMessage);
+				}
 			}
 			this.endpoint.setBeanName(this.beanName);
 			this.endpoint.setBeanFactory(this.beanFactory);
 			this.endpoint.setAutoStartup(this.autoStartup);
-			this.endpoint.setPhase(this.phase);
+			int phase = this.phase;
+			if (!this.isPhaseSet && this.endpoint instanceof PollingConsumer) {
+				phase = Integer.MAX_VALUE / 2;
+			}
+			this.endpoint.setPhase(phase);
 			this.endpoint.afterPropertiesSet();
 			this.initialized = true;
 		}
@@ -270,7 +315,7 @@ public class ConsumerEndpointFactoryBean
 
 	@Override
 	public boolean isAutoStartup() {
-		return (this.endpoint != null) ? this.endpoint.isAutoStartup() : true;
+		return (this.endpoint == null) || this.endpoint.isAutoStartup();
 	}
 
 	@Override
@@ -280,7 +325,7 @@ public class ConsumerEndpointFactoryBean
 
 	@Override
 	public boolean isRunning() {
-		return (this.endpoint != null) ? this.endpoint.isRunning() : false;
+		return (this.endpoint != null) && this.endpoint.isRunning();
 	}
 
 	@Override
@@ -303,4 +348,5 @@ public class ConsumerEndpointFactoryBean
 			this.endpoint.stop(callback);
 		}
 	}
+
 }

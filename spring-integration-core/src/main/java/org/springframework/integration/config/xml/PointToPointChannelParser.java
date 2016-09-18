@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,6 +39,7 @@ import org.springframework.util.xml.DomUtils;
  * @author Oleg Zhurakousky
  * @author Gary Russell
  * @author Artem Bilan
+ * @author Manuel Jordan
  */
 public class PointToPointChannelParser extends AbstractChannelParser {
 
@@ -50,31 +51,52 @@ public class PointToPointChannelParser extends AbstractChannelParser {
 		boolean isFixedSubscriber = "true".equals(fixedSubscriberChannel.trim().toLowerCase());
 
 		// configure a queue-based channel if any queue sub-element is defined
+		String channel = element.getAttribute(ID_ATTRIBUTE);
 		if ((queueElement = DomUtils.getChildElementByTagName(element, "queue")) != null) {
 			builder = BeanDefinitionBuilder.genericBeanDefinition(QueueChannel.class);
-			boolean hasStoreRef = this.parseStoreRef(builder, queueElement, element.getAttribute(ID_ATTRIBUTE));
+			boolean hasStoreRef = this.parseStoreRef(builder, queueElement, channel, false);
 			boolean hasQueueRef = this.parseQueueRef(builder, queueElement);
-			if (!hasStoreRef) {
+			if (!hasStoreRef || !hasQueueRef) {
 				boolean hasCapacity = this.parseQueueCapacity(builder, queueElement);
 				if (hasCapacity && hasQueueRef) {
 					parserContext.getReaderContext().error(
-							"The 'capacity' attribute is not allowed" + " when providing a 'ref' to a custom queue.",
+							"The 'capacity' attribute is not allowed when providing a 'ref' to a custom queue.",
+							element);
+				}
+				if (hasCapacity && hasStoreRef) {
+					parserContext.getReaderContext().error(
+							"The 'capacity' attribute is not allowed" +
+									" when providing a 'message-store' to a custom MessageGroupStore.",
 							element);
 				}
 			}
 			if (hasStoreRef && hasQueueRef) {
 				parserContext.getReaderContext().error(
-						"The 'message-store' attribute is not allowed" + " when providing a 'ref' to a custom queue.",
+						"The 'message-store' attribute is not allowed when providing a 'ref' to a custom queue.",
 						element);
 			}
 		}
 		else if ((queueElement = DomUtils.getChildElementByTagName(element, "priority-queue")) != null) {
 			builder = BeanDefinitionBuilder.genericBeanDefinition(PriorityChannel.class);
-			this.parseQueueCapacity(builder, queueElement);
+			boolean hasCapacity = this.parseQueueCapacity(builder, queueElement);
 			String comparatorRef = queueElement.getAttribute("comparator");
 			if (StringUtils.hasText(comparatorRef)) {
 				builder.addConstructorArgReference(comparatorRef);
 			}
+			if (parseStoreRef(builder, queueElement, channel, true)) {
+				if (StringUtils.hasText(comparatorRef)) {
+					parserContext.getReaderContext().error(
+							"The 'message-store' attribute is not allowed" +
+									" when providing a 'comparator' to a priority queue.",
+							element);
+				}
+				if (hasCapacity) {
+					parserContext.getReaderContext().error("The 'capacity' attribute is not allowed"
+							+ " when providing a 'message-store' to a custom MessageGroupStore.", element);
+				}
+				builder.getRawBeanDefinition().setBeanClass(QueueChannel.class);
+			}
+
 		}
 		else if ((queueElement = DomUtils.getChildElementByTagName(element, "rendezvous-queue")) != null) {
 			builder = BeanDefinitionBuilder.genericBeanDefinition(RendezvousChannel.class);
@@ -106,7 +128,8 @@ public class PointToPointChannelParser extends AbstractChannelParser {
 		else {
 			if (isFixedSubscriber) {
 				parserContext.getReaderContext().error(
-						"The 'fixed-subscriber' attribute is not allowed when a <dispatcher/> child element is present.",
+						"The 'fixed-subscriber' attribute is not allowed" +
+								" when a <dispatcher/> child element is present.",
 						element);
 			}
 			// configure either an ExecutorChannel or DirectChannel based on existence of 'task-executor'
@@ -118,14 +141,16 @@ public class PointToPointChannelParser extends AbstractChannelParser {
 			else {
 				builder = BeanDefinitionBuilder.genericBeanDefinition(DirectChannel.class);
 			}
-			// unless the 'load-balancer' attribute is explicitly set to 'none' or 'load-balancer-ref' is explicitly configured,
+			// unless the 'load-balancer' attribute is explicitly set to 'none'
+			// or 'load-balancer-ref' is explicitly configured,
 			// configure the default RoundRobinLoadBalancingStrategy
 			String loadBalancer = dispatcherElement.getAttribute("load-balancer");
 			String loadBalancerRef = dispatcherElement.getAttribute("load-balancer-ref");
-			if (StringUtils.hasText(loadBalancer) && StringUtils.hasText(loadBalancerRef)){
-				parserContext.getReaderContext().error("'load-balancer' and 'load-balancer-ref' are mutually exclusive", element);
+			if (StringUtils.hasText(loadBalancer) && StringUtils.hasText(loadBalancerRef)) {
+				parserContext.getReaderContext().error("'load-balancer' and 'load-balancer-ref' are mutually exclusive",
+						element);
 			}
-			if (StringUtils.hasText(loadBalancerRef)){
+			if (StringUtils.hasText(loadBalancerRef)) {
 				builder.addConstructorArgReference(loadBalancerRef);
 			}
 			else {
@@ -158,13 +183,15 @@ public class PointToPointChannelParser extends AbstractChannelParser {
 		return false;
 	}
 
-	private boolean parseStoreRef(BeanDefinitionBuilder builder, Element queueElement, String channel) {
+	private boolean parseStoreRef(BeanDefinitionBuilder builder, Element queueElement, String channel,
+			boolean priority) {
 		String storeRef = queueElement.getAttribute("message-store");
 		if (StringUtils.hasText(storeRef)) {
 			BeanDefinitionBuilder queueBuilder = BeanDefinitionBuilder
 					.genericBeanDefinition(MessageGroupQueue.class);
 			queueBuilder.addConstructorArgReference(storeRef);
 			queueBuilder.addConstructorArgValue(new TypedStringValue(storeRef).getValue() + ":" + channel);
+			queueBuilder.addPropertyValue("priority", priority);
 			parseQueueCapacity(queueBuilder, queueElement);
 			builder.addConstructorArgValue(queueBuilder.getBeanDefinition());
 			return true;

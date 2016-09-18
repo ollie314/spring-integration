@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2008 the original author or authors.
+ * Copyright 2002-2014 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,14 +18,28 @@ package org.springframework.integration.config.annotation;
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
+import java.util.List;
 
 /**
  * Strategy interface for post-processing annotated methods.
- * 
+ *
  * @author Mark Fisher
+ * @author Gary Russell
+ * @author Artem Bilan
  */
 public interface MethodAnnotationPostProcessor<T extends Annotation> {
 
-	Object postProcess(Object bean, String beanName, Method method, T annotation);
+	Object postProcess(Object bean, String beanName, Method method, List<Annotation> annotations);
+
+	/**
+	 * Determine if the provided {@code method} and its {@code annotations} are eligible
+	 * to create an {@link org.springframework.integration.endpoint.AbstractEndpoint}.
+	 * @param method the method to check if it is eligible to create an Endpoint
+	 * @param annotations the List of annotations to process
+	 * @return the {@code boolean} flag to determine whether or not to create an
+	 * {@link org.springframework.integration.endpoint.AbstractEndpoint}
+	 * @since 4.0
+	 */
+	boolean shouldCreateEndpoint(Method method, List<Annotation> annotations);
 
 }

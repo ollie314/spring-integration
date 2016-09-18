@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,12 +13,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.xml.transformer;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.assertFalse;
 
 import java.io.IOException;
 import java.util.Properties;
@@ -48,7 +49,7 @@ import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 @ContextConfiguration
 @RunWith(SpringJUnit4ClassRunner.class)
 public class XsltTransformerTests {
-	private String docAsString = "<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><order><orderItem>test</orderItem></order>";
+	private final String docAsString = "<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><order><orderItem>test</orderItem></order>";
 	@Autowired
 	private ApplicationContext applicationContext;
 	@Autowired
@@ -127,8 +128,8 @@ public class XsltTransformerTests {
 		input.send(message);
 		Message<?> resultMessage = output.receive();
 		assertEquals("Wrong payload type", String.class, resultMessage.getPayload().getClass());
-		String stringPayload = (String)resultMessage.getPayload();
-		assertEquals("Wrong content of payload", "hello world text",stringPayload.trim());
+		String stringPayload = (String) resultMessage.getPayload();
+		assertEquals("Wrong content of payload", "hello world text", stringPayload.trim());
 	}
 
 	@Test

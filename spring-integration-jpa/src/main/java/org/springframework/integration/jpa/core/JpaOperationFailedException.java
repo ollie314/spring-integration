@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,56 +13,30 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.jpa.core;
 
 /**
  * An Exception that would be thrown if any of the Operations from {@link JpaOperations} fails
  *
  * @author Amol Nayak
+ * @author Gary Russell
  * @since 2.2
  *
  */
 public class JpaOperationFailedException extends RuntimeException {
 
-	/**
-	 *
-	 */
 	private static final long serialVersionUID = 1L;
 
-	private String offendingJPAQl;
+	private final String offendingJPAQl;
 
-	public JpaOperationFailedException() {
-		super();
-	}
-
-	public JpaOperationFailedException(String message, Throwable cause) {
-		super(message, cause);
-	}
-
-	public JpaOperationFailedException(String message) {
+	public JpaOperationFailedException(String message, String offendingJPAQ1) {
 		super(message);
-	}
-
-	public JpaOperationFailedException(Throwable cause) {
-		super(cause);
-	}
-
-	/**
-	 * If execution of a JPA QL fails, we can set that query using this convenience method.
-	 *
-	 * @param offendingJPAQl The offending query.
-	 * @return this.
-	 */
-	public JpaOperationFailedException withOffendingJPAQl(String offendingJPAQl) {
-		setOffendingJPAQl(offendingJPAQl);
-		return this;
+		this.offendingJPAQl = offendingJPAQ1;
 	}
 
 	public String getOffendingJPAQl() {
-		return offendingJPAQl;
+		return this.offendingJPAQl;
 	}
 
-	public void setOffendingJPAQl(String offendingJPAQl) {
-		this.offendingJPAQl = offendingJPAQl;
-	}
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2011 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
 import org.springframework.integration.endpoint.ExpressionMessageProducerSupport;
+import org.springframework.messaging.Message;
 import org.springframework.util.Assert;
 
 import com.gemstone.gemfire.cache.CacheClosedException;
@@ -41,6 +42,7 @@ import com.gemstone.gemfire.cache.util.CacheListenerAdapter;
  *
  * @author Mark Fisher
  * @author David Turanski
+ * @author Artem Bilan
  * @since 2.1
  */
 @SuppressWarnings({"rawtypes", "unchecked"})
@@ -68,25 +70,30 @@ public class CacheListeningMessageProducer extends ExpressionMessageProducerSupp
 		this.supportedEventTypes = new HashSet<EventType>(Arrays.asList(eventTypes));
 	}
 
+	@Override
+	public String getComponentType() {
+		return "gemfire:inbound-channel-adapter";
+	}
 
 	@Override
 	protected void doStart() {
-		if (logger.isInfoEnabled()) {
-			logger.info("adding MessageProducingCacheListener to GemFire Region '" + this.region.getName() + "'");
+		if (this.logger.isInfoEnabled()) {
+			this.logger.info("adding MessageProducingCacheListener to GemFire Region '" + this.region.getName() + "'");
 		}
 		this.region.getAttributesMutator().addCacheListener(this.listener);
 	}
 
 	@Override
 	protected void doStop() {
-		if (logger.isInfoEnabled()) {
-			logger.info("removing MessageProducingCacheListener from GemFire Region '" + this.region.getName() + "'");
+		if (this.logger.isInfoEnabled()) {
+			this.logger.info("removing MessageProducingCacheListener from GemFire Region '" + this.region.getName() + "'");
 		}
 		try {
 			this.region.getAttributesMutator().removeCacheListener(this.listener);
-		} catch (CacheClosedException e) {
-			if (logger.isDebugEnabled()){
-				logger.debug(e.getMessage(),e);
+		}
+		catch (CacheClosedException e) {
+			if (this.logger.isDebugEnabled()) {
+				this.logger.debug(e.getMessage(), e);
 			}
 		}
 
@@ -96,28 +103,28 @@ public class CacheListeningMessageProducer extends ExpressionMessageProducerSupp
 
 		@Override
 		public void afterCreate(EntryEvent event) {
-			if (supportedEventTypes.contains(EventType.CREATED)) {
+			if (CacheListeningMessageProducer.this.supportedEventTypes.contains(EventType.CREATED)) {
 				this.processEvent(event);
 			}
 		}
 
 		@Override
 		public void afterUpdate(EntryEvent event) {
-			if (supportedEventTypes.contains(EventType.UPDATED)) {
+			if (CacheListeningMessageProducer.this.supportedEventTypes.contains(EventType.UPDATED)) {
 				this.processEvent(event);
 			}
 		}
 
 		@Override
 		public void afterInvalidate(EntryEvent event) {
-			if (supportedEventTypes.contains(EventType.INVALIDATED)) {
+			if (CacheListeningMessageProducer.this.supportedEventTypes.contains(EventType.INVALIDATED)) {
 				this.processEvent(event);
 			}
 		}
 
 		@Override
 		public void afterDestroy(EntryEvent event) {
-			if (supportedEventTypes.contains(EventType.DESTROYED)) {
+			if (CacheListeningMessageProducer.this.supportedEventTypes.contains(EventType.DESTROYED)) {
 				this.processEvent(event);
 			}
 		}
@@ -127,8 +134,15 @@ public class CacheListeningMessageProducer extends ExpressionMessageProducerSupp
 
 		}
 
-		private void publish(Object payload) {
-			sendMessage(CacheListeningMessageProducer.this.getMessageBuilderFactory().withPayload(payload).build());
+		private void publish(Object object) {
+			Message<?> message = null;
+			if (object instanceof Message) {
+				message = (Message<?>) object;
+			}
+			else {
+				message = getMessageBuilderFactory().withPayload(object).build();
+			}
+			sendMessage(message);
 		}
 	}
 

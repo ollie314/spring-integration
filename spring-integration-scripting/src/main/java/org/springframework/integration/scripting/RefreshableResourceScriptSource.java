@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -54,13 +54,13 @@ public class RefreshableResourceScriptSource implements ScriptSource {
 	public String getScriptAsString() throws IOException {
 		if (this.script == null || this.isModified()) {
 			this.lastModifiedChecked.set(System.currentTimeMillis());
-			this.script = source.getScriptAsString();
+			this.script = this.source.getScriptAsString();
 		}
 		return this.script;
 	}
 
 	public String suggestedClassName() {
-		return this.source.suggestedClassName();
+		return this.source.getResource().getFilename();
 	}
 
 	public boolean isModified() {

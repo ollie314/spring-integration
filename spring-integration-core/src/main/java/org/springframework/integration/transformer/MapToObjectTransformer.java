@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -63,9 +63,22 @@ public class MapToObjectTransformer extends AbstractPayloadTransformer<Map<?, ?>
 	}
 
 	@Override
+	public String getComponentType() {
+		return "map-to-object-transformer";
+	}
+
+	@Override
+	protected void onInit() {
+		if (StringUtils.hasText(this.targetBeanName)) {
+			Assert.isTrue(this.getBeanFactory().isPrototype(this.targetBeanName),
+					"target bean [" + this.targetBeanName + "] must have 'prototype' scope");
+		}
+	}
+
+	@Override
 	protected Object transformPayload(Map<?, ?> payload) throws Exception {
 		Object target = (this.targetClass != null)
-				? BeanUtils.instantiate(this.targetClass)
+				? BeanUtils.instantiateClass(this.targetClass)
 				: this.getBeanFactory().getBean(this.targetBeanName);
 
 		DataBinder binder = new DataBinder(target);
@@ -77,14 +90,6 @@ public class MapToObjectTransformer extends AbstractPayloadTransformer<Map<?, ?>
 		binder.bind(new MutablePropertyValues(payload));
 
 		return target;
-	}
-
-	@Override
-	protected void onInit() {
-		if (StringUtils.hasText(this.targetBeanName)) {
-			Assert.isTrue(this.getBeanFactory().isPrototype(this.targetBeanName),
-					"target bean [" + targetBeanName + "] must have 'prototype' scope");
-		}
 	}
 
 }

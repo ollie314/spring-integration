@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,10 +22,10 @@ import static org.hamcrest.CoreMatchers.is;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 import static org.springframework.integration.test.util.TestUtils.getPropertyValue;
-import static org.springframework.integration.test.util.TestUtils.handlerExpecting;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -34,6 +34,7 @@ import java.util.Map;
 
 import javax.servlet.http.HttpServletResponse;
 
+import org.hamcrest.Matcher;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
@@ -45,16 +46,20 @@ import org.springframework.expression.common.LiteralExpression;
 import org.springframework.expression.spel.standard.SpelExpression;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.converter.HttpMessageConverter;
+import org.springframework.integration.MessageRejectedException;
+import org.springframework.integration.core.MessagingTemplate;
 import org.springframework.integration.http.converter.SerializingHttpMessageConverter;
 import org.springframework.integration.http.inbound.HttpRequestHandlingController;
 import org.springframework.integration.http.inbound.HttpRequestHandlingMessagingGateway;
 import org.springframework.integration.http.support.DefaultHttpHeaderMapper;
 import org.springframework.integration.test.util.TestUtils;
 import org.springframework.messaging.Message;
+import org.springframework.messaging.MessageDeliveryException;
+import org.springframework.messaging.MessageHandler;
+import org.springframework.messaging.MessageHandlingException;
 import org.springframework.messaging.MessageHeaders;
 import org.springframework.messaging.PollableChannel;
 import org.springframework.messaging.SubscribableChannel;
-import org.springframework.integration.core.MessagingTemplate;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.annotation.DirtiesContext;
@@ -113,28 +118,33 @@ public class HttpInboundGatewayParserTests {
 
 	@Test
 	public void checkConfig() {
-		assertNotNull(gateway);
-		assertThat((Boolean) getPropertyValue(gateway, "expectReply"), is(true));
-		assertThat((Boolean) getPropertyValue(gateway, "convertExceptions"), is(true));
-		assertThat((PollableChannel) getPropertyValue(gateway, "replyChannel"), is(responses));
-		assertNotNull(TestUtils.getPropertyValue(gateway, "errorChannel"));
-		MessagingTemplate messagingTemplate = TestUtils.getPropertyValue(
-		gateway, "messagingTemplate", MessagingTemplate.class);
-		assertEquals(Long.valueOf(1234), TestUtils.getPropertyValue(messagingTemplate, "sendTimeout"));
-		assertEquals(Long.valueOf(4567), TestUtils.getPropertyValue(messagingTemplate, "receiveTimeout"));
+		assertNotNull(this.gateway);
+		assertTrue(getPropertyValue(this.gateway, "expectReply", Boolean.class));
+		assertTrue(getPropertyValue(this.gateway, "convertExceptions", Boolean.class));
+		assertSame(this.responses, getPropertyValue(this.gateway, "replyChannel"));
+		assertNotNull(TestUtils.getPropertyValue(this.gateway, "errorChannel"));
+		MessagingTemplate messagingTemplate =
+				TestUtils.getPropertyValue(this.gateway, "messagingTemplate", MessagingTemplate.class);
+		assertEquals(1234L, TestUtils.getPropertyValue(messagingTemplate, "sendTimeout"));
+		assertEquals(4567L, TestUtils.getPropertyValue(messagingTemplate, "receiveTimeout"));
 
-		boolean registerDefaultConverters = TestUtils.getPropertyValue(gateway,"mergeWithDefaultConverters", Boolean.class);
+		boolean registerDefaultConverters =
+				TestUtils.getPropertyValue(this.gateway, "mergeWithDefaultConverters", Boolean.class);
 		assertFalse("By default the register-default-converters flag should be false", registerDefaultConverters);
 		@SuppressWarnings("unchecked")
-		List<HttpMessageConverter<?>> messageConverters = TestUtils.getPropertyValue(gateway,"messageConverters", List.class);
+		List<HttpMessageConverter<?>> messageConverters =
+				TestUtils.getPropertyValue(this.gateway, "messageConverters", List.class);
 
 		assertTrue("The default converters should have been registered, given there are no custom converters",
 				messageConverters.size() > 0);
+
+		assertFalse(TestUtils.getPropertyValue(this.gateway, "autoStartup", Boolean.class));
+		assertEquals(1001, TestUtils.getPropertyValue(this.gateway, "phase"));
 	}
 
-	@Test(timeout=1000) @DirtiesContext
+	@Test @DirtiesContext
 	public void checkFlow() throws Exception {
-		requests.subscribe(handlerExpecting(any(Message.class)));
+		this.requests.subscribe(handlerExpecting(any(Message.class)));
 		MockHttpServletRequest request = new MockHttpServletRequest();
 		request.setMethod("GET");
 		request.addHeader("Accept", "application/x-java-serialized-object");
@@ -143,10 +153,11 @@ public class HttpInboundGatewayParserTests {
 		MockHttpServletResponse response = new MockHttpServletResponse();
 		List<HttpMessageConverter<?>> converters = new ArrayList<HttpMessageConverter<?>>();
 		converters.add(new SerializingHttpMessageConverter());
-		gateway.setMessageConverters(converters);
-		gateway.afterPropertiesSet();
+		this.gateway.setMessageConverters(converters);
+		this.gateway.afterPropertiesSet();
+		this.gateway.start();
 
-		gateway.handleRequest(request, response);
+		this.gateway.handleRequest(request, response);
 		assertThat(response.getStatus(), is(HttpServletResponse.SC_OK));
 
 		assertEquals(response.getContentType(), "application/x-java-serialized-object");
@@ -258,7 +269,19 @@ public class HttpInboundGatewayParserTests {
 				messageConverters.size() > 1);
 	}
 
-	public static class Person{
+	@SuppressWarnings("rawtypes")
+	private MessageHandler handlerExpecting(final Matcher<Message> messageMatcher) {
+		return new MessageHandler() {
+			@Override
+			public void handleMessage(Message<?> message) throws MessageRejectedException, MessageHandlingException, MessageDeliveryException {
+				assertThat(message, is(messageMatcher));
+			}
+		};
+	}
+
+
+	public static class Person {
+
 		private String name;
 
 		public String getName() {
@@ -268,10 +291,12 @@ public class HttpInboundGatewayParserTests {
 		public void setName(String name) {
 			this.name = name;
 		}
+
 	}
 
-	public static class PersonConverter implements Converter<Person, String>{
+	public static class PersonConverter implements Converter<Person, String> {
 
+		@Override
 		public String convert(Person source) {
 			return source.getName();
 		}

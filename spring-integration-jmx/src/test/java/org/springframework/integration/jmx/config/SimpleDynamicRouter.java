@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2010 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.jmx.config;
 
 import java.util.HashMap;
@@ -27,49 +28,49 @@ import org.springframework.util.Assert;
  *
  */
 /**
- * 
+ *
  *
  */
 @ManagedResource
-public class SimpleDynamicRouter{
+public class SimpleDynamicRouter {
 	private final Map<String, String> channelMappings = new HashMap<String, String>();
 	/**
-	 * 
+	 *
 	 * @param channelMappings
 	 */
-	public SimpleDynamicRouter(Map<String, String> channelMappings){
+	public SimpleDynamicRouter(Map<String, String> channelMappings) {
 		Assert.notEmpty(channelMappings, "you must provide at least one channel mappings");
 		for (String key : channelMappings.keySet()) {
 			this.channelMappings.put(key, channelMappings.get(key));
 		}
 	}
 	/**
-	 * 
+	 *
 	 * @param key
 	 * @param channelName
 	 */
 	@ManagedOperation
-	public void addChannelMapping(String key, String channelName){
+	public void addChannelMapping(String key, String channelName) {
 		this.channelMappings.put(key, channelName);
 	}
 	/**
-	 * 
+	 *
 	 * @param key
 	 */
-	public void removeChannelMapping(String key){
+	public void removeChannelMapping(String key) {
 		this.channelMappings.remove(key);
 	}
 	/**
-	 * 
+	 *
 	 */
-	public Map<String, String> getChannelMappings(){
+	public Map<String, String> getChannelMappings() {
 		return channelMappings;
 	}
 	/**
-	 * 
+	 *
 	 * @param key
 	 */
-	public String route(Object key){
+	public String route(Object key) {
 		String className = key.getClass().getName();
 		return this.channelMappings.get(className);
 	}

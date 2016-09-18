@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2010 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.gateway;
 
 import org.junit.Test;
@@ -31,41 +32,41 @@ import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 @ContextConfiguration
 @RunWith(SpringJUnit4ClassRunner.class)
 public class MultipleEndpointGatewayTests {
-	
+
 	@Autowired
 	@Qualifier("gatewayA")
 	private SampleGateway gatewayA;
-	
+
 	@Autowired
-	@Qualifier("gatewayB")  
+	@Qualifier("gatewayB")
 	private SampleGateway gatewayB;
-	
+
 	@Test
-	public void gatewayNoDefaultReplyChannel(){
+	public void gatewayNoDefaultReplyChannel() {
 		gatewayA.echo("echoAsMessageChannel");
 		// there is nothing to assert. Successful execution of the above is all we care in this test
 	}
 	@Test
-	public void gatewayWithDefaultReplyChannel(){
+	public void gatewayWithDefaultReplyChannel() {
 		gatewayB.echo("echoAsMessageChannelIgnoreDefOutChannel");
 		// there is nothing to assert. Successful execution of the above is all we care in this test
 	}
-	
+
 	@Test
-	public void gatewayWithReplySentBackToDefaultReplyChannel(){
+	public void gatewayWithReplySentBackToDefaultReplyChannel() {
 		gatewayB.echo("echoAsMessageChannelDefaultOutputChannel");
 		// there is nothing to assert. Successful execution of the above is all we care in this test
 	}
-	
-	public static interface SampleGateway{
-		public Object echo(Object value);
+
+	public interface SampleGateway {
+		Object echo(Object value);
 	}
-	
+
 	public static class SampleEchoService {
-		public Object echo(Object value){
+		public Object echo(Object value) {
 			return "R:" + value;
 		}
-		public Message<?> echoAsMessage(Object value){
+		public Message<?> echoAsMessage(Object value) {
 			return MessageBuilder.withPayload("R:" + value).build();
 		}
 	}

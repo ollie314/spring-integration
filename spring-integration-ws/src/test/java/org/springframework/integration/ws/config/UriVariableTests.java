@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,23 +35,25 @@ import javax.jms.Queue;
 import javax.jms.Session;
 
 import org.hamcrest.Matchers;
+import org.jivesoftware.smack.SmackException;
 import org.jivesoftware.smack.XMPPConnection;
-import org.jivesoftware.smack.packet.Packet;
+import org.jivesoftware.smack.packet.Stanza;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
+
 import org.springframework.beans.DirectFieldAccessor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.messaging.MessageHandlingException;
 import org.springframework.integration.support.MessageBuilder;
 import org.springframework.integration.test.util.TestUtils;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.MessageHandler;
+import org.springframework.messaging.MessageHandlingException;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 import org.springframework.ws.client.WebServiceClientException;
@@ -70,6 +72,7 @@ import org.springframework.ws.transport.mail.MailSenderConnection;
 /**
  * @author Mark Fisher
  * @author Artem Bilan
+ * @author Andy Wilkinson
  * @since 2.1
  */
 @RunWith(SpringJUnit4ClassRunner.class)
@@ -137,7 +140,7 @@ public class UriVariableTests {
 			// expected
 			assertThat(e.getCause(), Matchers.is(Matchers.instanceOf(WebServiceIOException.class))); // offline
 		}
-		assertEquals("http://localhost/spring-integration?param=test1%20%26%20test2", uri.get());
+		assertEquals("http://localhost/spring-integration?param=test1%20&%20test2", uri.get());
 	}
 
 	@Test
@@ -207,9 +210,9 @@ public class UriVariableTests {
 	}
 
 	@Test
-	public void testInt2720XmppUriVariables() {
+	public void testInt2720XmppUriVariables() throws SmackException.NotConnectedException {
 
-		Mockito.doThrow(new WebServiceIOException("intentional")).when(this.xmppConnection).sendPacket(Mockito.any(Packet.class));
+		Mockito.doThrow(new WebServiceIOException("intentional")).when(this.xmppConnection).sendStanza(Mockito.any(Stanza.class));
 
 		Message<?> message = MessageBuilder.withPayload("<spring/>").setHeader("to", "user").build();
 		try {
@@ -221,8 +224,8 @@ public class UriVariableTests {
 			assertTrue(WebServiceIOException.class.equals(causeType)); // offline
 		}
 
-		ArgumentCaptor<Packet> argument = ArgumentCaptor.forClass(Packet.class);
-		Mockito.verify(this.xmppConnection).sendPacket(argument.capture());
+		ArgumentCaptor<Stanza> argument = ArgumentCaptor.forClass(Stanza.class);
+		Mockito.verify(this.xmppConnection).sendStanza(argument.capture());
 		assertEquals("user@jabber.org", argument.getValue().getTo());
 
 		assertEquals("xmpp:user@jabber.org", this.interceptor.getLastUri().toString());
@@ -249,7 +252,7 @@ public class UriVariableTests {
 			else {
 				throw new IllegalStateException("expected WebServiceConnection in the TransportContext");
 			}
-			return false;
+			return true;
 		}
 
 		public boolean handleResponse(MessageContext messageContext) throws WebServiceClientException {
@@ -258,6 +261,10 @@ public class UriVariableTests {
 
 		public boolean handleFault(MessageContext messageContext) throws WebServiceClientException {
 			return false;
+		}
+
+		public void afterCompletion(MessageContext messageContext, Exception ex) throws WebServiceClientException {
+
 		}
 	}
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,6 +31,8 @@ import org.springframework.beans.factory.BeanFactoryUtils;
 import org.springframework.beans.factory.ListableBeanFactory;
 import org.springframework.beans.factory.support.BeanDefinitionValidationException;
 import org.springframework.context.SmartLifecycle;
+import org.springframework.integration.support.management.IntegrationManagedResource;
+import org.springframework.integration.support.management.TrackableComponent;
 import org.springframework.jmx.export.annotation.ManagedAttribute;
 import org.springframework.jmx.export.annotation.ManagedOperation;
 import org.springframework.jmx.export.annotation.ManagedResource;
@@ -46,6 +48,7 @@ import org.springframework.util.StringUtils;
  * @since 2.0
  */
 @ManagedResource
+@IntegrationManagedResource
 public class MessageHistoryConfigurer implements SmartLifecycle, BeanFactoryAware {
 
 	private final Log logger = LogFactory.getLog(this.getClass());
@@ -94,7 +97,7 @@ public class MessageHistoryConfigurer implements SmartLifecycle, BeanFactoryAwar
 	 * components). Cannot be changed if {@link #isRunning()}; invoke {@link #stop()} first.
 	 * @param componentNamePatterns The patterns.
 	 */
-	@ManagedAttribute(description="comma-delimited list of patterns; must invoke stop() before changing.")
+	@ManagedAttribute(description = "comma-delimited list of patterns; must invoke stop() before changing.")
 	public void setComponentNamePatternsString(String componentNamePatterns) {
 		this.setComponentNamePatterns(StringUtils.delimitedListToStringArray(componentNamePatterns, ",", " "));
 	}
@@ -116,7 +119,7 @@ public class MessageHistoryConfigurer implements SmartLifecycle, BeanFactoryAwar
 		Assert.notNull(componentNamePatternsSet, "'componentNamePatternsSet' must not be null");
 		Assert.state(!this.running, "'componentNamePatternsSet' cannot be changed without invoking stop() first");
 		for (String s : componentNamePatternsSet) {
-			String[] componentNamePatterns = StringUtils.delimitedListToStringArray(s, "," , " ");
+			String[] componentNamePatterns = StringUtils.delimitedListToStringArray(s, ",", " ");
 			Arrays.sort(componentNamePatterns);
 			if (this.componentNamePatternsExplicitlySet
 					&& !Arrays.equals(this.componentNamePatterns, componentNamePatterns)) {
@@ -165,7 +168,7 @@ public class MessageHistoryConfigurer implements SmartLifecycle, BeanFactoryAwar
 	public void start() {
 		synchronized (this.lifecycleMonitor) {
 			if (!this.running && this.beanFactory instanceof ListableBeanFactory) {
-				for (TrackableComponent component : getTrackableComponents((ListableBeanFactory) beanFactory)) {
+				for (TrackableComponent component : getTrackableComponents((ListableBeanFactory) this.beanFactory)) {
 					String componentName = component.getComponentName();
 					boolean shouldTrack = PatternMatchUtils.simpleMatch(this.componentNamePatterns, componentName);
 					component.setShouldTrack(shouldTrack);
@@ -186,7 +189,7 @@ public class MessageHistoryConfigurer implements SmartLifecycle, BeanFactoryAwar
 	public void stop() {
 		synchronized (this.lifecycleMonitor) {
 			if (this.running && this.beanFactory instanceof ListableBeanFactory) {
-				for (TrackableComponent component : getTrackableComponents((ListableBeanFactory) beanFactory)) {
+				for (TrackableComponent component : getTrackableComponents((ListableBeanFactory) this.beanFactory)) {
 					String componentName = component.getComponentName();
 					if (this.currentlyTrackedComponentNames.contains(componentName)) {
 						component.setShouldTrack(false);

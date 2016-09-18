@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,13 +27,13 @@ import org.springframework.beans.factory.support.BeanDefinitionBuilder;
 import org.springframework.beans.factory.support.RootBeanDefinition;
 import org.springframework.context.support.GenericApplicationContext;
 import org.springframework.core.annotation.Order;
-import org.springframework.messaging.Message;
-import org.springframework.messaging.MessageChannel;
 import org.springframework.integration.MessageRejectedException;
 import org.springframework.integration.annotation.MessageEndpoint;
 import org.springframework.integration.annotation.ServiceActivator;
 import org.springframework.integration.channel.DirectChannel;
 import org.springframework.integration.dispatcher.RoundRobinLoadBalancingStrategy;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.support.GenericMessage;
 
 /**
@@ -65,6 +65,7 @@ public class SubscriberOrderTests {
 		assertEquals(3, calls.get(2).intValue());
 		assertEquals(4, calls.get(3).intValue());
 		assertEquals(5, calls.get(4).intValue());
+		context.close();
 	}
 
 	@Test
@@ -106,6 +107,7 @@ public class SubscriberOrderTests {
 		channel.send(new GenericMessage<String>("test-11"));
 		assertEquals(1, testBean.calls.size());
 		assertEquals(1, testBean.calls.get(0).intValue());
+		context.close();
 	}
 
 	@Test
@@ -133,6 +135,7 @@ public class SubscriberOrderTests {
 		assertEquals(3, calls.get(2).intValue());
 		assertEquals(4, calls.get(3).intValue());
 		assertEquals(5, calls.get(4).intValue());
+		context.close();
 	}
 
 
@@ -165,31 +168,31 @@ public class SubscriberOrderTests {
 		}
 
 		@Order(3)
-		@ServiceActivator(inputChannel="input")
+		@ServiceActivator(inputChannel = "input")
 		public void third(Message<?> message) {
 			this.handle(3, message);
 		}
 
 		@Override
-		@ServiceActivator(inputChannel="input")
+		@ServiceActivator(inputChannel = "input")
 		public void second(Message<?> message) {
 			this.handle(2, message);
 		}
 
 		@Order(1)
-		@ServiceActivator(inputChannel="input")
+		@ServiceActivator(inputChannel = "input")
 		public void first(Message<?> message) {
 			this.handle(1, message);
 		}
 
 		@Order(5)
-		@ServiceActivator(inputChannel="input")
+		@ServiceActivator(inputChannel = "input")
 		public void fifth(Message<?> message) {
 			this.handle(5, message);
 		}
 
 		@Override
-		@ServiceActivator(inputChannel="input")
+		@ServiceActivator(inputChannel = "input")
 		public void fourth(Message<?> message) {
 			this.handle(4, message);
 		}

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,10 +27,11 @@ import org.junit.runner.RunWith;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.messaging.MessageChannel;
-import org.springframework.integration.channel.QueueChannel;
-import org.springframework.messaging.support.GenericMessage;
+import org.springframework.integration.channel.NullChannel;
 import org.springframework.integration.support.MessageBuilder;
+import org.springframework.messaging.MessageChannel;
+import org.springframework.messaging.PollableChannel;
+import org.springframework.messaging.support.GenericMessage;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
@@ -42,6 +43,7 @@ import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
  */
 @ContextConfiguration
 @RunWith(SpringJUnit4ClassRunner.class)
+@DirtiesContext
 public class DynamicRouterTests {
 
 	@Autowired
@@ -54,15 +56,18 @@ public class DynamicRouterTests {
 
 	@Autowired
 	@Qualifier("processAChannel")
-	private QueueChannel processAChannel;
+	private PollableChannel processAChannel;
 
 	@Autowired
 	@Qualifier("processBChannel")
-	private QueueChannel processBChannel;
+	private PollableChannel processBChannel;
 
 	@Autowired
 	@Qualifier("processCChannel")
-	private QueueChannel processCChannel;
+	private PollableChannel processCChannel;
+
+	@Autowired
+	private NullChannel nullChannel;
 
 
 	@Test @DirtiesContext
@@ -95,7 +100,6 @@ public class DynamicRouterTests {
 	}
 
 	@Test @DirtiesContext
-	@Ignore // Requires Spring 3.2.3 TODO: Remove when minimum SF is >= 3.2.3
 	public void testRouteChangeMapNamedArgs() throws Exception {
 		routingChannel.send(new GenericMessage<String>("123"));
 		assertEquals("123", processAChannel.receive(0).getPayload());
@@ -109,6 +113,14 @@ public class DynamicRouterTests {
 
 		routingChannel.send(new GenericMessage<String>("123"));
 		assertEquals("123", processCChannel.receive(0).getPayload());
+	}
+
+	@Test @DirtiesContext @Ignore
+	public void testPerf() throws Exception {
+//		this.nullChannel.enableStats(false);
+		for (int i = 0; i < 1000000000; i++) {
+			this.nullChannel.send(null);
+		}
 	}
 
 }

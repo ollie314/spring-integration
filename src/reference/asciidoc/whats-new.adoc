@@ -1,0 +1,44 @@
+[[whats-new]]
+== What's new in Spring Integration 5.0?
+
+This chapter provides an overview of the new features and improvements that have been introduced with Spring
+Integration 5.0.
+If you are interested in more details, please see the Issue Tracker tickets that were resolved as part of the 5.0
+development process.
+
+[[x5.0-new-components]]
+=== New Components
+
+
+[[x5.0-general]]
+=== General Changes
+
+==== Core Changes
+
+==== JMS Changes
+
+Previously, Spring Integration JMS XML configuration used a default bean name `connectionFactory` for the JMS Connection Factory, allowing the property to be omitted from component definitions.
+It has now been renamed to `jmsConnectionFactory`, which is the bean name used by Spring Boot to auto-configure the JMS Connection Factory bean.
+
+If your application is relying on the previous behavior, rename your `connectionFactory` bean to `jmsConnectionFactory`, or specifically configure your components to use your bean using its current name.
+
+==== Gateway Changes
+
+The gateway now correctly sets the `errorChannel` header when the gateway method has a `void` return type and an error channel is provided.
+Previously, the header was not populated.
+This had the effect that synchronous downstream flows (running on the calling thread) would send the exception to the configured channel but an exception on an async downstream flow would be sent to the default `errorChannel` instead.
+See <<gateway-error-handling>> for more information.
+
+==== Mail Changes
+
+Some inconsistencies with rendering IMAP mail content have been resolved.
+See <<imap-format-important, the note in the Mail-Receiving Channel Adapter Section>> for more information.
+
+==== (S)FTP Changes
+
+The inbound channel adapters now have a property `max-fetch-size` which is used to limit the number of files fetched during a poll when there are no files currently in the local directory.
+
+==== Integration Properties
+
+Since _version 4.3.2_ a new `spring.integration.readOnly.headers` global property has been added to customize the list of headers which should not be copied to a newly created `Message` by the `MessageBuilder`.
+See <<global-properties>> for more information.

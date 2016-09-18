@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.ip.udp;
 
 import static org.junit.Assert.assertNotNull;
@@ -26,7 +27,6 @@ import org.junit.Test;
 import org.springframework.integration.channel.QueueChannel;
 import org.springframework.integration.ip.util.SocketTestUtils;
 import org.springframework.integration.support.MessageBuilder;
-import org.springframework.integration.test.util.SocketUtils;
 import org.springframework.messaging.Message;
 
 
@@ -53,7 +53,7 @@ public class MultiClientTests {
 	public void testNoAck() throws Exception {
 		final String payload = largePayload(1000);
 		final UnicastReceivingChannelAdapter adapter =
-			new UnicastReceivingChannelAdapter(SocketUtils.findAvailableUdpSocket());
+			new UnicastReceivingChannelAdapter(0);
 		int drivers = 10;
 		adapter.setPoolSize(drivers);
 		QueueChannel queue = new QueueChannel(drivers * 3);
@@ -65,28 +65,26 @@ public class MultiClientTests {
 		final AtomicBoolean done = new AtomicBoolean();
 
 		for (int i = 0; i < drivers; i++) {
-			Thread t = new Thread( new Runnable() {
-				@Override
-				public void run() {
-					UnicastSendingMessageHandler sender = new UnicastSendingMessageHandler(
-							"localhost", adapter.getPort());
-					sender.start();
-					while (true) {
-						Message<?> message = queueIn.receive();
-						sender.handleMessage(message);
-						if (done.get()) {
-							break;
-						}
+			Thread t = new Thread(() -> {
+				UnicastSendingMessageHandler sender = new UnicastSendingMessageHandler(
+						"localhost", adapter.getPort());
+				sender.start();
+				while (true) {
+					Message<?> message = queueIn.receive();
+					sender.handleMessage(message);
+					if (done.get()) {
+						break;
 					}
-					sender.stop();
-				}});
+				}
+				sender.stop();
+			});
 			t.setDaemon(true);
 			t.start();
 		}
-		for (int i = 0; i < drivers * 3 ; i++) {
+		for (int i = 0; i < drivers * 3; i++) {
 			queueIn.send(MessageBuilder.withPayload(payload).build());
 		}
-		for (int i = 0; i < drivers * 3 ; i++) {
+		for (int i = 0; i < drivers * 3; i++) {
 			Message<byte[]> messageOut = (Message<byte[]>) queue.receive(10000);
 			assertNotNull(messageOut);
 			Assert.assertEquals(payload, new String(messageOut.getPayload()));
@@ -101,7 +99,7 @@ public class MultiClientTests {
 	public void testAck() throws Exception {
 		final String payload = largePayload(1000);
 		final UnicastReceivingChannelAdapter adapter =
-			new UnicastReceivingChannelAdapter(SocketUtils.findAvailableUdpSocket(), false);
+			new UnicastReceivingChannelAdapter(0, false);
 		int drivers = 5;
 		adapter.setPoolSize(drivers);
 		QueueChannel queue = new QueueChannel(drivers * 3);
@@ -113,32 +111,28 @@ public class MultiClientTests {
 		final AtomicBoolean done = new AtomicBoolean();
 
 		for (int i = 0; i < drivers; i++) {
-			final int j = i;
-			Thread t = new Thread( new Runnable() {
-				@Override
-				public void run() {
-					UnicastSendingMessageHandler sender = new UnicastSendingMessageHandler(
-							"localhost", adapter.getPort(),
-							false, true, "localhost",
-							SocketUtils.findAvailableUdpSocket(adapter.getPort() + j + 1000),
-							10000);
-					sender.start();
-					while (true) {
-						Message<?> message = queueIn.receive();
-						sender.handleMessage(message);
-						if (done.get()) {
-							break;
-						}
+			Thread t = new Thread(() -> {
+				UnicastSendingMessageHandler sender = new UnicastSendingMessageHandler(
+						"localhost", adapter.getPort(),
+						false, true, "localhost", 0,
+						10000);
+				sender.start();
+				while (true) {
+					Message<?> message = queueIn.receive();
+					sender.handleMessage(message);
+					if (done.get()) {
+						break;
 					}
-					sender.stop();
-				}});
+				}
+				sender.stop();
+			});
 			t.setDaemon(true);
 			t.start();
 		}
-		for (int i = 0; i < drivers * 3 ; i++) {
+		for (int i = 0; i < drivers * 3; i++) {
 			queueIn.send(MessageBuilder.withPayload(payload).build());
 		}
-		for (int i = 0; i < drivers * 3 ; i++) {
+		for (int i = 0; i < drivers * 3; i++) {
 			Message<byte[]> messageOut = (Message<byte[]>) queue.receive(20000);
 			assertNotNull(messageOut);
 			Assert.assertEquals(payload, new String(messageOut.getPayload()));
@@ -153,7 +147,7 @@ public class MultiClientTests {
 	public void testAckWithLength() throws Exception {
 		final String payload = largePayload(1000);
 		final UnicastReceivingChannelAdapter adapter =
-			new UnicastReceivingChannelAdapter(SocketUtils.findAvailableUdpSocket(), true);
+			new UnicastReceivingChannelAdapter(0, true);
 		int drivers = 10;
 		adapter.setPoolSize(drivers);
 		QueueChannel queue = new QueueChannel(drivers * 3);
@@ -165,32 +159,28 @@ public class MultiClientTests {
 		final AtomicBoolean done = new AtomicBoolean();
 
 		for (int i = 0; i < drivers; i++) {
-			final int j = i;
-			Thread t = new Thread( new Runnable() {
-				@Override
-				public void run() {
-					UnicastSendingMessageHandler sender = new UnicastSendingMessageHandler(
-							"localhost", adapter.getPort(),
-							true, true, "localhost",
-							SocketUtils.findAvailableUdpSocket(adapter.getPort() + j + 1100),
-							10000);
-					sender.start();
-					while (true) {
-						Message<?> message = queueIn.receive();
-						sender.handleMessage(message);
-						if (done.get()) {
-							break;
-						}
+			Thread t = new Thread(() -> {
+				UnicastSendingMessageHandler sender = new UnicastSendingMessageHandler(
+						"localhost", adapter.getPort(),
+						true, true, "localhost", 0,
+						10000);
+				sender.start();
+				while (true) {
+					Message<?> message = queueIn.receive();
+					sender.handleMessage(message);
+					if (done.get()) {
+						break;
 					}
-					sender.stop();
-				}});
+				}
+				sender.stop();
+			});
 			t.setDaemon(true);
 			t.start();
 		}
-		for (int i = 0; i < drivers * 3 ; i++) {
+		for (int i = 0; i < drivers * 3; i++) {
 			queueIn.send(MessageBuilder.withPayload(payload).build());
 		}
-		for (int i = 0; i < drivers * 3 ; i++) {
+		for (int i = 0; i < drivers * 3; i++) {
 			Message<byte[]> messageOut = (Message<byte[]>) queue.receive(10000);
 			assertNotNull(messageOut);
 			Assert.assertEquals(payload, new String(messageOut.getPayload()));

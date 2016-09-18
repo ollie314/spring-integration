@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -49,9 +49,11 @@ import org.springframework.util.StringUtils;
  * @author Mark Fisher
  * @author Oleg Zhurakousky
  * @author Gary Russell
+ * @author Artem Bilan
  * @since 2.0
  */
-public class JmsChannelFactoryBean extends AbstractFactoryBean<AbstractJmsChannel> implements SmartLifecycle, DisposableBean, BeanNameAware {
+public class JmsChannelFactoryBean extends AbstractFactoryBean<AbstractJmsChannel>
+		implements SmartLifecycle, DisposableBean, BeanNameAware {
 
 	private volatile AbstractJmsChannel channel;
 
@@ -70,6 +72,8 @@ public class JmsChannelFactoryBean extends AbstractFactoryBean<AbstractJmsChanne
 	private volatile boolean autoStartup = true;
 
 	private volatile String cacheLevelName;
+
+	private volatile Integer cacheLevel;
 
 	private volatile String clientId;
 
@@ -112,6 +116,8 @@ public class JmsChannelFactoryBean extends AbstractFactoryBean<AbstractJmsChanne
 	private volatile Long recoveryInterval;
 
 	private volatile String beanName;
+
+	private volatile boolean subscriptionShared;
 
 	/**
 	 * This value differs from the container implementations' default (which is AUTO_ACKNOWLEDGE)
@@ -186,6 +192,8 @@ public class JmsChannelFactoryBean extends AbstractFactoryBean<AbstractJmsChanne
 	 */
 
 	public void setAcceptMessagesWhileStopping(boolean acceptMessagesWhileStopping) {
+		Assert.isTrue(this.messageDriven,
+				"'acceptMessagesWhileStopping' is allowed only in case of 'messageDriven = true'");
 		this.acceptMessagesWhileStopping = acceptMessagesWhileStopping;
 	}
 
@@ -194,18 +202,31 @@ public class JmsChannelFactoryBean extends AbstractFactoryBean<AbstractJmsChanne
 	}
 
 	public void setCacheLevelName(String cacheLevelName) {
+		Assert.isTrue(this.messageDriven, "'cacheLevelName' is allowed only in case of 'messageDriven = true'");
+		Assert.state(this.cacheLevel == null,
+				"'cacheLevelName' and 'cacheLevel' are mutually exclusive");
 		this.cacheLevelName = cacheLevelName;
 	}
 
+	public void setCacheLevel(Integer cacheLevel) {
+		Assert.isTrue(this.messageDriven, "'cacheLevel' is allowed only in case of 'messageDriven = true'");
+		Assert.state(!StringUtils.hasText(this.cacheLevelName),
+				"'cacheLevelName' and 'cacheLevel' are mutually exclusive");
+		this.cacheLevel = cacheLevel;
+	}
+
 	public void setClientId(String clientId) {
+		Assert.isTrue(this.messageDriven, "'clientId' is allowed only in case of 'messageDriven = true'");
 		this.clientId = clientId;
 	}
 
 	public void setConcurrency(String concurrency) {
+		Assert.isTrue(this.messageDriven, "'concurrency' is allowed only in case of 'messageDriven = true'");
 		this.concurrency = concurrency;
 	}
 
 	public void setConcurrentConsumers(int concurrentConsumers) {
+		Assert.isTrue(this.messageDriven, "'concurrentConsumers' is allowed only in case of 'messageDriven = true'");
 		this.concurrentConsumers = concurrentConsumers;
 	}
 
@@ -215,6 +236,7 @@ public class JmsChannelFactoryBean extends AbstractFactoryBean<AbstractJmsChanne
 	}
 
 	public void setContainerType(Class<? extends AbstractMessageListenerContainer> containerType) {
+		Assert.isTrue(this.messageDriven, "'containerType' is allowed only in case of 'messageDriven = true'");
 		this.containerType = containerType;
 	}
 
@@ -232,30 +254,37 @@ public class JmsChannelFactoryBean extends AbstractFactoryBean<AbstractJmsChanne
 	}
 
 	public void setDurableSubscriptionName(String durableSubscriptionName) {
+		Assert.isTrue(this.messageDriven, "'durableSubscriptionName' is allowed only in case of 'messageDriven = true'");
 		this.durableSubscriptionName = durableSubscriptionName;
 	}
 
 	public void setErrorHandler(ErrorHandler errorHandler) {
+		Assert.isTrue(this.messageDriven, "'errorHandler' is allowed only in case of 'messageDriven = true'");
 		this.errorHandler = errorHandler;
 	}
 
 	public void setExceptionListener(ExceptionListener exceptionListener) {
+		Assert.isTrue(this.messageDriven, "'exceptionListener' is allowed only in case of 'messageDriven = true'");
 		this.exceptionListener = exceptionListener;
 	}
 
 	public void setExposeListenerSession(boolean exposeListenerSession) {
+		Assert.isTrue(this.messageDriven, "'exposeListenerSession' is allowed only in case of 'messageDriven = true'");
 		this.exposeListenerSession = exposeListenerSession;
 	}
 
 	public void setIdleTaskExecutionLimit(int idleTaskExecutionLimit) {
+		Assert.isTrue(this.messageDriven, "'idleTaskExecutionLimit' is allowed only in case of 'messageDriven = true'");
 		this.idleTaskExecutionLimit = idleTaskExecutionLimit;
 	}
 
 	public void setMaxConcurrentConsumers(int maxConcurrentConsumers) {
+		Assert.isTrue(this.messageDriven, "'maxConcurrentConsumers' is allowed only in case of 'messageDriven = true'");
 		this.maxConcurrentConsumers = maxConcurrentConsumers;
 	}
 
 	public void setMaxMessagesPerTask(int maxMessagesPerTask) {
+		Assert.isTrue(this.messageDriven, "'maxMessagesPerTask' is allowed only in case of 'messageDriven = true'");
 		this.maxMessagesPerTask = maxMessagesPerTask;
 	}
 
@@ -283,6 +312,7 @@ public class JmsChannelFactoryBean extends AbstractFactoryBean<AbstractJmsChanne
 	}
 
 	public void setRecoveryInterval(long recoveryInterval) {
+		Assert.isTrue(this.messageDriven, "'recoveryInterval' is allowed only in case of 'messageDriven = true'");
 		this.recoveryInterval = recoveryInterval;
 	}
 
@@ -297,27 +327,37 @@ public class JmsChannelFactoryBean extends AbstractFactoryBean<AbstractJmsChanne
 	}
 
 	public void setSubscriptionDurable(boolean subscriptionDurable) {
+		Assert.isTrue(this.messageDriven, "'subscriptionDurable' is allowed only in case of 'messageDriven = true'");
 		this.subscriptionDurable = subscriptionDurable;
 	}
 
 	public void setTaskExecutor(Executor taskExecutor) {
+		Assert.isTrue(this.messageDriven, "'taskExecutor' is allowed only in case of 'messageDriven = true'");
 		this.taskExecutor = taskExecutor;
 	}
 
 	public void setTransactionManager(PlatformTransactionManager transactionManager) {
+		Assert.isTrue(this.messageDriven, "'transactionManager' is allowed only in case of 'messageDriven = true'");
 		this.transactionManager = transactionManager;
 	}
 
 	public void setTransactionName(String transactionName) {
+		Assert.isTrue(this.messageDriven, "'transactionName' is allowed only in case of 'messageDriven = true'");
 		this.transactionName = transactionName;
 	}
 
 	public void setTransactionTimeout(int transactionTimeout) {
+		Assert.isTrue(this.messageDriven, "'transactionTimeout' is allowed only in case of 'messageDriven = true'");
 		this.transactionTimeout = transactionTimeout;
 	}
 
 	public void setMaxSubscribers(int maxSubscribers) {
+		Assert.isTrue(this.messageDriven, "'maxSubscribers' is allowed only in case of 'messageDriven = true'");
 		this.maxSubscribers = maxSubscribers;
+	}
+
+	public void setSubscriptionShared(boolean subscriptionShared) {
+		this.subscriptionShared = subscriptionShared;
 	}
 
 	@Override
@@ -334,7 +374,7 @@ public class JmsChannelFactoryBean extends AbstractFactoryBean<AbstractJmsChanne
 	protected AbstractJmsChannel createInstance() throws Exception {
 		this.initializeJmsTemplate();
 		if (this.messageDriven) {
-			this.container = this.createContainer();
+			this.container = createContainer();
 			SubscribableJmsChannel subscribableJmsChannel = new SubscribableJmsChannel(this.container, this.jmsTemplate);
 			subscribableJmsChannel.setMaxSubscribers(this.maxSubscribers);
 			this.channel = subscribableJmsChannel;
@@ -352,6 +392,9 @@ public class JmsChannelFactoryBean extends AbstractFactoryBean<AbstractJmsChanne
 			this.channel.setInterceptors(this.interceptors);
 		}
 		this.channel.setBeanName(this.beanName);
+		if (this.getBeanFactory() != null) {
+			this.channel.setBeanFactory(this.getBeanFactory());
+		}
 		this.channel.afterPropertiesSet();
 		return this.channel;
 	}
@@ -401,6 +444,7 @@ public class JmsChannelFactoryBean extends AbstractFactoryBean<AbstractJmsChanne
 		container.setSessionAcknowledgeMode(this.sessionAcknowledgeMode);
 		container.setSessionTransacted(this.sessionTransacted);
 		container.setSubscriptionDurable(this.subscriptionDurable);
+		container.setSubscriptionShared(this.subscriptionShared);
 
 
 
@@ -410,15 +454,19 @@ public class JmsChannelFactoryBean extends AbstractFactoryBean<AbstractJmsChanne
 				dmlc.setCacheLevelName(this.cacheLevelName);
 			}
 
-			if (StringUtils.hasText(this.concurrency)){
+			if (this.cacheLevel != null) {
+				dmlc.setCacheLevel(this.cacheLevel);
+			}
+
+			if (StringUtils.hasText(this.concurrency)) {
 				dmlc.setConcurrency(this.concurrency);
 			}
 
-			if (this.concurrentConsumers != null){
+			if (this.concurrentConsumers != null) {
 				dmlc.setConcurrentConsumers(this.concurrentConsumers);
 			}
 
-			if (this.maxConcurrentConsumers != null){
+			if (this.maxConcurrentConsumers != null) {
 				dmlc.setMaxConcurrentConsumers(this.maxConcurrentConsumers);
 			}
 
@@ -447,11 +495,11 @@ public class JmsChannelFactoryBean extends AbstractFactoryBean<AbstractJmsChanne
 		}
 		else if (container instanceof SimpleMessageListenerContainer) {
 			SimpleMessageListenerContainer smlc = (SimpleMessageListenerContainer) container;
-			if (StringUtils.hasText(this.concurrency)){
+			if (StringUtils.hasText(this.concurrency)) {
 				smlc.setConcurrency(this.concurrency);
 			}
 
-			if (this.concurrentConsumers != null){
+			if (this.concurrentConsumers != null) {
 				smlc.setConcurrentConsumers(this.concurrentConsumers);
 			}
 
@@ -467,8 +515,7 @@ public class JmsChannelFactoryBean extends AbstractFactoryBean<AbstractJmsChanne
 
 	@Override
 	public boolean isAutoStartup() {
-		return (this.channel instanceof SubscribableJmsChannel) ?
-				((SubscribableJmsChannel) this.channel).isAutoStartup() : false;
+		return this.channel instanceof SubscribableJmsChannel && ((SubscribableJmsChannel) this.channel).isAutoStartup();
 	}
 
 	@Override
@@ -479,8 +526,7 @@ public class JmsChannelFactoryBean extends AbstractFactoryBean<AbstractJmsChanne
 
 	@Override
 	public boolean isRunning() {
-		return (this.channel instanceof SubscribableJmsChannel) ?
-				((SubscribableJmsChannel) this.channel).isRunning() : false;
+		return this.channel instanceof SubscribableJmsChannel && ((SubscribableJmsChannel) this.channel).isRunning();
 	}
 
 	@Override
@@ -510,4 +556,5 @@ public class JmsChannelFactoryBean extends AbstractFactoryBean<AbstractJmsChanne
 			((SubscribableJmsChannel) this.channel).destroy();
 		}
 	}
+
 }

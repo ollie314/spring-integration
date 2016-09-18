@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2011 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,28 +36,41 @@ import org.springframework.xml.namespace.QNameUtils;
 /**
  * A {@link HeaderMapper} implementation for mapping to and from a SoapHeader.
  * The {@link #setRequestHeaderNames(String[])} and {@link #setReplyHeaderNames(String[])}
- * accept exact name Strings or simple patterns (e.g. "start*", "*end", or "*").  
+ * accept exact name Strings or simple patterns (e.g. "start*", "*end", or "*").
  * By default all inbound headers will be accepted, but any outbound header that should
  * be mapped must be configured explicitly. Note that the outbound mapping only writes
  * String header values into attributes on the SoapHeader. For anything more advanced,
  * one should implement the HeaderMapper interface directly.
- * 
+ *
  * @author Mark Fisher
  * @author Oleg Zhurakousky
+ * @author Stephane Nicoll
+ * @author Mauro Molinari
  * @since 2.0
  */
 public class DefaultSoapHeaderMapper extends AbstractHeaderMapper<SoapMessage> implements SoapHeaderMapper {
-	
+
 	private static final List<String> STANDARD_HEADER_NAMES = new ArrayList<String>();
 
 	static {
 		STANDARD_HEADER_NAMES.add(WebServiceHeaders.SOAP_ACTION);
-		
 	}
-	
+
+	public DefaultSoapHeaderMapper() {
+		super(WebServiceHeaders.PREFIX, STANDARD_HEADER_NAMES,  Collections.<String>emptyList());
+	}
+
 	@Override
 	protected Map<String, Object> extractStandardHeaders(SoapMessage source) {
-		return Collections.emptyMap();
+		final String soapAction = source.getSoapAction();
+		if (StringUtils.hasText(soapAction)) {
+			Map<String, Object> headers = new HashMap<String, Object>(1);
+			headers.put(WebServiceHeaders.SOAP_ACTION, soapAction);
+			return headers;
+		}
+		else {
+			return Collections.emptyMap();
+		}
 	}
 
 	@Override
@@ -106,14 +119,5 @@ public class DefaultSoapHeaderMapper extends AbstractHeaderMapper<SoapMessage> i
 			soapHeader.addAttribute(qname, (String) headerValue);
 		}
 	}
-	
-	@Override
-	protected List<String> getStandardRequestHeaderNames() {
-		return STANDARD_HEADER_NAMES;
-	}
 
-	@Override
-	protected String getStandardHeaderPrefix() {
-		return WebServiceHeaders.PREFIX;
-	}
 }

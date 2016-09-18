@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,12 +30,12 @@ import org.springframework.beans.factory.BeanFactory;
 import org.springframework.expression.Expression;
 import org.springframework.expression.common.LiteralExpression;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
-import org.springframework.messaging.Message;
-import org.springframework.integration.annotation.Header;
-import org.springframework.integration.annotation.Headers;
-import org.springframework.integration.annotation.Payload;
 import org.springframework.integration.mapping.MessageMappingException;
 import org.springframework.integration.support.MessageBuilder;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.handler.annotation.Header;
+import org.springframework.messaging.handler.annotation.Headers;
+import org.springframework.messaging.handler.annotation.Payload;
 
 /**
  * @author Mark Fisher
@@ -57,7 +57,7 @@ public class GatewayMethodInboundMessageMapperToMessageTests {
 		Method method = TestService.class.getMethod("sendPayload", String.class);
 		GatewayMethodInboundMessageMapper mapper = new GatewayMethodInboundMessageMapper(method);
 		mapper.setBeanFactory(mock(BeanFactory.class));
-		mapper.toMessage(new Object[] { "test" , "oops" });
+		mapper.toMessage(new Object[] { "test", "oops" });
 	}
 
 	@Test(expected = IllegalArgumentException.class)
@@ -286,13 +286,13 @@ public class GatewayMethodInboundMessageMapperToMessageTests {
 	}
 
 
-	private static interface TestService {
+	private interface TestService {
 
 		void sendPayload(String payload);
 
 		void sendPayloadAndHeader(String payload, @Header("foo") String foo);
 
-		void sendPayloadAndOptionalHeader(String payload, @Header(value="foo", required=false) String foo);
+		void sendPayloadAndOptionalHeader(String payload, @Header(value = "foo", required = false) String foo);
 
 		void sendPayloadAndHeadersMap(String payload, @Headers Map<String, Object> headers);
 
@@ -300,7 +300,7 @@ public class GatewayMethodInboundMessageMapperToMessageTests {
 
 		void sendMessageAndHeader(Message<?> message, @Header("foo") String foo);
 
-		void sendMessageAndOptionalHeader(Message<?> message, @Header(value="foo", required=false) String foo);
+		void sendMessageAndOptionalHeader(Message<?> message, @Header(value = "foo", required = false) String foo);
 
 		// invalid methods
 

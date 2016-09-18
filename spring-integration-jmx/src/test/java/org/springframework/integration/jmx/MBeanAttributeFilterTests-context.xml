@@ -61,7 +61,11 @@
 					<constructor-arg>
 						<array>
 							<value type="java.lang.String">SendCount</value>
+							<value type="java.lang.String">SendCountLong</value>
 							<value type="java.lang.String">SendErrorCount</value>
+							<value type="java.lang.String">SendErrorCountLong</value>
+							<value type="java.lang.String">CountsEnabled</value>
+							<value type="java.lang.String">StatsEnabled</value>
 						</array>
 					</constructor-arg>
 				</bean>

@@ -8,7 +8,7 @@
 		http://www.springframework.org/schema/integration/redis http://www.springframework.org/schema/integration/redis/spring-integration-redis.xsd">
 
 	<bean id="redisConnectionFactory"
-		  class="org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory">
+		  class="org.springframework.data.redis.connection.jedis.JedisConnectionFactory">
 		<property name="port" value="#{T(org.springframework.integration.redis.rules.RedisAvailableRule).REDIS_PORT}"/>
 	</bean>
 
@@ -16,13 +16,18 @@
 
 	<int:channel id="sendChannel"/>
 
-	<int-redis:queue-outbound-channel-adapter id="defaultAdapter" channel="sendChannel" queue="foo"/>
+	<int-redis:queue-outbound-channel-adapter id="defaultAdapter" channel="sendChannel" queue="foo">
+		<int-redis:request-handler-advice-chain>
+			<int:retry-advice/>
+		</int-redis:request-handler-advice-chain>
+	</int-redis:queue-outbound-channel-adapter>
 
 	<int-redis:queue-outbound-channel-adapter id="customAdapter" channel="sendChannel"
 											  queue-expression="headers['redis_queue']"
 											  extract-payload="false"
 											  serializer="serializer"
-											  connection-factory="customRedisConnectionFactory"/>
+											  connection-factory="customRedisConnectionFactory"
+											  left-push="false"/>
 
 	<bean id="serializer" class="org.springframework.data.redis.serializer.StringRedisSerializer"/>
 

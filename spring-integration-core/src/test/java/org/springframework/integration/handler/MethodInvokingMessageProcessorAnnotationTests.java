@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,9 +40,9 @@ import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageHandlingException;
 import org.springframework.messaging.MessageHeaders;
 import org.springframework.messaging.MessagingException;
-import org.springframework.integration.annotation.Header;
-import org.springframework.integration.annotation.Headers;
-import org.springframework.integration.annotation.Payload;
+import org.springframework.messaging.handler.annotation.Header;
+import org.springframework.messaging.handler.annotation.Headers;
+import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.messaging.support.GenericMessage;
 import org.springframework.integration.support.MessageBuilder;
 
@@ -114,7 +114,7 @@ public class MethodInvokingMessageProcessorAnnotationTests {
 				.setHeader("num", new Integer(123)).build();
 		MethodInvokingMessageProcessor processor = new MethodInvokingMessageProcessor(testService, method);
 		Object result = processor.processMessage(message);
-		assertEquals(new Integer(123), result);
+		assertEquals(123, result);
 	}
 
 	@Test(expected = MessageHandlingException.class)
@@ -211,8 +211,8 @@ public class MethodInvokingMessageProcessorAnnotationTests {
 				.setHeader("attrib1", new Integer(123))
 				.setHeader("attrib2", new Integer(456)).build();
 		Map<String, Object> result = (Map<String, Object>) processor.processMessage(message);
-		assertEquals(new Integer(123), result.get("attrib1"));
-		assertEquals(new Integer(456), result.get("attrib2"));
+		assertEquals(123, result.get("attrib1"));
+		assertEquals(456, result.get("attrib2"));
 	}
 
 	@Test
@@ -220,8 +220,8 @@ public class MethodInvokingMessageProcessorAnnotationTests {
 		Method method = TestService.class.getMethod("mapPayload", Map.class);
 		MethodInvokingMessageProcessor processor = new MethodInvokingMessageProcessor(testService, method);
 		Map<String, Integer> payload = new HashMap<String, Integer>();
-		payload.put("attrib1", new Integer(88));
-		payload.put("attrib2", new Integer(99));
+		payload.put("attrib1", 88);
+		payload.put("attrib2", 99);
 		Message<Map<String, Integer>> message = MessageBuilder.withPayload(payload)
 				.setHeader("attrib1", new Integer(123))
 				.setHeader("attrib2", new Integer(456)).build();
@@ -347,7 +347,7 @@ public class MethodInvokingMessageProcessorAnnotationTests {
 
 		private final Log logger = LogFactory.getLog(this.getClass());
 
-		public Map<?,?> mapOnly(Map<?,?> map) {
+		public Map<?, ?> mapOnly(Map<?, ?> map) {
 			return map;
 		}
 
@@ -363,11 +363,11 @@ public class MethodInvokingMessageProcessorAnnotationTests {
 			return fname + day;
 		}
 
-		public Integer optionalHeader(@Header(required=false) Integer num) {
+		public Integer optionalHeader(@Header(required = false) Integer num) {
 			return num;
 		}
 
-		public Integer requiredHeader(@Header(value="num", required=true) Integer num) {
+		public Integer requiredHeader(@Header(value = "num", required = true) Integer num) {
 			return num;
 		}
 
@@ -376,7 +376,7 @@ public class MethodInvokingMessageProcessorAnnotationTests {
 			return lastName + ", " + firstName;
 		}
 
-		public String optionalAndRequiredHeader(@Header(required=false) String prop, @Header(value="num", required=true) Integer num) {
+		public String optionalAndRequiredHeader(@Header(required = false) String prop, @Header(value = "num", required = true) Integer num) {
 			return prop + num;
 		}
 
@@ -419,7 +419,7 @@ public class MethodInvokingMessageProcessorAnnotationTests {
 											   @Header("month") String argB,
 											   @Payload Employee payloadArg,
 											   @Payload("fname") String value,
-											   @Headers Map<?,?> headers) {
+											   @Headers Map<?, ?> headers) {
 			return new Object[] { argA, argB, payloadArg, value, headers };
 		}
 
@@ -447,8 +447,7 @@ public class MethodInvokingMessageProcessorAnnotationTests {
 		MessageBuilder<Employee> builder = MessageBuilder.withPayload(employee);
 		builder.setHeader("day", "monday");
 		builder.setHeader("month", "September");
-		Message<Employee> message = builder.build();
-		return message;
+		return builder.build();
 	}
 
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2011 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,7 +30,7 @@ import org.springframework.integration.xml.util.XmlTestUtil;
 import org.springframework.xml.xpath.XPathExpression;
 import org.springframework.xml.xpath.XPathExpressionFactory;
 
-/** 
+/**
  * @author Jonas Partner
  */
 public class XPathRouterTests {
@@ -45,7 +45,7 @@ public class XPathRouterTests {
 		assertEquals("Wrong number of channels returned", 1, channelNames.length);
 		assertEquals("Wrong channel name", "one", channelNames[0]);
 	}
-	
+
 	@Test
 	@SuppressWarnings({ "unchecked", "rawtypes" })
 	public void simpleSingleAttributeAsString() throws Exception {
@@ -57,10 +57,10 @@ public class XPathRouterTests {
 		assertEquals("Wrong number of channels returned", 1, channelNames.length);
 		assertEquals("Wrong channel name", "one", channelNames[0]);
 	}
-	
+
 	@Test
 	@SuppressWarnings({ "unchecked", "rawtypes" })
-	public void simpleRootNode() throws Exception {	
+	public void simpleRootNode() throws Exception {
 		Document doc = XmlTestUtil.getDocumentForString("<doc><foo>oleg</foo><bar>bang</bar></doc>");
 		XPathExpression expression = XPathExpressionFactory.createXPathExpression("name(./node())");
 		XPathRouter router = new XPathRouter(expression);
@@ -81,15 +81,15 @@ public class XPathRouterTests {
 		assertEquals("Wrong channel name", "bOne", channelNames[0]);
 		assertEquals("Wrong channel name", "bTwo", channelNames[1]);
 	}
-	
+
 
 	@Test
 	@SuppressWarnings({ "unchecked", "rawtypes" })
 	/*
-	 * Will return only one (the first node text in the collection), since 
+	 * Will return only one (the first node text in the collection), since
 	 * the evaluation return type use is String (not NODESET)
 	 * This test is just for sanity and the reminder that setting 'evaluateAsNode'
-	 * to 'false' would still result in no exception but result will most likely be 
+	 * to 'false' would still result in no exception but result will most likely be
 	 * not what is expected.
 	 */
 	public void multipleNodeValuesAsString() throws Exception {
@@ -113,10 +113,10 @@ public class XPathRouterTests {
 		XPathRouter router = new XPathRouter("./three/text()");
 		Document testDocument = XmlTestUtil.getDocumentForString("<one><two><three>bob</three><three>dave</three></two></one>");
 		Object[] channelNames =  router.getChannelKeys(new GenericMessage<Node>(testDocument.getElementsByTagName("two").item(0))).toArray();
-		assertEquals("bob",channelNames[0]);
-		assertEquals("dave",channelNames[1]);
+		assertEquals("bob", channelNames[0]);
+		assertEquals("dave", channelNames[1]);
 	}
-	
+
 	@Test
 	public void testSimpleDocType() throws Exception {
 		Document doc = XmlTestUtil.getDocumentForString("<doc type='one' />");

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,8 +20,13 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.junit.Test;
 
@@ -48,6 +53,7 @@ import org.springframework.messaging.support.GenericMessage;
 /**
  * @author Mark Fisher
  * @author Gary Russell
+ * @author Artem Bilan
  */
 public class MessagingAnnotationPostProcessorTests {
 
@@ -77,7 +83,7 @@ public class MessagingAnnotationPostProcessorTests {
 		inputChannel.send(new GenericMessage<String>("world"));
 		Message<?> reply = outputChannel.receive(0);
 		assertEquals("hello world", reply.getPayload());
-		context.stop();
+		context.close();
 	}
 
 	@Test
@@ -96,7 +102,7 @@ public class MessagingAnnotationPostProcessorTests {
 		inputChannel.send(messageToSend);
 		message = outputChannel.receive(1000);
 		assertEquals("hello world advised", message.getPayload());
-		context.stop();
+		context.close();
 	}
 
 	@Test
@@ -109,7 +115,7 @@ public class MessagingAnnotationPostProcessorTests {
 		inputChannel.send(new GenericMessage<String>("world"));
 		Message<?> message = outputChannel.receive(1000);
 		assertEquals("hello world", message.getPayload());
-		context.stop();
+		context.close();
 	}
 
 	@Test
@@ -122,7 +128,7 @@ public class MessagingAnnotationPostProcessorTests {
 		inputChannel.send(new GenericMessage<String>("123"));
 		Message<?> message = outputChannel.receive(1000);
 		assertEquals(246, message.getPayload());
-		context.stop();
+		context.close();
 	}
 
 	@Test
@@ -157,8 +163,10 @@ public class MessagingAnnotationPostProcessorTests {
 		TestApplicationContext context = TestUtils.createTestApplicationContext();
 		DirectChannel inputChannel = new DirectChannel();
 		QueueChannel outputChannel = new QueueChannel();
+		DirectChannel eventBus = new DirectChannel();
 		context.registerChannel("inputChannel", inputChannel);
 		context.registerChannel("outputChannel", outputChannel);
+		context.registerChannel("eventBus", eventBus);
 		MessagingAnnotationPostProcessor postProcessor = new MessagingAnnotationPostProcessor();
 		postProcessor.setBeanFactory(context.getBeanFactory());
 		postProcessor.afterPropertiesSet();
@@ -170,6 +178,10 @@ public class MessagingAnnotationPostProcessorTests {
 		inputChannel.send(message);
 		Message<?> reply = outputChannel.receive(0);
 		assertNotNull(reply);
+
+		eventBus.send(new GenericMessage<String>("foo"));
+		assertTrue(bean.getInvoked());
+
 		context.stop();
 	}
 
@@ -315,7 +327,7 @@ public class MessagingAnnotationPostProcessorTests {
 		private final CountDownLatch latch;
 
 
-		public OutboundOnlyTestBean(CountDownLatch latch) {
+		OutboundOnlyTestBean(CountDownLatch latch) {
 			this.latch = latch;
 		}
 
@@ -323,7 +335,7 @@ public class MessagingAnnotationPostProcessorTests {
 			return this.messageText;
 		}
 
-		@ServiceActivator(inputChannel="testChannel")
+		@ServiceActivator(inputChannel = "testChannel")
 		public void countdown(String input) {
 			this.messageText = input;
 			latch.countDown();
@@ -336,14 +348,15 @@ public class MessagingAnnotationPostProcessorTests {
 
 
 	@MessageEndpoint
-	private static interface SimpleAnnotatedEndpointInterface {
+	private interface SimpleAnnotatedEndpointInterface {
 		String test(String input);
 	}
 
 
 	private static class SimpleAnnotatedEndpointImplementation implements SimpleAnnotatedEndpointInterface {
 
-		@ServiceActivator(inputChannel="inputChannel", outputChannel="outputChannel")
+		@Override
+		@ServiceActivator(inputChannel = "inputChannel", outputChannel = "outputChannel")
 		public String test(String input) {
 			return "test-"  + input;
 		}
@@ -353,18 +366,28 @@ public class MessagingAnnotationPostProcessorTests {
 	@MessageEndpoint
 	private static class ServiceActivatorAnnotatedBean {
 
-		@ServiceActivator(inputChannel="inputChannel")
+		public final AtomicBoolean invoked = new AtomicBoolean();
+
+		@ServiceActivator(inputChannel = "inputChannel")
 		public String test(String s) {
 			return s + s;
 		}
 
+		@EventHandler
+		public void eventBus(Object payload) {
+			invoked.set(true);
+		}
+
+		public Boolean getInvoked() {
+			return invoked.get();
+		}
 	}
 
 
 	@MessageEndpoint
 	private static class TransformerAnnotationTestBean {
 
-		@Transformer(inputChannel="inputChannel", outputChannel="outputChannel")
+		@Transformer(inputChannel = "inputChannel", outputChannel = "outputChannel")
 		public String transformBefore(String input) {
 			return input.toUpperCase();
 		}
@@ -378,4 +401,11 @@ public class MessagingAnnotationPostProcessorTests {
 		}
 
 	}
+
+	@Target({ ElementType.METHOD })
+	@Retention(RetentionPolicy.RUNTIME)
+	@ServiceActivator(inputChannel = "eventBus")
+	public static @interface EventHandler {
+	}
+
 }

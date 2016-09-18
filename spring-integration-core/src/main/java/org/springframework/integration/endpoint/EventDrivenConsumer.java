@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,10 @@ package org.springframework.integration.endpoint;
 
 import org.springframework.context.Lifecycle;
 import org.springframework.integration.context.IntegrationObjectSupport;
+import org.springframework.integration.core.MessageProducer;
+import org.springframework.integration.router.MessageRouter;
 import org.springframework.integration.support.context.NamedComponent;
+import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.MessageHandler;
 import org.springframework.messaging.SubscribableChannel;
 import org.springframework.util.Assert;
@@ -31,7 +34,7 @@ import org.springframework.util.StringUtils;
  * @author Oleg Zhurakousky
  * @author Gary Russell
  */
-public class EventDrivenConsumer extends AbstractEndpoint {
+public class EventDrivenConsumer extends AbstractEndpoint implements IntegrationConsumer {
 
 	private final SubscribableChannel inputChannel;
 
@@ -46,6 +49,28 @@ public class EventDrivenConsumer extends AbstractEndpoint {
 		this.setPhase(Integer.MIN_VALUE);
 	}
 
+	@Override
+	public MessageChannel getInputChannel() {
+		return this.inputChannel;
+	}
+
+	@Override
+	public MessageChannel getOutputChannel() {
+		if (this.handler instanceof MessageProducer) {
+			return ((MessageProducer) this.handler).getOutputChannel();
+		}
+		else if (this.handler instanceof MessageRouter) {
+			return ((MessageRouter) this.handler).getDefaultOutputChannel();
+		}
+		else {
+			return null;
+		}
+	}
+
+	@Override
+	public MessageHandler getHandler() {
+		return this.handler;
+	}
 
 	@Override
 	protected void doStart() {
@@ -65,16 +90,16 @@ public class EventDrivenConsumer extends AbstractEndpoint {
 		}
 	}
 
-	private void logComponentSubscriptionEvent(boolean add){
-		if (this.handler instanceof NamedComponent && this.inputChannel instanceof NamedComponent){
-			String channelName = ((NamedComponent)this.inputChannel).getComponentName();
-			String componentType = ((NamedComponent)this.handler).getComponentType();
+	private void logComponentSubscriptionEvent(boolean add) {
+		if (this.handler instanceof NamedComponent && this.inputChannel instanceof NamedComponent) {
+			String channelName = ((NamedComponent) this.inputChannel).getComponentName();
+			String componentType = ((NamedComponent) this.handler).getComponentType();
 			componentType = StringUtils.hasText(componentType) ? componentType : "";
-			String componentName = ((IntegrationObjectSupport)this).getComponentName();
+			String componentName = ((IntegrationObjectSupport) this).getComponentName();
 			componentName = (StringUtils.hasText(componentName) && componentName.contains("#")) ? "" : ":" + componentName;
 			StringBuffer buffer = new StringBuffer();
 			buffer.append("{" + componentType + componentName + "} as a subscriber to the '" + channelName + "' channel");
-			if (add){
+			if (add) {
 				buffer.insert(0, "Adding ");
 			}
 			else {

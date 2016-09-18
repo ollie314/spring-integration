@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package org.springframework.integration.jmx;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.mockito.Mockito.mock;
 
 import java.util.Arrays;
 import java.util.HashMap;
@@ -30,19 +31,21 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
-import org.springframework.messaging.Message;
-import org.springframework.messaging.MessagingException;
+import org.springframework.beans.factory.BeanFactory;
 import org.springframework.integration.channel.QueueChannel;
 import org.springframework.integration.jmx.config.DynamicRouterTests;
 import org.springframework.integration.support.MessageBuilder;
 import org.springframework.jmx.support.MBeanServerFactoryBean;
 import org.springframework.jmx.support.ObjectNameManager;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.MessagingException;
 
 /**
  * See DynamicRouterTests for additional tests where the MBean is registered by the Spring exporter.
  * @see DynamicRouterTests
  * @author Mark Fisher
  * @author Oleg Zhurakousky
+ * @author Gary Russell
  * @since 2.0
  */
 public class OperationInvokingMessageHandlerTests {
@@ -75,6 +78,7 @@ public class OperationInvokingMessageHandlerTests {
 		handler.setObjectName(this.objectName);
 		handler.setOutputChannel(outputChannel);
 		handler.setOperationName("x");
+		handler.setBeanFactory(mock(BeanFactory.class));
 		handler.afterPropertiesSet();
 		Map<String, Object> params = new HashMap<String, Object>();
 		params.put("p1", "foo");
@@ -94,12 +98,13 @@ public class OperationInvokingMessageHandlerTests {
 		handler.setObjectName(this.objectName);
 		handler.setOutputChannel(outputChannel);
 		handler.setOperationName("y");
+		handler.setBeanFactory(mock(BeanFactory.class));
 		handler.afterPropertiesSet();
 		Message<?> message = MessageBuilder.withPayload("foo").build();
 		handler.handleMessage(message);
 	}
 
-	@Test(expected=MessagingException.class)
+	@Test(expected = MessagingException.class)
 	public void invocationWithMapPayloadNotEnoughParameters() throws Exception {
 		QueueChannel outputChannel = new QueueChannel();
 		OperationInvokingMessageHandler handler = new OperationInvokingMessageHandler();
@@ -107,6 +112,7 @@ public class OperationInvokingMessageHandlerTests {
 		handler.setObjectName(this.objectName);
 		handler.setOutputChannel(outputChannel);
 		handler.setOperationName("x");
+		handler.setBeanFactory(mock(BeanFactory.class));
 		handler.afterPropertiesSet();
 		Map<String, Object> params = new HashMap<String, Object>();
 		params.put("p1", "foo");
@@ -125,6 +131,7 @@ public class OperationInvokingMessageHandlerTests {
 		handler.setObjectName(this.objectName);
 		handler.setOutputChannel(outputChannel);
 		handler.setOperationName("x");
+		handler.setBeanFactory(mock(BeanFactory.class));
 		handler.afterPropertiesSet();
 		List<Object> params = Arrays.asList(new Object[] { "foo", new Integer(123) });
 		Message<?> message = MessageBuilder.withPayload(params).build();
@@ -134,7 +141,7 @@ public class OperationInvokingMessageHandlerTests {
 		assertEquals("foo123", reply.getPayload());
 	}
 
-	public static interface TestOpsMBean {
+	public interface TestOpsMBean {
 
 		String x(String s1, String s2);
 
@@ -146,15 +153,18 @@ public class OperationInvokingMessageHandlerTests {
 
 	public static class TestOps implements TestOpsMBean {
 
+		@Override
 		public String x(String s1, String s2) {
 			return s1 + s2;
 		}
 
+		@Override
 		public String x(String s, Integer i) {
 			return s + i;
 		}
 
-		public void y(String s){}
+		@Override
+		public void y(String s) { }
 	}
 
 }

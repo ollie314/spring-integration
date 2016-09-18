@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.test.matcher;
 
 import static org.mockito.Matchers.argThat;
@@ -67,6 +68,10 @@ import org.springframework.messaging.Message;
  */
 public class MockitoMessageMatchers {
 
+	private MockitoMessageMatchers() {
+		super();
+	}
+
 	@SuppressWarnings("unchecked")
 	public static <T> Message<T> messageWithPayload(Matcher<T> payloadMatcher) {
 		return argThat(hasPayload(payloadMatcher));
@@ -87,7 +92,7 @@ public class MockitoMessageMatchers {
 
 	public static <T> Message<?> messageWithHeaderEntry(String key,
 			Matcher<T> valueMatcher) {
-		return argThat(HeaderMatcher.<T> hasHeader(key, valueMatcher));
+		return argThat(HeaderMatcher.<T>hasHeader(key, valueMatcher));
 	}
 
 	public static Message<?> messageWithHeaderEntries(Map<String, ?> entries) {

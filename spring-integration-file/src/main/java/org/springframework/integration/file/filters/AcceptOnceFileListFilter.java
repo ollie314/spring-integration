@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,10 @@
 
 package org.springframework.integration.file.filters;
 
+import java.util.HashSet;
+import java.util.List;
 import java.util.Queue;
+import java.util.Set;
 import java.util.concurrent.LinkedBlockingQueue;
 
 /**
@@ -28,11 +31,15 @@ import java.util.concurrent.LinkedBlockingQueue;
  *
  * @author Iwein Fuld
  * @author Josh Long
+ * @author Gary Russell
  * @since 1.0.0
  */
-public class AcceptOnceFileListFilter<F> extends AbstractFileListFilter<F> {
+public class AcceptOnceFileListFilter<F> extends AbstractFileListFilter<F> implements ReversibleFileListFilter<F>,
+		ResettableFileListFilter<F> {
 
 	private final Queue<F> seen;
+
+	private final Set<F> seenSet = new HashSet<F>();
 
 	private final Object monitor = new Object();
 
@@ -52,21 +59,54 @@ public class AcceptOnceFileListFilter<F> extends AbstractFileListFilter<F> {
 	 * Creates an AcceptOnceFileListFilter based on an unbounded queue.
 	 */
 	public AcceptOnceFileListFilter() {
-		this.seen = new LinkedBlockingQueue<F>();
+		this.seen = null;
 	}
 
 
+	@Override
 	public boolean accept(F file) {
 		synchronized (this.monitor) {
-			if (this.seen.contains(file)) {
+			if (this.seenSet.contains(file)) {
 				return false;
 			}
-			if (!this.seen.offer(file)) {
-				this.seen.poll();
-				this.seen.add(file);
+			if (this.seen != null) {
+				if (!this.seen.offer(file)) {
+					F removed = this.seen.poll();
+					this.seenSet.remove(removed);
+					this.seen.add(file);
+				}
 			}
+			this.seenSet.add(file);
 			return true;
 		}
+	}
+
+	/**
+	 * {@inheritDoc}
+	 * @since 4.0.4
+	 */
+	@Override
+	public void rollback(F file, List<F> files) {
+		synchronized (this.monitor) {
+			boolean rollingBack = false;
+			for (F fileToRollback : files) {
+				if (fileToRollback.equals(file)) {
+					rollingBack = true;
+				}
+				if (rollingBack) {
+					remove(fileToRollback);
+				}
+			}
+		}
+	}
+
+	@Override
+	public boolean remove(F fileToRemove) {
+		boolean removed = this.seenSet.remove(fileToRemove);
+		if (this.seen != null) {
+			this.seen.remove(fileToRemove);
+		}
+		return removed;
 	}
 
 }

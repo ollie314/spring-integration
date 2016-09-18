@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2010 the original author or authors.
+ * Copyright 2002-2014 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,13 +17,15 @@
 package org.springframework.integration.endpoint;
 
 import org.springframework.expression.Expression;
+import org.springframework.integration.context.ExpressionCapable;
 import org.springframework.util.Assert;
 
 /**
  * @author Mark Fisher
+ * @author Gary Russell
  * @since 2.0
  */
-public class ExpressionEvaluatingMessageSource<T> extends AbstractMessageSource<T> {
+public class ExpressionEvaluatingMessageSource<T> extends AbstractMessageSource<T> implements ExpressionCapable {
 
 	private final Expression expression;
 
@@ -36,8 +38,19 @@ public class ExpressionEvaluatingMessageSource<T> extends AbstractMessageSource<
 		this.expectedType = expectedType;
 	}
 
+	@Override
+	public String getComponentType() {
+		return "inbound-channel-adapter";
+	}
+
+	@Override
 	public T doReceive() {
 		return this.evaluateExpression(this.expression, this.expectedType);
+	}
+
+	@Override
+	public Expression getExpression() {
+		return this.expression;
 	}
 
 }

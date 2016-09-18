@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -55,22 +55,11 @@ public class GemfireMessageStore extends AbstractKeyValueMessageStore implements
 	 * Provides the region to be used for the message store. This is useful when
 	 * using a configured region. This is also required if using a client region
 	 * on a remote cache server.
-	 *
 	 * @param messageStoreRegion The region.
 	 */
-	public GemfireMessageStore(Region<Object,Object> messageStoreRegion) {
-		cache = null;
+	public GemfireMessageStore(Region<Object, Object> messageStoreRegion) {
+		this.cache = null;
 		this.messageStoreRegion = messageStoreRegion;
-	}
-    /**
-     * Provides a cache reference used to create a message store region named
-     * 'messageStoreRegion'
-     *
-     * @param cache The cache.
-     */
-	public GemfireMessageStore(Cache cache) {
-		Assert.notNull(cache, "'cache' must not be null");
-		this.cache = cache;
 	}
 
 	public void setIgnoreJta(boolean ignoreJta) {
@@ -85,17 +74,17 @@ public class GemfireMessageStore extends AbstractKeyValueMessageStore implements
 		}
 
 		try {
-			if (logger.isDebugEnabled()){
+			if (logger.isDebugEnabled()) {
 				logger.debug("creating message store region as '" + MESSAGE_STORE_REGION_NAME + "'");
 			}
 
 			RegionAttributesFactoryBean attributesFactoryBean = new RegionAttributesFactoryBean();
 			attributesFactoryBean.setIgnoreJTA(this.ignoreJta);
 			attributesFactoryBean.afterPropertiesSet();
-			RegionFactoryBean<Object, Object> messageRegionFactoryBean = new RegionFactoryBean<Object, Object>();
+			RegionFactoryBean<Object, Object> messageRegionFactoryBean = new RegionFactoryBean<Object, Object>() { };
 			messageRegionFactoryBean.setBeanName(MESSAGE_STORE_REGION_NAME);
 			messageRegionFactoryBean.setAttributes(attributesFactoryBean.getObject());
-			messageRegionFactoryBean.setCache(cache);
+			messageRegionFactoryBean.setCache(this.cache);
 			messageRegionFactoryBean.afterPropertiesSet();
 			this.messageStoreRegion = messageRegionFactoryBean.getObject();
 		}

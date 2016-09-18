@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,37 +16,69 @@
 
 package org.springframework.integration.xml.config;
 
+import static org.hamcrest.Matchers.contains;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.fail;
 
+import java.util.List;
+
 import org.hamcrest.Matchers;
 import org.junit.Test;
+import org.junit.runner.RunWith;
 import org.w3c.dom.Document;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;
-import org.springframework.context.support.ClassPathXmlApplicationContext;
+import org.springframework.context.SmartLifecycle;
 import org.springframework.integration.MessageRejectedException;
+import org.springframework.integration.endpoint.EventDrivenConsumer;
+import org.springframework.integration.support.SmartLifecycleRoleController;
+import org.springframework.integration.test.util.TestUtils;
 import org.springframework.integration.xml.AggregatedXmlMessageValidationException;
 import org.springframework.integration.xml.util.XmlTestUtil;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.PollableChannel;
 import org.springframework.messaging.support.GenericMessage;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ContextConfiguration;
+import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
+import org.springframework.util.MultiValueMap;
 
 /**
  * @author Jonas Partner
  * @author Oleg Zhurakousky
  * @author Gunnar Hillert
  * @author Artem Bilan
+ * @author Gary Russell
  */
 @ContextConfiguration
+@RunWith(SpringJUnit4ClassRunner.class)
+@DirtiesContext
 public class XmlPayloadValidatingFilterParserTests {
+
+	@Autowired
+	private ApplicationContext ac;
+
+	@Test
+	public void testParse() throws Exception {
+		EventDrivenConsumer consumer = (EventDrivenConsumer) ac.getBean("parseOnly");
+		assertEquals(2, TestUtils.getPropertyValue(consumer, "handler.order"));
+		assertEquals(123L, TestUtils.getPropertyValue(consumer, "handler.messagingTemplate.sendTimeout"));
+		assertEquals(-1, TestUtils.getPropertyValue(consumer, "phase"));
+		assertFalse(TestUtils.getPropertyValue(consumer, "autoStartup", Boolean.class));
+		SmartLifecycleRoleController roleController = ac.getBean(SmartLifecycleRoleController.class);
+		@SuppressWarnings("unchecked")
+		List<SmartLifecycle> list = (List<SmartLifecycle>) TestUtils.getPropertyValue(roleController, "lifecycles",
+				MultiValueMap.class).get("foo");
+		assertThat(list, contains((SmartLifecycle) consumer));
+	}
 
 	@Test
 	public void testValidMessage() throws Exception {
-		ApplicationContext ac = new ClassPathXmlApplicationContext("XmlPayloadValidatingFilterParserTests-context.xml", this.getClass());
 		Document doc = XmlTestUtil.getDocumentForString("<greeting>hello</greeting>");
 		GenericMessage<Document> docMessage = new GenericMessage<Document>(doc);
 		PollableChannel validChannel = ac.getBean("validOutputChannel", PollableChannel.class);
@@ -54,9 +86,9 @@ public class XmlPayloadValidatingFilterParserTests {
 		inputChannel.send(docMessage);
 		assertNotNull(validChannel.receive(100));
 	}
+
 	@Test
 	public void testInvalidMessageWithDiscardChannel() throws Exception {
-		ApplicationContext ac = new ClassPathXmlApplicationContext("XmlPayloadValidatingFilterParserTests-context.xml", this.getClass());
 		Document doc = XmlTestUtil.getDocumentForString("<greeting><other/></greeting>");
 		GenericMessage<Document> docMessage = new GenericMessage<Document>(doc);
 		PollableChannel validChannel = ac.getBean("validOutputChannel", PollableChannel.class);
@@ -68,7 +100,6 @@ public class XmlPayloadValidatingFilterParserTests {
 	}
 	@Test
 	public void testInvalidMessageWithThrowException() throws Exception {
-		ApplicationContext ac = new ClassPathXmlApplicationContext("XmlPayloadValidatingFilterParserTests-context.xml", this.getClass());
 		Document doc = XmlTestUtil.getDocumentForString("<greeting ping=\"pong\"><other/></greeting>");
 		GenericMessage<Document> docMessage = new GenericMessage<Document>(doc);
 		MessageChannel inputChannel = ac.getBean("inputChannelB", MessageChannel.class);
@@ -88,7 +119,6 @@ public class XmlPayloadValidatingFilterParserTests {
 	}
 	@Test
 	public void testValidMessageWithValidator() throws Exception {
-		ApplicationContext ac = new ClassPathXmlApplicationContext("XmlPayloadValidatingFilterParserTests-context.xml", this.getClass());
 		Document doc = XmlTestUtil.getDocumentForString("<greeting>hello</greeting>");
 		GenericMessage<Document> docMessage = new GenericMessage<Document>(doc);
 		PollableChannel validChannel = ac.getBean("validOutputChannel", PollableChannel.class);
@@ -96,16 +126,15 @@ public class XmlPayloadValidatingFilterParserTests {
 		inputChannel.send(docMessage);
 		assertNotNull(validChannel.receive(100));
 	}
-	@SuppressWarnings("unused")
+
 	@Test
 	public void testInvalidMessageWithValidatorAndDiscardChannel() throws Exception {
-		ApplicationContext ac = new ClassPathXmlApplicationContext("XmlPayloadValidatingFilterParserTests-context.xml", this.getClass());
 		Document doc = XmlTestUtil.getDocumentForString("<greeting><other/></greeting>");
 		GenericMessage<Document> docMessage = new GenericMessage<Document>(doc);
-		PollableChannel validChannel = ac.getBean("validOutputChannel", PollableChannel.class);
 		PollableChannel invalidChannel = ac.getBean("invalidOutputChannel", PollableChannel.class);
 		MessageChannel inputChannel = ac.getBean("inputChannelC", MessageChannel.class);
 		inputChannel.send(docMessage);
 		assertNotNull(invalidChannel.receive(100));
 	}
+
 }

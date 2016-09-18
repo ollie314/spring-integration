@@ -1,14 +1,17 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
- * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
- * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
- * specific language governing permissions and limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package org.springframework.integration.config;
@@ -16,7 +19,7 @@ package org.springframework.integration.config;
 import java.util.Map;
 
 import org.springframework.expression.Expression;
-import org.springframework.integration.handler.AbstractReplyProducingMessageHandler;
+import org.springframework.integration.handler.AbstractMessageProducingHandler;
 import org.springframework.integration.router.AbstractMappingMessageRouter;
 import org.springframework.integration.router.AbstractMessageRouter;
 import org.springframework.integration.router.ExpressionEvaluatingRouter;
@@ -34,6 +37,7 @@ import org.springframework.util.StringUtils;
  * @author Oleg Zhurakousky
  * @author Dave Syer
  * @author Gary Russell
+ * @author David Liu
  */
 public class RouterFactoryBean extends AbstractStandardMessageHandlerFactoryBean {
 
@@ -41,7 +45,9 @@ public class RouterFactoryBean extends AbstractStandardMessageHandlerFactoryBean
 
 	private volatile MessageChannel defaultOutputChannel;
 
-	private volatile Long timeout;
+	private volatile String defaultOutputChannelName;
+
+	private volatile Long sendTimeout;
 
 	private volatile Boolean resolutionRequired;
 
@@ -53,8 +59,12 @@ public class RouterFactoryBean extends AbstractStandardMessageHandlerFactoryBean
 		this.defaultOutputChannel = defaultOutputChannel;
 	}
 
-	public void setTimeout(Long timeout) {
-		this.timeout = timeout;
+	public void setDefaultOutputChannelName(String defaultOutputChannelName) {
+		this.defaultOutputChannelName = defaultOutputChannelName;
+	}
+
+	public void setSendTimeout(Long timeout) {
+		this.sendTimeout = timeout;
 	}
 
 	public void setResolutionRequired(Boolean resolutionRequired) {
@@ -74,7 +84,7 @@ public class RouterFactoryBean extends AbstractStandardMessageHandlerFactoryBean
 	}
 
 	@Override
-	MessageHandler createMethodInvokingHandler(Object targetObject, String targetMethodName) {
+	protected MessageHandler createMethodInvokingHandler(Object targetObject, String targetMethodName) {
 		Assert.notNull(targetObject, "target object must not be null");
 		AbstractMessageRouter router = this.extractTypeIfPossible(targetObject, AbstractMessageRouter.class);
 		if (router == null) {
@@ -97,23 +107,25 @@ public class RouterFactoryBean extends AbstractStandardMessageHandlerFactoryBean
 	}
 
 	@Override
-	MessageHandler createExpressionEvaluatingHandler(Expression expression) {
+	protected MessageHandler createExpressionEvaluatingHandler(Expression expression) {
 		return this.configureRouter(new ExpressionEvaluatingRouter(expression));
 	}
 
-	private AbstractMappingMessageRouter createMethodInvokingRouter(Object targetObject, String targetMethodName) {
-		MethodInvokingRouter router = (StringUtils.hasText(targetMethodName))
+	protected AbstractMappingMessageRouter createMethodInvokingRouter(Object targetObject, String targetMethodName) {
+		return (StringUtils.hasText(targetMethodName))
 				? new MethodInvokingRouter(targetObject, targetMethodName)
 				: new MethodInvokingRouter(targetObject);
-		return router;
 	}
 
-	private AbstractMessageRouter configureRouter(AbstractMessageRouter router) {
+	protected AbstractMessageRouter configureRouter(AbstractMessageRouter router) {
 		if (this.defaultOutputChannel != null) {
 			router.setDefaultOutputChannel(this.defaultOutputChannel);
 		}
-		if (this.timeout != null) {
-			router.setTimeout(timeout.longValue());
+		if (this.defaultOutputChannelName != null) {
+			router.setDefaultOutputChannelName(this.defaultOutputChannelName);
+		}
+		if (this.sendTimeout != null) {
+			router.setSendTimeout(this.sendTimeout);
 		}
 		if (this.applySequence != null) {
 			router.setApplySequence(this.applySequence);
@@ -127,7 +139,7 @@ public class RouterFactoryBean extends AbstractStandardMessageHandlerFactoryBean
 		return router;
 	}
 
-	private void configureMappingRouter(AbstractMappingMessageRouter router) {
+	protected void configureMappingRouter(AbstractMappingMessageRouter router) {
 		if (this.channelMappings != null) {
 			router.setChannelMappings(this.channelMappings);
 		}
@@ -137,14 +149,19 @@ public class RouterFactoryBean extends AbstractStandardMessageHandlerFactoryBean
 	}
 
 	@Override
-	protected boolean canBeUsedDirect(AbstractReplyProducingMessageHandler handler) {
+	protected boolean canBeUsedDirect(AbstractMessageProducingHandler handler) {
 		return noRouterAttributesProvided();
 	}
 
-	private boolean noRouterAttributesProvided() {
+	protected boolean noRouterAttributesProvided() {
 		return this.channelMappings == null && this.defaultOutputChannel == null
-				&& this.timeout == null && this.resolutionRequired == null && this.applySequence == null
+				&& this.sendTimeout == null && this.resolutionRequired == null && this.applySequence == null
 				&& this.ignoreSendFailures == null;
+	}
+
+	@Override
+	protected Class<? extends MessageHandler> getPreCreationHandlerType() {
+		return AbstractMessageRouter.class;
 	}
 
 }

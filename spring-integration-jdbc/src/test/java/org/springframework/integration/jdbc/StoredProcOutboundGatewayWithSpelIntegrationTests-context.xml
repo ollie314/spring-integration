@@ -18,7 +18,13 @@
 
 	<int:poller id="defaultPoller" default="true" fixed-rate="5000"/>
 
-	<int:channel id="startChannel"/>
+	<int:channel id="startChannel">
+		<int:queue/>
+	</int:channel>
+
+	<int:channel id="startErrorsChannel">
+		<int:queue/>
+	</int:channel>
 
 	<int-jdbc:stored-proc-outbound-gateway request-channel="startChannel"
 			data-source="dataSource"
@@ -29,17 +35,16 @@
 			is-function="false"
 			expect-single-result="true"
 			reply-channel="outputChannel">
+		<int:poller fixed-delay="100" error-channel="startErrorsChannel"/>
 		<int-jdbc:parameter name="username" expression="payload.username"/>
 		<int-jdbc:parameter name="password" expression="payload.password"/>
 		<int-jdbc:parameter name="email"    expression="payload.email"/>
 		<int-jdbc:returning-resultset name="out" row-mapper="org.springframework.integration.jdbc.storedproc.UserMapper" />
 	</int-jdbc:stored-proc-outbound-gateway>
 
-	<int:channel id="outputChannel"/>
-
-	<int:service-activator id="consumerEndpoint" input-channel="outputChannel" ref="consumer" />
-
-	<bean id="consumer" class="org.springframework.integration.jdbc.StoredProcOutboundGatewayWithSpelIntegrationTests$Consumer"/>
+	<int:channel id="outputChannel">
+		<int:queue/>
+	</int:channel>
 
 	<int:logging-channel-adapter channel="errorChannel" log-full-message="true"/>
 

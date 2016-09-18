@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2011 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,24 +16,30 @@
 
 package org.springframework.integration.gateway;
 
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Future;
 
 import org.springframework.messaging.Message;
-import org.springframework.integration.annotation.Payload;
+import org.springframework.messaging.handler.annotation.Payload;
+
+import reactor.core.publisher.Mono;
 
 /**
  * @author Mark Fisher
  * @author Oleg Zhurakousky
+ * @author Artem Bilan
  */
 public interface TestService {
 
 	String requestReply(String input);
-	
+
 	byte[] requestReplyInBytes(String input);
 
 	void oneWay(String input);
 
 	String solicitResponse();
+
+	Message<String> getMessage();
 
 	Integer requestReplyWithIntegers(Integer input);
 
@@ -41,9 +47,27 @@ public interface TestService {
 
 	Message<?> requestReplyWithMessageReturnValue(String input);
 
-	@Payload("#method + #args.length")
+	@Payload("#gatewayMethod.name + #args.length")
 	String requestReplyWithPayloadAnnotation();
 
 	Future<Message<?>> async(String s);
+
+	Mono<Message<?>> promise(String s);
+
+	CompletableFuture<String> completable(String s);
+
+	MyCompletableFuture customCompletable(String s);
+
+	CompletableFuture<Message<?>> completableReturnsMessage(String s);
+
+	MyCompletableMessageFuture customCompletableReturnsMessage(String s);
+
+	class MyCompletableFuture extends CompletableFuture<String> {
+
+	}
+
+	class MyCompletableMessageFuture extends CompletableFuture<Message<?>> {
+
+	}
 
 }

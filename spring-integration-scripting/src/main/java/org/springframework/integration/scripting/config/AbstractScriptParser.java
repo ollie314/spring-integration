@@ -1,15 +1,19 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
- * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
- * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
- * specific language governing permissions and limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
+
 package org.springframework.integration.scripting.config;
 
 import java.util.List;
@@ -47,15 +51,10 @@ public abstract class AbstractScriptParser extends AbstractSingleBeanDefinitionP
 	}
 
 	@Override
-	protected abstract String getBeanClassName(Element element);
-
-	protected abstract String getScriptSourceClassName();
-
-	@Override
 	protected void doParse(Element element, ParserContext parserContext, BeanDefinitionBuilder builder) {
 		String scriptLocation = element.getAttribute(LOCATION_ATTRIBUTE);
 		String scriptText = DomUtils.getTextValue(element);
-		if (!(StringUtils.hasText(scriptLocation) ^ StringUtils.hasText(scriptText))) {
+		if (StringUtils.hasText(scriptLocation) == StringUtils.hasText(scriptText)) {
 			parserContext.getReaderContext().error(
 					"Either the 'location' attribute or inline script text must be provided, but not both.", element);
 			return;
@@ -76,12 +75,7 @@ public abstract class AbstractScriptParser extends AbstractSingleBeanDefinitionP
 					scriptLocation));
 		}
 		else {
-			if (getScriptSourceClassName() != null) {
-				builder.addConstructorArgValue(new StaticScriptSource(scriptText, getScriptSourceClassName()));
-			}
-			else {
-				builder.addConstructorArgValue(new StaticScriptSource(scriptText));
-			}
+			builder.addConstructorArgValue(new StaticScriptSource(scriptText));
 		}
 
 		BeanMetadataElement scriptVariableGeneratorDef = null;
@@ -146,7 +140,7 @@ public abstract class AbstractScriptParser extends AbstractSingleBeanDefinitionP
 			String variableName = childElement.getAttribute("name");
 			String variableValue = childElement.getAttribute("value");
 			String variableRef = childElement.getAttribute("ref");
-			if (!(StringUtils.hasText(variableValue) ^ StringUtils.hasText(variableRef))) {
+			if (StringUtils.hasText(variableValue) == StringUtils.hasText(variableRef)) {
 				parserContext.getReaderContext().error(
 						"Exactly one of the 'ref' attribute or 'value' attribute, " + " is required for element "
 								+ IntegrationNamespaceUtils.createElementDescription(element) + ".", element);

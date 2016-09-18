@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2011 the original author or authors.
+ * Copyright 2002-2014 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,8 @@ import java.util.List;
 import java.util.Map;
 
 import org.jivesoftware.smack.packet.Message;
-
+import org.jivesoftware.smackx.jiveproperties.JivePropertiesManager;
+import org.jivesoftware.smackx.jiveproperties.packet.JivePropertiesExtension;
 import org.springframework.integration.mapping.AbstractHeaderMapper;
 import org.springframework.integration.xmpp.XmppHeaders;
 import org.springframework.util.StringUtils;
@@ -32,10 +33,13 @@ import org.springframework.util.StringUtils;
  *
  * @author Mark Fisher
  * @author Oleg Zhurakousky
+ * @author Florian Schmaus
+ * @author Stephane Nicoll
+ *
  * @since 2.1
  */
 public class DefaultXmppHeaderMapper extends AbstractHeaderMapper<Message> implements XmppHeaderMapper {
-	
+
 	private static final List<String> STANDARD_HEADER_NAMES = new ArrayList<String>();
 
 	static {
@@ -46,20 +50,13 @@ public class DefaultXmppHeaderMapper extends AbstractHeaderMapper<Message> imple
 		STANDARD_HEADER_NAMES.add(XmppHeaders.TYPE);
 	}
 
+	public DefaultXmppHeaderMapper() {
+		super(XmppHeaders.PREFIX, STANDARD_HEADER_NAMES, STANDARD_HEADER_NAMES);
+	}
+
 	@Override
 	protected Map<String, Object> extractStandardHeaders(Message source) {
 		Map<String, Object> headers = new HashMap<String, Object>();
-		/*Collection<PacketExtension> extensions = source.getExtensions();
-		if (!CollectionUtils.isEmpty(extensions)) {
-			for (PacketExtension extension : extensions) {
-				String name = extension.getElementName();
-				String namespace = extension.getNamespace();
-				if (StringUtils.hasText(namespace)) {
-					name = namespace + ":" + name;
-				}
-				headers.put(name, extension.toXML());
-			}
-		}*/
 		String from = source.getFrom();
 		if (StringUtils.hasText(from)) {
 			headers.put(XmppHeaders.FROM, from);
@@ -86,8 +83,12 @@ public class DefaultXmppHeaderMapper extends AbstractHeaderMapper<Message> imple
 	@Override
 	protected Map<String, Object> extractUserDefinedHeaders(Message source) {
 		Map<String, Object> headers = new HashMap<String, Object>();
-		for (String propertyName : source.getPropertyNames()) {
-			headers.put(propertyName, source.getProperty(propertyName));
+		JivePropertiesExtension jpe = (JivePropertiesExtension) source.getExtension(JivePropertiesExtension.NAMESPACE);
+		if (jpe == null) {
+			return headers;
+		}
+		for (String propertyName : jpe.getPropertyNames()) {
+			headers.put(propertyName, JivePropertiesManager.getProperty(source, propertyName));
 		}
 		return headers;
 	}
@@ -129,20 +130,7 @@ public class DefaultXmppHeaderMapper extends AbstractHeaderMapper<Message> imple
 
 	@Override
 	protected void populateUserDefinedHeader(String headerName, Object headerValue, Message target) {
-		target.setProperty(headerName, headerValue);
+		JivePropertiesManager.addProperty(target, headerName, headerValue);
 	}
 
-	@Override
-	protected List<String> getStandardReplyHeaderNames() {
-		return STANDARD_HEADER_NAMES;
-	}
-
-	@Override
-	protected List<String> getStandardRequestHeaderNames() {
-		return STANDARD_HEADER_NAMES;
-	}
-	@Override
-	protected String getStandardHeaderPrefix() {
-		return XmppHeaders.PREFIX;
-	}
 }

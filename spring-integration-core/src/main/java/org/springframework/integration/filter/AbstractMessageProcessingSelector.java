@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2010 the original author or authors.
+ * Copyright 2002-2014 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package org.springframework.integration.filter;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.BeanFactory;
 import org.springframework.beans.factory.BeanFactoryAware;
+import org.springframework.context.Lifecycle;
 import org.springframework.core.convert.ConversionService;
 import org.springframework.messaging.Message;
 import org.springframework.integration.core.MessageSelector;
@@ -29,10 +30,12 @@ import org.springframework.util.Assert;
 /**
  * A base class for {@link MessageSelector} implementations that delegate to
  * a {@link MessageProcessor}.
- * 
+ *
  * @author Mark Fisher
+ * @author Artem Bilan
  */
-abstract class AbstractMessageProcessingSelector implements MessageSelector, BeanFactoryAware {
+public abstract class AbstractMessageProcessingSelector
+		implements MessageSelector, BeanFactoryAware, Lifecycle {
 
 	private final MessageProcessor<Boolean> messageProcessor;
 
@@ -43,7 +46,7 @@ abstract class AbstractMessageProcessingSelector implements MessageSelector, Bea
 	}
 
 
-	protected void setConversionService(ConversionService conversionService) {
+	public void setConversionService(ConversionService conversionService) {
 		if (this.messageProcessor instanceof AbstractMessageProcessor) {
 			((AbstractMessageProcessor<Boolean>) this.messageProcessor).setConversionService(conversionService);
 		}
@@ -60,6 +63,25 @@ abstract class AbstractMessageProcessingSelector implements MessageSelector, Bea
 		Assert.notNull(result, "result must not be null");
 		Assert.isAssignable(Boolean.class, result.getClass(), "a boolean result is required");
 		return (Boolean) result;
+	}
+
+	@Override
+	public void start() {
+		if (this.messageProcessor instanceof Lifecycle) {
+			((Lifecycle) this.messageProcessor).start();
+		}
+	}
+
+	@Override
+	public void stop() {
+		if (this.messageProcessor instanceof Lifecycle) {
+			((Lifecycle) this.messageProcessor).stop();
+		}
+	}
+
+	@Override
+	public boolean isRunning() {
+		return !(this.messageProcessor instanceof Lifecycle) || ((Lifecycle) this.messageProcessor).isRunning();
 	}
 
 }

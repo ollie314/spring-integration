@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2010 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,18 +19,22 @@ package org.springframework.integration.endpoint;
 import java.lang.reflect.Method;
 
 import org.springframework.beans.factory.InitializingBean;
-import org.springframework.messaging.MessagingException;
+import org.springframework.context.Lifecycle;
 import org.springframework.integration.core.MessageSource;
+import org.springframework.messaging.MessagingException;
 import org.springframework.util.Assert;
 import org.springframework.util.ReflectionUtils;
 
 /**
  * A {@link MessageSource} implementation that invokes a no-argument method so
  * that its return value may be sent to a channel.
- * 
+ *
  * @author Mark Fisher
+ * @author Gary Russell
+ * @author Artem Bilan
  */
-public class MethodInvokingMessageSource extends AbstractMessageSource<Object> implements InitializingBean {
+public class MethodInvokingMessageSource extends AbstractMessageSource<Object>
+		implements InitializingBean, Lifecycle {
 
 	private volatile Object object;
 
@@ -58,7 +62,14 @@ public class MethodInvokingMessageSource extends AbstractMessageSource<Object> i
 		this.methodName = methodName;
 	}
 
-	public void afterPropertiesSet() {
+	@Override
+	public String getComponentType() {
+		return "inbound-channel-adapter";
+	}
+
+	@Override
+	public void afterPropertiesSet() throws Exception {
+		super.afterPropertiesSet();
 		synchronized (this.initializationMonitor) {
 			if (this.initialized) {
 				return;
@@ -71,10 +82,29 @@ public class MethodInvokingMessageSource extends AbstractMessageSource<Object> i
 						+ "' is available on " + this.object.getClass());
 			}
 			Assert.isTrue(!void.class.equals(this.method.getReturnType()),
-					"invalid MessageSource method '"+ this.method.getName() + "', a non-void return is required");
+					"invalid MessageSource method '" + this.method.getName() + "', a non-void return is required");
 			this.method.setAccessible(true);
 			this.initialized = true;
 		}
+	}
+
+	@Override
+	public void start() {
+		if (this.object instanceof Lifecycle) {
+			((Lifecycle) this.object).start();
+		}
+	}
+
+	@Override
+	public void stop() {
+		if (this.object instanceof Lifecycle) {
+			((Lifecycle) this.object).stop();
+		}
+	}
+
+	@Override
+	public boolean isRunning() {
+		return !(this.object instanceof Lifecycle) || ((Lifecycle) this.object).isRunning();
 	}
 
 	@Override
@@ -85,7 +115,7 @@ public class MethodInvokingMessageSource extends AbstractMessageSource<Object> i
 			}
 			return ReflectionUtils.invokeMethod(this.method, this.object);
 		}
-		catch (Throwable e) {
+		catch (Exception e) {
 			throw new MessagingException("Failed to invoke method", e);
 		}
 	}

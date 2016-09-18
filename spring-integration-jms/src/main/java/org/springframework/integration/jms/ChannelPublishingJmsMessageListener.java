@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,11 +32,11 @@ import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.BeanFactory;
 import org.springframework.beans.factory.BeanFactoryAware;
 import org.springframework.beans.factory.InitializingBean;
-import org.springframework.integration.context.IntegrationContextUtils;
 import org.springframework.integration.gateway.MessagingGatewaySupport;
-import org.springframework.integration.history.TrackableComponent;
 import org.springframework.integration.support.DefaultMessageBuilderFactory;
 import org.springframework.integration.support.MessageBuilderFactory;
+import org.springframework.integration.support.management.TrackableComponent;
+import org.springframework.integration.support.utils.IntegrationUtils;
 import org.springframework.jms.listener.SessionAwareMessageListener;
 import org.springframework.jms.support.JmsUtils;
 import org.springframework.jms.support.converter.MessageConverter;
@@ -45,6 +45,8 @@ import org.springframework.jms.support.destination.DestinationResolver;
 import org.springframework.jms.support.destination.DynamicDestinationResolver;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
+import org.springframework.messaging.MessagingException;
+import org.springframework.messaging.support.ErrorMessage;
 import org.springframework.util.Assert;
 
 /**
@@ -56,9 +58,12 @@ import org.springframework.util.Assert;
  * @author Mark Fisher
  * @author Juergen Hoeller
  * @author Oleg Zhurakousky
+ * @author Artem Bilan
+ * @author Gary Russell
  */
 public class ChannelPublishingJmsMessageListener
-		implements SessionAwareMessageListener<javax.jms.Message>, InitializingBean, TrackableComponent, BeanFactoryAware {
+		implements SessionAwareMessageListener<javax.jms.Message>, InitializingBean,
+		TrackableComponent, BeanFactoryAware {
 
 	protected final Log logger = LogFactory.getLog(getClass());
 
@@ -94,34 +99,45 @@ public class ChannelPublishingJmsMessageListener
 
 	/**
 	 * Specify whether a JMS reply Message is expected.
-	 *
 	 * @param expectReply true if a reply is expected.
 	 */
 	public void setExpectReply(boolean expectReply) {
 		this.expectReply = expectReply;
 	}
 
-	public void setComponentName(String componentName){
+	public void setComponentName(String componentName) {
 		this.gatewayDelegate.setComponentName(componentName);
 	}
 
-	public void setRequestChannel(MessageChannel requestChannel){
+	public void setRequestChannel(MessageChannel requestChannel) {
 		this.gatewayDelegate.setRequestChannel(requestChannel);
 	}
 
-	public void setReplyChannel(MessageChannel replyChannel){
+	public void setRequestChannelName(String requestChannelName) {
+		this.gatewayDelegate.setRequestChannelName(requestChannelName);
+	}
+
+	public void setReplyChannel(MessageChannel replyChannel) {
 		this.gatewayDelegate.setReplyChannel(replyChannel);
 	}
 
-	public void setErrorChannel(MessageChannel errorChannel){
+	public void setReplyChannelName(String replyChannelName) {
+		this.gatewayDelegate.setReplyChannelName(replyChannelName);
+	}
+
+	public void setErrorChannel(MessageChannel errorChannel) {
 		this.gatewayDelegate.setErrorChannel(errorChannel);
 	}
 
-	public void setRequestTimeout(long requestTimeout){
+	public void setErrorChannelName(String errorChannelName) {
+		this.gatewayDelegate.setErrorChannelName(errorChannelName);
+	}
+
+	public void setRequestTimeout(long requestTimeout) {
 		this.gatewayDelegate.setRequestTimeout(requestTimeout);
 	}
 
-	public void setReplyTimeout(long replyTimeout){
+	public void setReplyTimeout(long replyTimeout) {
 		this.gatewayDelegate.setReplyTimeout(replyTimeout);
 	}
 
@@ -144,7 +160,6 @@ public class ChannelPublishingJmsMessageListener
 	 * Set the default reply destination to send reply messages to. This will
 	 * be applied in case of a request message that does not carry a
 	 * "JMSReplyTo" field.
-	 *
 	 * @param defaultReplyDestination The default reply destination.
 	 */
 	public void setDefaultReplyDestination(Destination defaultReplyDestination) {
@@ -156,9 +171,7 @@ public class ChannelPublishingJmsMessageListener
 	 * This will be applied in case of a request message that does not carry a
 	 * "JMSReplyTo" field.
 	 * <p>Alternatively, specify a JMS Destination object as "defaultReplyDestination".
-	 *
 	 * @param destinationName The default reply destination name.
-	 *
 	 * @see #setDestinationResolver
 	 * @see #setDefaultReplyDestination(javax.jms.Destination)
 	 */
@@ -171,9 +184,7 @@ public class ChannelPublishingJmsMessageListener
 	 * This will be applied in case of a request message that does not carry a
 	 * "JMSReplyTo" field.
 	 * <p>Alternatively, specify a JMS Destination object as "defaultReplyDestination".
-	 *
 	 * @param destinationName The default reply topic name.
-	 *
 	 * @see #setDestinationResolver
 	 * @see #setDefaultReplyDestination(javax.jms.Destination)
 	 */
@@ -183,9 +194,7 @@ public class ChannelPublishingJmsMessageListener
 
 	/**
 	 * Specify the time-to-live property for JMS reply Messages.
-	 *
 	 * @param replyTimeToLive The reply time to live.
-	 *
 	 * @see javax.jms.MessageProducer#setTimeToLive(long)
 	 */
 	public void setReplyTimeToLive(long replyTimeToLive) {
@@ -194,9 +203,7 @@ public class ChannelPublishingJmsMessageListener
 
 	/**
 	 * Specify the priority value for JMS reply Messages.
-	 *
 	 * @param replyPriority The reply priority.
-	 *
 	 * @see javax.jms.MessageProducer#setPriority(int)
 	 */
 	public void setReplyPriority(int replyPriority) {
@@ -205,9 +212,7 @@ public class ChannelPublishingJmsMessageListener
 
 	/**
 	 * Specify the delivery mode for JMS reply Messages.
-	 *
 	 * @param replyDeliveryPersistent true for a persistent reply message.
-	 *
 	 * @see javax.jms.MessageProducer#setDeliveryMode(int)
 	 */
 	public void setReplyDeliveryPersistent(boolean replyDeliveryPersistent) {
@@ -224,7 +229,6 @@ public class ChannelPublishingJmsMessageListener
 	 * instead, then this value should be set to "JMSCorrelationID".
 	 * Any other value will be treated as a JMS String Property to be copied as-is
 	 * from the request Message into the reply Message with the same property name.
-	 *
 	 * @param correlationKey The correlation key.
 	 */
 	public void setCorrelationKey(String correlationKey) {
@@ -234,7 +238,6 @@ public class ChannelPublishingJmsMessageListener
 	/**
 	 * Specify whether explicit QoS should be enabled for replies
 	 * (for timeToLive, priority, and deliveryMode settings).
-	 *
 	 * @param explicitQosEnabledForReplies true to enable explicit QoS.
 	 */
 	public void setExplicitQosEnabledForReplies(boolean explicitQosEnabledForReplies) {
@@ -246,9 +249,7 @@ public class ChannelPublishingJmsMessageListener
 	 * destination names for this listener.
 	 * <p>The default resolver is a DynamicDestinationResolver. Specify a
 	 * JndiDestinationResolver for resolving destination names as JNDI locations.
-	 *
 	 * @param destinationResolver The destination resolver.
-	 *
 	 * @see org.springframework.jms.support.destination.DynamicDestinationResolver
 	 * @see org.springframework.jms.support.destination.JndiDestinationResolver
 	 */
@@ -262,7 +263,6 @@ public class ChannelPublishingJmsMessageListener
 	 * converting between JMS Messages and Spring Integration Messages.
 	 * If none is provided, a {@link SimpleMessageConverter} will
 	 * be used.
-	 *
 	 * @param messageConverter The message converter.
 	 */
 	public void setMessageConverter(MessageConverter messageConverter) {
@@ -273,7 +273,6 @@ public class ChannelPublishingJmsMessageListener
 	 * Provide a {@link JmsHeaderMapper} implementation to use when
 	 * converting between JMS Messages and Spring Integration Messages.
 	 * If none is provided, a {@link DefaultJmsHeaderMapper} will be used.
-	 *
 	 * @param headerMapper The header mapper.
 	 */
 	public void setHeaderMapper(JmsHeaderMapper headerMapper) {
@@ -285,7 +284,6 @@ public class ChannelPublishingJmsMessageListener
 	 * to converting into a Spring Integration Message. This value is set to
 	 * <code>true</code> by default. To send the JMS Message itself as a
 	 * Spring Integration Message payload, set this to <code>false</code>.
-	 *
 	 * @param extractRequestPayload true if the request payload should be extracted.
 	 */
 	public void setExtractRequestPayload(boolean extractRequestPayload) {
@@ -297,7 +295,6 @@ public class ChannelPublishingJmsMessageListener
 	 * extracted prior to converting into a JMS Message. This value is set to
 	 * <code>true</code> by default. To send the Spring Integration Message
 	 * itself as the JMS Message's body, set this to <code>false</code>.
-	 *
 	 * @param extractReplyPayload true if the reply payload should be extracted.
 	 */
 	public void setExtractReplyPayload(boolean extractReplyPayload) {
@@ -312,67 +309,86 @@ public class ChannelPublishingJmsMessageListener
 	@Override
 	public void onMessage(javax.jms.Message jmsMessage, Session session) throws JMSException {
 		Object result = jmsMessage;
-		if (this.extractRequestPayload) {
-			result = this.messageConverter.fromMessage(jmsMessage);
-			if (logger.isDebugEnabled()) {
-				logger.debug("converted JMS Message [" + jmsMessage + "] to integration Message payload [" + result + "]");
-			}
-		}
-
-		Map<String, Object> headers = headerMapper.toHeaders(jmsMessage);
-		Message<?> requestMessage = (result instanceof Message<?>) ?
-				this.messageBuilderFactory.fromMessage((Message<?>) result).copyHeaders(headers).build() :
-				this.messageBuilderFactory.withPayload(result).copyHeaders(headers).build();
-		if (!this.expectReply) {
-			this.gatewayDelegate.send(requestMessage);
-		}
-		else {
-			Message<?> replyMessage = this.gatewayDelegate.sendAndReceiveMessage(requestMessage);
-			if (replyMessage != null) {
-				Destination destination = this.getReplyDestination(jmsMessage, session);
-				if (destination != null) {
-					// convert SI Message to JMS Message
-					Object replyResult = replyMessage;
-					if (this.extractReplyPayload) {
-						replyResult = replyMessage.getPayload();
-					}
-					try {
-						javax.jms.Message jmsReply = this.messageConverter.toMessage(replyResult, session);
-						// map SI Message Headers to JMS Message Properties/Headers
-						headerMapper.fromHeaders(replyMessage.getHeaders(), jmsReply);
-						this.copyCorrelationIdFromRequestToReply(jmsMessage, jmsReply);
-						this.sendReply(jmsReply, destination, session);
-					}
-					catch (RuntimeException e) {
-						logger.error("Failed to generate JMS Reply Message from: " + replyResult, e);
-						throw e;
-					}
+		Message<?> requestMessage = null;
+		boolean errors = false;
+		try {
+			if (this.extractRequestPayload) {
+				result = this.messageConverter.fromMessage(jmsMessage);
+				if (this.logger.isDebugEnabled()) {
+					this.logger.debug("converted JMS Message [" + jmsMessage + "] to integration Message payload ["
+							+ result + "]");
 				}
 			}
-			else if (logger.isDebugEnabled()) {
-				logger.debug("expected a reply but none was received");
+
+			Map<String, Object> headers = this.headerMapper.toHeaders(jmsMessage);
+			requestMessage = (result instanceof Message<?>) ?
+					this.messageBuilderFactory.fromMessage((Message<?>) result).copyHeaders(headers).build() :
+					this.messageBuilderFactory.withPayload(result).copyHeaders(headers).build();
+		}
+		catch (RuntimeException e) {
+			MessageChannel errorChannel = this.gatewayDelegate.getErrorChannel();
+			if (errorChannel == null) {
+				throw e;
+			}
+			errorChannel.send(new ErrorMessage(new MessagingException("Inbound conversion failed for: " + jmsMessage, e)));
+			errors = true;
+		}
+		if (!errors) {
+			if (!this.expectReply) {
+				this.gatewayDelegate.send(requestMessage);
+			}
+			else {
+				Message<?> replyMessage = this.gatewayDelegate.sendAndReceiveMessage(requestMessage);
+				if (replyMessage != null) {
+					Destination destination = this.getReplyDestination(jmsMessage, session);
+					if (this.logger.isDebugEnabled()) {
+						this.logger.debug("Reply destination: " + destination);
+					}
+					if (destination != null) {
+						// convert SI Message to JMS Message
+						Object replyResult = replyMessage;
+						if (this.extractReplyPayload) {
+							replyResult = replyMessage.getPayload();
+						}
+						try {
+							javax.jms.Message jmsReply = this.messageConverter.toMessage(replyResult, session);
+							// map SI Message Headers to JMS Message Properties/Headers
+							this.headerMapper.fromHeaders(replyMessage.getHeaders(), jmsReply);
+							this.copyCorrelationIdFromRequestToReply(jmsMessage, jmsReply);
+							this.sendReply(jmsReply, destination, session);
+						}
+						catch (RuntimeException e) {
+							this.logger.error("Failed to generate JMS Reply Message from: " + replyResult, e);
+							throw e;
+						}
+					}
+				}
+				else if (this.logger.isDebugEnabled()) {
+					this.logger.debug("expected a reply but none was received");
+				}
 			}
 		}
 	}
 
 	@Override
-	public void afterPropertiesSet()  {
+	public void afterPropertiesSet() {
 		if (this.beanFactory != null) {
 			this.gatewayDelegate.setBeanFactory(this.beanFactory);
 		}
 		this.gatewayDelegate.afterPropertiesSet();
-		this.messageBuilderFactory = IntegrationContextUtils.getMessageBuilderFactory(this.beanFactory);
+		this.messageBuilderFactory = IntegrationUtils.getMessageBuilderFactory(this.beanFactory);
 	}
 
-	protected void start(){
+	protected void start() {
 		this.gatewayDelegate.start();
 	}
 
-	protected void stop(){
+	protected void stop() {
 		this.gatewayDelegate.stop();
 	}
 
-	private void copyCorrelationIdFromRequestToReply(javax.jms.Message requestMessage, javax.jms.Message replyMessage) throws JMSException {
+	private void copyCorrelationIdFromRequestToReply(javax.jms.Message requestMessage, javax.jms.Message replyMessage)
+			throws JMSException {
 		if (this.correlationKey != null) {
 			if (this.correlationKey.equals("JMSCorrelationID")) {
 				replyMessage.setJMSCorrelationID(requestMessage.getJMSCorrelationID());
@@ -382,8 +398,9 @@ public class ChannelPublishingJmsMessageListener
 				if (value != null) {
 					replyMessage.setStringProperty(this.correlationKey, value);
 				}
-				else if (logger.isWarnEnabled()) {
-					logger.warn("No property value available on request Message for correlationKey '" + this.correlationKey + "'");
+				else if (this.logger.isWarnEnabled()) {
+					this.logger.warn("No property value available on request Message for correlationKey '"
+							+ this.correlationKey + "'");
 				}
 			}
 		}
@@ -442,7 +459,8 @@ public class ChannelPublishingJmsMessageListener
 		return null;
 	}
 
-	private void sendReply(javax.jms.Message replyMessage, Destination destination, Session session) throws JMSException {
+	private void sendReply(javax.jms.Message replyMessage, Destination destination, Session session)
+			throws JMSException {
 		MessageProducer producer = session.createProducer(destination);
 		try {
 			if (this.explicitQosEnabledForReplies) {
@@ -461,19 +479,25 @@ public class ChannelPublishingJmsMessageListener
 	 * Internal class combining a destination name
 	 * and its target destination type (queue or topic).
 	 */
-	private static class DestinationNameHolder {
+	private static final class DestinationNameHolder {
 
-		public final String name;
+		private final String name;
 
-		public final boolean isTopic;
+		private final boolean isTopic;
 
-		public DestinationNameHolder(String name, boolean isTopic) {
+		private DestinationNameHolder(String name, boolean isTopic) {
 			this.name = name;
 			this.isTopic = isTopic;
 		}
+
 	}
 
 	private class GatewayDelegate extends MessagingGatewaySupport {
+
+		@Override
+		public MessageChannel getErrorChannel() {
+			return super.getErrorChannel();
+		}
 
 		@Override
 		protected void send(Object request) {
@@ -487,12 +511,14 @@ public class ChannelPublishingJmsMessageListener
 
 		@Override
 		public String getComponentType() {
-			if (expectReply) {
+			if (ChannelPublishingJmsMessageListener.this.expectReply) {
 				return "jms:inbound-gateway";
 			}
 			else {
 				return "jms:message-driven-channel-adapter";
 			}
 		}
+
 	}
+
 }

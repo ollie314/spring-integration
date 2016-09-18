@@ -10,7 +10,7 @@
 	<int-redis:store-inbound-channel-adapter id="listAdapter"
 											connection-factory="redisConnectionFactory"
 											key-expression="'presidents'"
-											channel="redisChannel"
+											channel="transformChannel"
 											auto-startup="false"
 											collection-type="LIST">
 		<int:poller fixed-rate="2000" max-messages-per-poll="10"/>
@@ -19,7 +19,7 @@
 	<int-redis:store-inbound-channel-adapter id="listAdapterWithSynchronization"
 											connection-factory="redisConnectionFactory"
 											key-expression="'presidents'"
-											channel="redisChannel"
+											channel="transformChannel"
 											auto-startup="false">
 		<int:poller fixed-rate="2000" max-messages-per-poll="10">
 			<int:transactional synchronization-factory="syncFactory"/>
@@ -41,7 +41,7 @@
 	<int-redis:store-inbound-channel-adapter id="listAdapterWithSynchronizationAndRedisTemplate"
 											redis-template="redisTemplate"
 											key-expression="'presidents'"
-											channel="redisChannel"
+											channel="transformChannel"
 											auto-startup="false">
 		<int:poller fixed-rate="2000" max-messages-per-poll="10">
 		    <int:transactional synchronization-factory="syncFactory"/>
@@ -49,14 +49,14 @@
 	</int-redis:store-inbound-channel-adapter>
 
 	<int:transaction-synchronization-factory id="syncFactory">
-		<int:after-commit expression="#resource.attributes['store'].rename('bar')"/>
+		<int:after-commit expression="#store.rename('bar')"/>
 		<int:after-rollback expression="#store.rename('baz')"/>
 	</int:transaction-synchronization-factory>
 
 	<int-redis:store-inbound-channel-adapter id="listAdapterWithSynchronizationBeforeCommit"
 											redis-template="redisTemplate"
 											key-expression="'presidents'"
-											channel="redisChannel"
+											channel="transformChannel"
 											auto-startup="false">
 		<int:poller fixed-rate="2000" max-messages-per-poll="10" error-channel="adapterErrors">
 		    <int:transactional synchronization-factory="syncFactory2"/>
@@ -81,11 +81,13 @@
 		</property>
 	</bean>
 
+	<int:transformer input-channel="transformChannel" output-channel="redisChannel" expression="payload.size()"/>
+
 	<int:channel id="redisChannel">
 		<int:queue/>
 	</int:channel>
 
-	<bean id="redisConnectionFactory" class="org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory">
+	<bean id="redisConnectionFactory" class="org.springframework.data.redis.connection.jedis.JedisConnectionFactory">
 		<property name="port" value="#{T(org.springframework.integration.redis.rules.RedisAvailableRule).REDIS_PORT}"/>
 	</bean>
 

@@ -1,24 +1,30 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
- * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
- * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
- * specific language governing permissions and limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package org.springframework.integration.jdbc;
 
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.instanceOf;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import java.io.NotSerializableException;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -31,8 +37,11 @@ import org.junit.runner.RunWith;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.serializer.support.SerializationFailedException;
 import org.springframework.integration.channel.QueueChannel;
 import org.springframework.integration.store.MessageGroup;
+import org.springframework.messaging.MessageChannel;
+import org.springframework.messaging.MessageDeliveryException;
 import org.springframework.messaging.support.GenericMessage;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.annotation.Repeat;
@@ -71,6 +80,9 @@ public class JdbcMessageStoreChannelIntegrationTests {
 	@Autowired
 	private PlatformTransactionManager transactionManager;
 
+	@Autowired
+	private MessageChannel routingSlip;
+
 	@Before
 	public void clear() {
 		Service.reset(1);
@@ -82,7 +94,7 @@ public class JdbcMessageStoreChannelIntegrationTests {
 	@Test
 	public void testSendAndActivate() throws Exception {
 		input.send(new GenericMessage<String>("foo"));
-		Service.await(1000);
+		Service.await(10000);
 		assertEquals(1, Service.messages.size());
 	}
 
@@ -90,7 +102,7 @@ public class JdbcMessageStoreChannelIntegrationTests {
 	public void testSendAndActivateWithRollback() throws Exception {
 		Service.fail = true;
 		input.send(new GenericMessage<String>("foo"));
-		Service.await(1000);
+		Service.await(10000);
 		assertThat(Service.messages.size(), Matchers.greaterThanOrEqualTo(1));
 		// After a rollback in the poller the message is still waiting to be delivered
 		// but unless we use a transaction here there is a chance that the queue will
@@ -128,7 +140,8 @@ public class JdbcMessageStoreChannelIntegrationTests {
 					try {
 						Service.await(3000);
 						fail("Expected timeout");
-					} catch (Exception e) {
+					}
+					catch (Exception e) {
 						// expected
 					}
 
@@ -148,7 +161,8 @@ public class JdbcMessageStoreChannelIntegrationTests {
 			stopWatch.start();
 			// It might be null or not, but we don't want it to block
 			input.receive(100L);
-		} finally {
+		}
+		finally {
 			stopWatch.stop();
 		}
 
@@ -192,14 +206,16 @@ public class JdbcMessageStoreChannelIntegrationTests {
 							try {
 								Service.await(1000);
 								fail("Expected timeout");
-							} catch (Exception e) {
+							}
+							catch (Exception e) {
 								// expected
 							}
 
 							try {
 								stopWatch.start();
 								assertNotNull(input.receive(100L));
-							} finally {
+							}
+							finally {
 								stopWatch.stop();
 							}
 
@@ -220,7 +236,23 @@ public class JdbcMessageStoreChannelIntegrationTests {
 
 	}
 
+	@Test
+	public void testWithRoutingSlip() {
+		try {
+			this.routingSlip.send(new GenericMessage<String>("foo"));
+			fail("MessageDeliveryException expected");
+		}
+		catch (Exception e) {
+			assertThat(e, instanceOf(MessageDeliveryException.class));
+			assertThat(e.getCause(), instanceOf(SerializationFailedException.class));
+			assertThat(e.getCause().getCause(), instanceOf(NotSerializableException.class));
+			assertThat(e.getMessage(),
+					containsString("org.springframework.integration.routingslip.ExpressionEvaluatingRoutingSlipRouteStrategy"));
+		}
+	}
+
 	public static class Service {
+
 		private static boolean fail = false;
 
 		private static List<String> messages = new CopyOnWriteArrayList<String>();
@@ -247,6 +279,7 @@ public class JdbcMessageStoreChannelIntegrationTests {
 			}
 			return input;
 		}
+
 	}
 
 }

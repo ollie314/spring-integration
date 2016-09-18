@@ -1,5 +1,5 @@
 /*
- * Copyright 2013 the original author or authors.
+ * Copyright 2013-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -50,13 +50,16 @@ import org.springframework.test.context.support.AnnotationConfigContextLoader;
 
 import com.jayway.jsonpath.Criteria;
 import com.jayway.jsonpath.Filter;
+import com.jayway.jsonpath.PathNotFoundException;
+import com.jayway.jsonpath.Predicate;
 
 /**
  * @author Artem Bilan
  * @author Gary Russell
  * @since 3.0
  */
-@ContextConfiguration(classes = JsonPathTests.JsonPathTestsContextConfiguration.class, loader = AnnotationConfigContextLoader.class)
+@ContextConfiguration(classes = JsonPathTests.JsonPathTestsContextConfiguration.class,
+		loader = AnnotationConfigContextLoader.class)
 @RunWith(SpringJUnit4ClassRunner.class)
 public class JsonPathTests {
 
@@ -116,7 +119,7 @@ public class JsonPathTests {
 	@Test
 	public void testInt3139JsonPathTransformer() throws IOException {
 		this.transformerInput.send(testMessage);
-		Message<?> receive = this.output.receive(1000);
+		Message<?> receive = this.output.receive(10000);
 		assertNotNull(receive);
 		assertEquals("Nigel Rees", receive.getPayload());
 
@@ -132,31 +135,30 @@ public class JsonPathTests {
 		catch (Exception e) {
 			//MessageTransformationException / MessageHandlingException / InvocationTargetException / IllegalArgumentException
 			Throwable cause = e.getCause().getCause().getCause();
-			assertTrue(cause instanceof IllegalArgumentException);
-			assertEquals("Invalid container object", cause.getMessage());
+			assertTrue(cause instanceof PathNotFoundException);
 		}
 	}
 
 	@Test
 	public void testInt3139JsonPathFilter() {
 		this.filterInput1.send(testMessage);
-		Message<?> receive = this.output.receive(1000);
+		Message<?> receive = this.output.receive(10000);
 		assertNotNull(receive);
 		assertEquals(JSON, receive.getPayload());
 
 		this.filterInput2.send(testMessage);
-		receive = this.output.receive(1000);
+		receive = this.output.receive(10000);
 		assertNotNull(receive);
 
 		Message<String> message = MessageBuilder.withPayload(JSON)
 				.setHeader("price", 10)
 				.build();
 		this.filterInput3.send(message);
-		receive = this.output.receive(1000);
+		receive = this.output.receive(10000);
 		assertNotNull(receive);
 
 		this.filterInput4.send(testMessage);
-		receive = this.output.receive(1000);
+		receive = this.output.receive(10000);
 		assertNotNull(receive);
 
 		try {
@@ -169,7 +171,7 @@ public class JsonPathTests {
 		receive = this.output.receive(0);
 		assertNull(receive);
 
-		receive = this.discardChannel.receive(1000);
+		receive = this.discardChannel.receive(10000);
 		assertNotNull(receive);
 
 	}
@@ -177,8 +179,8 @@ public class JsonPathTests {
 	@Test
 	public void testInt3139JsonPathSplitter() {
 	  this.splitterInput.send(testMessage);
-		for(int i = 0; i < 3; i++) {
-			Message<?> receive = this.splitterOutput.receive(1000);
+		for (int i = 0; i < 4; i++) {
+			Message<?> receive = this.splitterOutput.receive(10000);
 			assertNotNull(receive);
 			assertTrue(receive.getPayload() instanceof Map);
 		}
@@ -190,7 +192,7 @@ public class JsonPathTests {
 				.setHeader("jsonPath", "$.store.book[0].category")
 				.build();
 		this.routerInput.send(message);
-		Message<?> receive = this.routerOutput1.receive(1000);
+		Message<?> receive = this.routerOutput1.receive(10000);
 		assertNotNull(receive);
 		assertEquals(JSON, receive.getPayload());
 		assertNull(this.routerOutput2.receive(10));
@@ -199,7 +201,7 @@ public class JsonPathTests {
 				.setHeader("jsonPath", "$.store.book[2].category")
 				.build();
 		this.routerInput.send(message);
-		receive = this.routerOutput2.receive(1000);
+		receive = this.routerOutput2.receive(10000);
 		assertNotNull(receive);
 		assertEquals(JSON, receive.getPayload());
 		assertNull(this.routerOutput1.receive(10));
@@ -211,7 +213,7 @@ public class JsonPathTests {
 	public static class JsonPathTestsContextConfiguration {
 
 		@Bean
-		public Filter<?> jsonPathFilter() {
+		public Predicate jsonPathFilter() {
 			return  Filter.filter(Criteria.where("isbn").exists(true).and("category").ne("fiction"));
 		}
 

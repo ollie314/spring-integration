@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2010 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,11 +21,6 @@ import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
 
-import org.codehaus.jackson.JsonFactory;
-import org.codehaus.jackson.JsonParseException;
-import org.codehaus.jackson.JsonParser;
-import org.codehaus.jackson.JsonToken;
-import org.codehaus.jackson.map.ObjectMapper;
 import org.junit.Test;
 
 import org.springframework.integration.history.MessageHistory;
@@ -34,8 +29,14 @@ import org.springframework.integration.support.context.NamedComponent;
 import org.springframework.integration.support.json.JsonOutboundMessageMapper;
 import org.springframework.messaging.Message;
 
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonToken;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 /**
  * @author Jeremy Grelle
+ * @author Gary Russell
  * @since 2.0
  */
 public class JsonOutboundMessageMapperTests {
@@ -51,8 +52,8 @@ public class JsonOutboundMessageMapperTests {
 		JsonOutboundMessageMapper mapper = new JsonOutboundMessageMapper();
 		String result = mapper.fromMessage(testMessage);
 		assertTrue(result.contains("\"headers\":{"));
-		assertTrue(result.contains("\"timestamp\":"+testMessage.getHeaders().getTimestamp()));
-		assertTrue(result.contains("\"id\":\""+testMessage.getHeaders().getId()+"\""));
+		assertTrue(result.contains("\"timestamp\":" + testMessage.getHeaders().getTimestamp()));
+		assertTrue(result.contains("\"id\":\"" + testMessage.getHeaders().getId() + "\""));
 		assertTrue(result.contains("\"payload\":\"myPayloadStuff\""));
 	}
 
@@ -65,8 +66,8 @@ public class JsonOutboundMessageMapperTests {
 		JsonOutboundMessageMapper mapper = new JsonOutboundMessageMapper();
 		String result = mapper.fromMessage(testMessage);
 		assertTrue(result.contains("\"headers\":{"));
-		assertTrue(result.contains("\"timestamp\":"+testMessage.getHeaders().getTimestamp()));
-		assertTrue(result.contains("\"id\":\""+testMessage.getHeaders().getId()+"\""));
+		assertTrue(result.contains("\"timestamp\":" + testMessage.getHeaders().getTimestamp()));
+		assertTrue(result.contains("\"id\":\"" + testMessage.getHeaders().getId() + "\""));
 		assertTrue(result.contains("\"payload\":\"myPayloadStuff\""));
 		assertTrue(result.contains("\"history\":"));
 		assertTrue(result.contains("testName-1"));
@@ -94,8 +95,8 @@ public class JsonOutboundMessageMapperTests {
 		JsonOutboundMessageMapper mapper = new JsonOutboundMessageMapper();
 		String result = mapper.fromMessage(testMessage);
 		assertTrue(result.contains("\"headers\":{"));
-		assertTrue(result.contains("\"timestamp\":"+testMessage.getHeaders().getTimestamp()));
-		assertTrue(result.contains("\"id\":\""+testMessage.getHeaders().getId()+"\""));
+		assertTrue(result.contains("\"timestamp\":" + testMessage.getHeaders().getTimestamp()));
+		assertTrue(result.contains("\"id\":\"" + testMessage.getHeaders().getId() + "\""));
 		TestBean parsedPayload = extractJsonPayloadToTestBean(result);
 		assertEquals(payload, parsedPayload);
 	}
@@ -112,11 +113,11 @@ public class JsonOutboundMessageMapperTests {
 		assertEquals(payload, parsedPayload);
 	}
 
-	private TestBean extractJsonPayloadToTestBean(String json) throws JsonParseException, IOException {
-		JsonParser parser = jsonFactory.createJsonParser(json);
+	private TestBean extractJsonPayloadToTestBean(String json) throws IOException {
+		JsonParser parser = jsonFactory.createParser(json);
 		do {
 			parser.nextToken();
-		} while(parser.getCurrentToken() != JsonToken.FIELD_NAME || !parser.getCurrentName().equals("payload"));
+		} while (parser.getCurrentToken() != JsonToken.FIELD_NAME || !parser.getCurrentName().equals("payload"));
 		parser.nextToken();
 		return objectMapper.readValue(parser, TestBean.class);
 	}
@@ -130,10 +131,12 @@ public class JsonOutboundMessageMapperTests {
 			this.id = id;
 		}
 
+		@Override
 		public String getComponentName() {
 			return "testName-" + this.id;
 		}
 
+		@Override
 		public String getComponentType() {
 			return "testType-" + this.id;
 		}

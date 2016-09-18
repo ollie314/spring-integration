@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,6 +31,7 @@ import org.springframework.messaging.MessageHeaders;
  *
  * @author Mark Fisher
  * @author Oleg Zhurakousky
+ * @author Gary Russell
  */
 public class PriorityChannel extends QueueChannel {
 
@@ -84,8 +85,13 @@ public class PriorityChannel extends QueueChannel {
 	}
 
 	@Override
+	public int getRemainingCapacity() {
+		return this.upperBound.availablePermits();
+	}
+
+	@Override
 	protected boolean doSend(Message<?> message, long timeout) {
-		if (!upperBound.tryAcquire(timeout)) {
+		if (!this.upperBound.tryAcquire(timeout)) {
 			return false;
 		}
 		message = new MessageWrapper(message);
@@ -96,24 +102,24 @@ public class PriorityChannel extends QueueChannel {
 	protected Message<?> doReceive(long timeout) {
 		Message<?> message = super.doReceive(timeout);
 		if (message != null) {
-			message = ((MessageWrapper)message).getRootMessage();
-			upperBound.release();
+			message = ((MessageWrapper) message).getRootMessage();
+			this.upperBound.release();
 		}
 		return message;
 	}
 
-	private static class SequenceFallbackComparator implements Comparator<Message<?>> {
+	private static final class SequenceFallbackComparator implements Comparator<Message<?>> {
 
 		private final Comparator<Message<?>> targetComparator;
 
-		public SequenceFallbackComparator(Comparator<Message<?>> targetComparator){
+		private SequenceFallbackComparator(Comparator<Message<?>> targetComparator) {
 			this.targetComparator = targetComparator;
 		}
 
 		@Override
 		public int compare(Message<?> message1, Message<?> message2) {
 			int compareResult = 0;
-			if (this.targetComparator != null){
+			if (this.targetComparator != null) {
 				compareResult = this.targetComparator.compare(message1, message2);
 			}
 			else {
@@ -125,7 +131,7 @@ public class PriorityChannel extends QueueChannel {
 				compareResult = priority2.compareTo(priority1);
 			}
 
-			if (compareResult == 0){
+			if (compareResult == 0) {
 				Long sequence1 = ((MessageWrapper) message1).getSequence();
 				Long sequence2 = ((MessageWrapper) message2).getSequence();
 				compareResult = sequence1.compareTo(sequence2);
@@ -135,16 +141,16 @@ public class PriorityChannel extends QueueChannel {
 	}
 
 	//we need this because of INT-2508
-	private class MessageWrapper implements Message<Object>{
+	private final class MessageWrapper implements Message<Object> {
 		private final Message<?> rootMessage;
 		private final long sequence;
 
-		public MessageWrapper(Message<?> rootMessage){
+		private MessageWrapper(Message<?> rootMessage) {
 			this.rootMessage = rootMessage;
-			this.sequence = sequenceCounter.incrementAndGet();
+			this.sequence = PriorityChannel.this.sequenceCounter.incrementAndGet();
 		}
 
-		public Message<?> getRootMessage(){
+		public Message<?> getRootMessage() {
 			return this.rootMessage;
 		}
 
@@ -155,10 +161,10 @@ public class PriorityChannel extends QueueChannel {
 
 		@Override
 		public Object getPayload() {
-			return rootMessage.getPayload();
+			return this.rootMessage.getPayload();
 		}
 
-		long getSequence(){
+		long getSequence() {
 			return this.sequence;
 		}
 	}

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.config;
 
 import java.util.Collection;
@@ -43,7 +44,7 @@ import org.springframework.util.Assert;
  */
 final class ChannelInitializer implements BeanFactoryAware, InitializingBean {
 
-	private Log logger = LogFactory.getLog(this.getClass());
+	private final Log logger = LogFactory.getLog(this.getClass());
 
 	private volatile BeanFactory beanFactory;
 
@@ -54,25 +55,27 @@ final class ChannelInitializer implements BeanFactoryAware, InitializingBean {
 		this.autoCreate = autoCreate;
 	}
 
+	@Override
 	public void setBeanFactory(BeanFactory beanFactory) throws BeansException {
 		this.beanFactory = beanFactory;
 	}
 
+	@Override
 	public void afterPropertiesSet() throws Exception {
 		Assert.notNull(this.beanFactory, "'beanFactory' must not be null");
-		if (!autoCreate){
+		if (!this.autoCreate) {
 			return;
 		}
 		else {
 			AutoCreateCandidatesCollector channelCandidatesCollector  =
-					beanFactory.getBean(IntegrationContextUtils.AUTO_CREATE_CHANNEL_CANDIDATES_BEAN_NAME, AutoCreateCandidatesCollector.class);
+					this.beanFactory.getBean(IntegrationContextUtils.AUTO_CREATE_CHANNEL_CANDIDATES_BEAN_NAME, AutoCreateCandidatesCollector.class);
 			Assert.notNull(channelCandidatesCollector, "Failed to locate '" + IntegrationContextUtils.AUTO_CREATE_CHANNEL_CANDIDATES_BEAN_NAME);
 			// at this point channelNames are all resolved with placeholders and SpEL
 			Collection<String> channelNames = channelCandidatesCollector.getChannelNames();
-			if (channelNames != null){
+			if (channelNames != null) {
 				for (String channelName : channelNames) {
-					if (!beanFactory.containsBean(channelName)){
-						if (this.logger.isDebugEnabled()){
+					if (!this.beanFactory.containsBean(channelName)) {
+						if (this.logger.isDebugEnabled()) {
 							this.logger.debug("Auto-creating channel '" + channelName + "' as DirectChannel");
 						}
 						IntegrationConfigUtils.autoCreateDirectChannel(channelName, (BeanDefinitionRegistry) this.beanFactory);
@@ -89,12 +92,12 @@ final class ChannelInitializer implements BeanFactoryAware, InitializingBean {
 
 		private final Collection<String> channelNames;
 
-		public AutoCreateCandidatesCollector(Collection<String> channelNames){
+		AutoCreateCandidatesCollector(Collection<String> channelNames) {
 			this.channelNames = channelNames;
 		}
 
 		public Collection<String> getChannelNames() {
-			return channelNames;
+			return this.channelNames;
 		}
 
 	}

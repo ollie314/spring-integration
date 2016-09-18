@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2011 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,7 +30,7 @@ import org.junit.Test;
 import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.context.support.StaticApplicationContext;
 import org.springframework.messaging.Message;
-import org.springframework.integration.annotation.Payload;
+import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.integration.annotation.Publisher;
 import org.springframework.integration.channel.QueueChannel;
 
@@ -121,14 +121,14 @@ public class PublisherAnnotationAdvisorTests {
 	}
 
 
-	static interface TestBean {
+	interface TestBean {
 
 		String test();
 
 	}
 
 
-	static interface TestVoidBean {
+	interface TestVoidBean {
 
 		void testVoidMethod(String s);
 
@@ -137,17 +137,17 @@ public class PublisherAnnotationAdvisorTests {
 
 	static class AnnotationAtMethodLevelTestBeanImpl implements TestBean, TestVoidBean {
 
-		@Publisher(channel="testChannel")
+		@Publisher(channel = "testChannel")
 		public String test() {
 			return "foo";
 		}
 
-		@Publisher(channel="testChannel")
-		public void testVoidMethod(@Payload String s) {}
+		@Publisher(channel = "testChannel")
+		public void testVoidMethod(@Payload String s) { }
 	}
 
 
-	@Publisher(channel="testChannel")
+	@Publisher(channel = "testChannel")
 	static class AnnotationAtClassLevelTestBeanImpl implements TestBean {
 
 		public String test() {
@@ -159,7 +159,7 @@ public class PublisherAnnotationAdvisorTests {
 
 	@Target({ElementType.METHOD, ElementType.TYPE})
 	@Retention(RetentionPolicy.RUNTIME)
-	@Publisher(channel="testMetaChannel")
+	@Publisher(channel = "testMetaChannel")
 	public @interface TestMetaPublisher {
 	}
 

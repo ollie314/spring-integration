@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2010 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -122,7 +122,7 @@ public class ChannelPurgerTests {
 		channel1.send(new GenericMessage<String>("test3"));
 		channel2.send(new GenericMessage<String>("test1"));
 		channel2.send(new GenericMessage<String>("test2"));
-		channel2.send(new GenericMessage<String>("test3"));		
+		channel2.send(new GenericMessage<String>("test3"));
 		ChannelPurger purger = new ChannelPurger(new MessageSelector() {
 			public boolean accept(Message<?> message) {
 				return (message.getPayload().equals("test2"));
@@ -137,7 +137,7 @@ public class ChannelPurgerTests {
 		Message<?> message2 = channel2.receive(0);
 		assertNotNull(message2);
 		assertEquals("test2", message2.getPayload());
-		assertNull(channel2.receive(0));		
+		assertNull(channel2.receive(0));
 	}
 
 	@Test
@@ -161,13 +161,13 @@ public class ChannelPurgerTests {
 		assertNotNull(channel2.receive(0));
 	}
 
-	@Test(expected=IllegalArgumentException.class)
+	@Test(expected = IllegalArgumentException.class)
 	public void testNullChannel() {
 		QueueChannel channel = null;
 		new ChannelPurger(channel);
 	}
 
-	@Test(expected=IllegalArgumentException.class)
+	@Test(expected = IllegalArgumentException.class)
 	public void testEmptyChannelArray() {
 		QueueChannel[] channels = new QueueChannel[0];
 		new ChannelPurger(channels);

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.mail.config;
 
 import static org.junit.Assert.assertEquals;
@@ -35,36 +36,39 @@ import org.mockito.Mockito;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
 
-import org.springframework.context.ApplicationContext;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
-import org.springframework.messaging.Message;
-import org.springframework.messaging.MessageChannel;
 import org.springframework.integration.mail.MailHeaders;
 import org.springframework.integration.mail.MailSendingMessageHandler;
-import org.springframework.messaging.support.GenericMessage;
 import org.springframework.integration.support.MessageBuilder;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.MessageChannel;
+import org.springframework.messaging.support.GenericMessage;
 import org.springframework.util.FileCopyUtils;
 
 /**
  * @author Oleg Zhurakousky
+ * @author Gary Russell
  *
  */
 public class MessageWithContentTypeTests {
 
 	@Test
 	@Ignore
-	public void testSendEmail() throws Exception{
-		ApplicationContext ac = new ClassPathXmlApplicationContext("MessageWithContentTypeTests-context.xml", this.getClass());
+	public void testSendEmail() throws Exception {
+		ConfigurableApplicationContext ac = new ClassPathXmlApplicationContext(
+				"MessageWithContentTypeTests-context.xml", this.getClass());
 		MessageChannel inputChannel = ac.getBean("inputChannel", MessageChannel.class);
 		StringWriter writer = new StringWriter();
 		FileReader reader = new FileReader("src/test/java/org/springframework/integration/mail/config/test.html");
 		FileCopyUtils.copy(reader, writer);
 		inputChannel.send(new GenericMessage<String>(writer.getBuffer().toString()));
+		ac.close();
 	}
 
 	@Test
-	public void testMessageConversionWithHtmlAndContentType() throws Exception{
+	public void testMessageConversionWithHtmlAndContentType() throws Exception {
 		JavaMailSender sender = mock(JavaMailSender.class);
 		MailSendingMessageHandler handler = new MailSendingMessageHandler(sender);
 		StringWriter writer = new StringWriter();
@@ -79,6 +83,7 @@ public class MessageWithContentTypeTests {
 		// MOCKS
 		when(sender.createMimeMessage()).thenReturn(mMessage);
 		doAnswer(new Answer<Object>() {
+			@Override
 			public Object answer(InvocationOnMock invocation) throws Throwable {
 				MimeMessage mimeMessage = (MimeMessage) invocation.getArguments()[0];
 				assertEquals("text/html", mimeMessage.getDataHandler().getContentType());
@@ -92,8 +97,8 @@ public class MessageWithContentTypeTests {
 		verify(sender, times(1)).send(Mockito.any(MimeMessage.class));
 	}
 
-	private static class TestMimeMessage extends MimeMessage{
-		public TestMimeMessage() {
+	private static class TestMimeMessage extends MimeMessage {
+		TestMimeMessage() {
 			super(Session.getDefaultInstance(new Properties()));
 		}
 	}

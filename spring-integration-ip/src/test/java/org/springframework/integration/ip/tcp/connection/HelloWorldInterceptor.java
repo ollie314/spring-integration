@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.ip.tcp.connection;
 
 import java.util.concurrent.Semaphore;
@@ -61,36 +62,45 @@ public class HelloWorldInterceptor extends TcpConnectionInterceptorSupport {
 	@Override
 	public boolean onMessage(Message<?> message) {
 		if (!this.negotiated) {
-			Object payload = message.getPayload();
-			if (this.isServer()) {
-				if (payload.equals(hello)) {
-					try {
-						logger.debug(this.toString() + " sending " + this.world);
-						super.send(MessageBuilder.withPayload(world).build());
-						this.negotiated = true;
-						return true;
-					} catch (Exception e) {
-						throw new MessagingException("Negotiation error", e);
+			synchronized (this) {
+				if (!this.negotiated) {
+					Object payload = message.getPayload();
+					logger.debug(this.toString() + " received " + payload);
+					if (this.isServer()) {
+						if (payload.equals(hello)) {
+							try {
+								logger.debug(this.toString() + " sending " + this.world);
+								super.send(MessageBuilder.withPayload(world).build());
+								this.negotiated = true;
+								return true;
+							}
+							catch (Exception e) {
+								throw new MessagingException("Negotiation error", e);
+							}
+						}
+						else {
+							throw new MessagingException("Negotiation error, expected '" + hello +
+									     "' received '" + payload + "'");
+						}
 					}
-				} else {
-					throw new MessagingException("Negotiation error, expected '" + hello +
-							     "' received '" + payload + "'");
+					else {
+						if (payload.equals(world)) {
+							this.negotiated = true;
+							this.negotiationSemaphore.release();
+						}
+						else {
+							throw new MessagingException("Negotiation error - expected '" + world +
+										"' received " + payload);
+						}
+						return true;
+					}
 				}
-			} else {
-				logger.debug(this.toString() + " received " + payload);
-				if (payload.equals(world)) {
-					this.negotiated = true;
-					this.negotiationSemaphore.release();
-				} else {
-					throw new MessagingException("Negotiation error - expected '" + world +
-								"' received " + payload);
-				}
-				return true;
 			}
 		}
 		try {
 			return super.onMessage(message);
-		} finally {
+		}
+		finally {
 			// on the server side, we don't want to close if we are expecting a response
 			if (!(this.isServer() && this.hasRealSender()) && !this.pendingSend) {
 				this.checkDeferredClose();
@@ -113,7 +123,8 @@ public class HelloWorldInterceptor extends TcpConnectionInterceptorSupport {
 				}
 			}
 			super.send(message);
-		} finally {
+		}
+		finally {
 			this.pendingSend = false;
 			this.checkDeferredClose();
 		}
@@ -142,6 +153,10 @@ public class HelloWorldInterceptor extends TcpConnectionInterceptorSupport {
 		}
 	}
 
-
+	@Override
+	public String toString() {
+		return "HelloWorldInterceptor [negotiated=" + negotiated + ", hello=" + hello + ", world=" + world
+				+ ", closeReceived=" + closeReceived + ", pendingSend=" + pendingSend + "]";
+	}
 
 }

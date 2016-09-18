@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,8 +23,6 @@ import org.apache.commons.logging.LogFactory;
 
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageDeliveryException;
-import org.springframework.integration.support.DefaultMessageBuilderFactory;
-import org.springframework.integration.support.MessageBuilderFactory;
 import org.springframework.messaging.MessageHandler;
 import org.springframework.messaging.MessagingException;
 import org.springframework.util.Assert;
@@ -55,7 +53,6 @@ public abstract class AbstractDispatcher implements MessageDispatcher {
 
 	private volatile MessageHandler theOneHandler;
 
-	private volatile MessageBuilderFactory messageBuilderFactory = new DefaultMessageBuilderFactory();
 	/**
 	 * Set the maximum subscribers allowed by this dispatcher.
 	 * @param maxSubscribers The maximum number of subscribers allowed.
@@ -71,16 +68,7 @@ public abstract class AbstractDispatcher implements MessageDispatcher {
 	 * @return The message handlers.
 	 */
 	protected Set<MessageHandler> getHandlers() {
-		return handlers.asUnmodifiableSet();
-	}
-
-	protected MessageBuilderFactory getMessageBuilderFactory() {
-		return messageBuilderFactory;
-	}
-
-	public void setMessageBuilderFactory(MessageBuilderFactory messageBuilderFactory) {
-		Assert.notNull(messageBuilderFactory, "'messageBuilderFactory' cannot be null");
-		this.messageBuilderFactory = messageBuilderFactory;
+		return this.handlers.asUnmodifiableSet();
 	}
 
 	/**
@@ -142,7 +130,7 @@ public abstract class AbstractDispatcher implements MessageDispatcher {
 						"Dispatcher failed to deliver Message.", e);
 		if (e instanceof MessagingException &&
 				((MessagingException) e).getFailedMessage() == null) {
-			runtimeException = new MessagingException(message, e);
+			runtimeException = new MessagingException(message, "Dispatcher failed to deliver Message", e);
 		}
 		return runtimeException;
 	}

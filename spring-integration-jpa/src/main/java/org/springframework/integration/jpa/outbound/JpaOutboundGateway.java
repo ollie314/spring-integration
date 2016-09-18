@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -62,6 +62,11 @@ public class JpaOutboundGateway extends AbstractReplyProducingMessageHandler {
 	}
 
 	@Override
+	public String getComponentType() {
+		return "jpa:outbound-gateway";
+	}
+
+	@Override
 	protected void doInit() {
 		this.jpaExecutor.setBeanFactory(this.getBeanFactory());
 	}
@@ -71,13 +76,15 @@ public class JpaOutboundGateway extends AbstractReplyProducingMessageHandler {
 		final Object result;
 		if (OutboundGatewayType.RETRIEVING.equals(this.gatewayType)) {
 			result = this.jpaExecutor.poll(requestMessage);
-		} else if (OutboundGatewayType.UPDATING.equals(this.gatewayType)) {
+		}
+		else if (OutboundGatewayType.UPDATING.equals(this.gatewayType)) {
 			result = this.jpaExecutor.executeOutboundJpaOperation(requestMessage);
-		} else {
+		}
+		else {
 			throw new IllegalArgumentException(String.format("GatewayType  '%s' is not supported.", this.gatewayType));
 		}
 
-		if (result == null || !producesReply) {
+		if (result == null || !this.producesReply) {
 			return null;
 		}
 

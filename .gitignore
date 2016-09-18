@@ -11,6 +11,7 @@
 .pmd
 .project
 .settings
+.checkstyle
 bin
 build
 build.log
@@ -28,3 +29,4 @@ target
 vf.gf.dmn-*
 /atlassian-ide-plugin.xml
 hostkey.ser
+.springBeans

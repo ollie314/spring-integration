@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.ip.tcp.connection;
 
 import org.apache.commons.logging.Log;
@@ -52,24 +53,26 @@ public class ClientModeConnectionManager implements Runnable {
 		synchronized (this.clientConnectionFactory) {
 			try {
 				TcpConnection connection = this.clientConnectionFactory.getConnection();
-				if (connection != lastConnection) {
-					if (logger.isDebugEnabled()) {
-						logger.debug("Connection " + connection.getConnectionId() + " established");
+				if (connection != this.lastConnection) {
+					if (this.logger.isDebugEnabled()) {
+						this.logger.debug("Connection " + connection.getConnectionId() + " established");
 					}
-					lastConnection = connection;
-				} else {
-					if (logger.isTraceEnabled()) {
-						logger.trace("Connection " + connection.getConnectionId() + " still OK");
+					this.lastConnection = connection;
+				}
+				else {
+					if (this.logger.isTraceEnabled()) {
+						this.logger.trace("Connection " + connection.getConnectionId() + " still OK");
 					}
 				}
-			} catch (Exception e) {
-				logger.error("Could not establish connection using " + this.clientConnectionFactory, e);
+			}
+			catch (Exception e) {
+				this.logger.error("Could not establish connection using " + this.clientConnectionFactory, e);
 			}
 		}
 	}
 
 	public boolean isConnected() {
-		return this.lastConnection == null ? false : this.lastConnection.isOpen();
+		return this.lastConnection != null && this.lastConnection.isOpen();
 	}
 
 }

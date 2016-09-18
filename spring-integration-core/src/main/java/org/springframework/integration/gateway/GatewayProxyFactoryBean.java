@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.lang.reflect.UndeclaredThrowableException;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.Callable;
@@ -38,23 +39,24 @@ import org.springframework.beans.factory.BeanDefinitionStoreException;
 import org.springframework.beans.factory.BeanFactory;
 import org.springframework.beans.factory.FactoryBean;
 import org.springframework.core.convert.ConversionService;
+import org.springframework.core.task.AsyncListenableTaskExecutor;
 import org.springframework.core.task.AsyncTaskExecutor;
 import org.springframework.core.task.SimpleAsyncTaskExecutor;
 import org.springframework.core.task.support.TaskExecutorAdapter;
 import org.springframework.expression.Expression;
 import org.springframework.expression.common.LiteralExpression;
-import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.integration.annotation.Gateway;
 import org.springframework.integration.annotation.GatewayHeader;
-import org.springframework.integration.annotation.Payload;
-import org.springframework.integration.context.IntegrationContextUtils;
 import org.springframework.integration.endpoint.AbstractEndpoint;
-import org.springframework.integration.history.TrackableComponent;
 import org.springframework.integration.support.channel.BeanFactoryChannelResolver;
+import org.springframework.integration.support.management.TrackableComponent;
+import org.springframework.integration.support.utils.IntegrationUtils;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
+import org.springframework.messaging.MessageHeaders;
 import org.springframework.messaging.MessagingException;
 import org.springframework.messaging.core.DestinationResolver;
+import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.util.Assert;
 import org.springframework.util.ClassUtils;
 import org.springframework.util.CollectionUtils;
@@ -62,12 +64,15 @@ import org.springframework.util.ObjectUtils;
 import org.springframework.util.ReflectionUtils;
 import org.springframework.util.StringUtils;
 
+import reactor.core.publisher.Mono;
+
+
 /**
  * Generates a proxy for the provided service interface to enable interaction
  * with messaging components without application code being aware of them allowing
  * for POJO-style interaction.
  * This component is also aware of the {@link ConversionService} set on the enclosing {@link BeanFactory}
- * under the name {@link IntegrationContextUtils#INTEGRATION_CONVERSION_SERVICE_BEAN_NAME} to
+ * under the name {@link IntegrationUtils#INTEGRATION_CONVERSION_SERVICE_BEAN_NAME} to
  * perform type conversions when necessary (thanks to Jon Schneider's contribution and suggestion in INT-1230).
  *
  * @author Mark Fisher
@@ -75,17 +80,22 @@ import org.springframework.util.StringUtils;
  * @author Gary Russell
  * @author Artem Bilan
  */
-public class GatewayProxyFactoryBean extends AbstractEndpoint implements TrackableComponent, FactoryBean<Object>, MethodInterceptor, BeanClassLoaderAware {
-
-	private static final SpelExpressionParser PARSER = new SpelExpressionParser();
+public class GatewayProxyFactoryBean extends AbstractEndpoint
+		implements TrackableComponent, FactoryBean<Object>, MethodInterceptor, BeanClassLoaderAware {
 
 	private volatile Class<?> serviceInterface;
 
 	private volatile MessageChannel defaultRequestChannel;
 
+	private volatile String defaultRequestChannelName;
+
 	private volatile MessageChannel defaultReplyChannel;
 
+	private volatile String defaultReplyChannelName;
+
 	private volatile MessageChannel errorChannel;
+
+	private volatile String errorChannelName;
 
 	private volatile Long defaultRequestTimeout;
 
@@ -104,6 +114,10 @@ public class GatewayProxyFactoryBean extends AbstractEndpoint implements Trackab
 	private final Map<Method, MethodInvocationGateway> gatewayMap = new HashMap<Method, MethodInvocationGateway>();
 
 	private volatile AsyncTaskExecutor asyncExecutor = new SimpleAsyncTaskExecutor();
+
+	private volatile Class<?> asyncSubmitType;
+
+	private volatile Class<?> asyncSubmitListenableType;
 
 	private volatile boolean initialized;
 
@@ -145,7 +159,6 @@ public class GatewayProxyFactoryBean extends AbstractEndpoint implements Trackab
 
 	/**
 	 * Set the default request channel.
-	 *
 	 * @param defaultRequestChannel the channel to which request messages will
 	 * be sent if no request channel has been configured with an annotation.
 	 */
@@ -154,10 +167,19 @@ public class GatewayProxyFactoryBean extends AbstractEndpoint implements Trackab
 	}
 
 	/**
+	 * Set the default request channel bean name.
+	 * @param defaultRequestChannelName the channel name to which request messages will
+	 * be sent if no request channel has been configured with an annotation.
+	 * @since 4.2.9
+	 */
+	public void setDefaultRequestChannelName(String defaultRequestChannelName) {
+		this.defaultRequestChannelName = defaultRequestChannelName;
+	}
+
+	/**
 	 * Set the default reply channel. If no default reply channel is provided,
 	 * and no reply channel is configured with annotations, an anonymous,
 	 * temporary channel will be used for handling replies.
-	 *
 	 * @param defaultReplyChannel the channel from which reply messages will be
 	 * received if no reply channel has been configured with an annotation
 	 */
@@ -166,14 +188,36 @@ public class GatewayProxyFactoryBean extends AbstractEndpoint implements Trackab
 	}
 
 	/**
+	 * Set the default reply channel bean name. If no default reply channel is provided,
+	 * and no reply channel is configured with annotations, an anonymous,
+	 * temporary channel will be used for handling replies.
+	 * @param defaultReplyChannelName the channel name from which reply messages will be
+	 * received if no reply channel has been configured with an annotation
+	 * @since 4.2.9
+	 */
+	public void setDefaultReplyChannelName(String defaultReplyChannelName) {
+		this.defaultReplyChannelName = defaultReplyChannelName;
+	}
+
+	/**
 	 * Set the error channel. If no error channel is provided, this gateway will
 	 * propagate Exceptions to the caller. To completely suppress Exceptions, provide
 	 * a reference to the "nullChannel" here.
-	 *
 	 * @param errorChannel The error channel.
 	 */
 	public void setErrorChannel(MessageChannel errorChannel) {
 		this.errorChannel = errorChannel;
+	}
+
+	/**
+	 * Set the error channel name. If no error channel is provided, this gateway will
+	 * propagate Exceptions to the caller. To completely suppress Exceptions, provide
+	 * a reference to the "nullChannel" here.
+	 * @param errorChannelName The error channel bean name.
+	 * @since 4.2.9
+	 */
+	public void setErrorChannelName(String errorChannelName) {
+		this.errorChannelName = errorChannelName;
 	}
 
 	/**
@@ -206,9 +250,19 @@ public class GatewayProxyFactoryBean extends AbstractEndpoint implements Trackab
 		}
 	}
 
+	/**
+	 * Set the executor for use when the gateway method returns
+	 * {@link java.util.concurrent.Future} or {@link org.springframework.util.concurrent.ListenableFuture}.
+	 * Set it to null to disable the async processing, and any
+	 * {@link java.util.concurrent.Future} return types must be returned by the downstream flow.
+	 * @param executor The executor.
+	 */
 	public void setAsyncExecutor(Executor executor) {
-		Assert.notNull(executor, "executor must not be null");
-		this.asyncExecutor = (executor instanceof AsyncTaskExecutor) ? (AsyncTaskExecutor) executor
+		if (executor == null && logger.isInfoEnabled()) {
+			logger.info("A null executor disables the async gateway; " +
+					"methods returning Future<?> will run on the calling thread");
+		}
+		this.asyncExecutor = (executor instanceof AsyncTaskExecutor || executor == null) ? (AsyncTaskExecutor) executor
 				: new TaskExecutorAdapter(executor);
 	}
 
@@ -239,6 +293,20 @@ public class GatewayProxyFactoryBean extends AbstractEndpoint implements Trackab
 		this.argsMapper = mapper;
 	}
 
+	protected AsyncTaskExecutor getAsyncExecutor() {
+		return this.asyncExecutor;
+	}
+
+	/**
+	 * Return the Map of {@link Method} to {@link MessagingGatewaySupport}
+	 * generated by this factory bean.
+	 * @return the map.
+	 * @since 4.3
+	 */
+	public Map<Method, MessagingGatewaySupport> getGateways() {
+		return Collections.<Method, MessagingGatewaySupport>unmodifiableMap(this.gatewayMap);
+	}
+
 	@Override
 	protected void onInit() {
 		synchronized (this.initializationMonitor) {
@@ -256,7 +324,22 @@ public class GatewayProxyFactoryBean extends AbstractEndpoint implements Trackab
 				this.gatewayMap.put(method, gateway);
 			}
 			this.serviceProxy = new ProxyFactory(proxyInterface, this).getProxy(this.beanClassLoader);
-			this.start();
+			if (this.asyncExecutor != null) {
+				Callable<String> task = new Callable<String>() {
+
+					@Override
+					public String call() throws Exception {
+						return null;
+					}
+				};
+				Future<String> submitType = this.asyncExecutor.submit(task);
+				this.asyncSubmitType = submitType.getClass();
+				if (this.asyncExecutor instanceof AsyncListenableTaskExecutor) {
+					submitType = ((AsyncListenableTaskExecutor) this.asyncExecutor).submitListenable(task);
+					this.asyncSubmitListenableType = submitType.getClass();
+				}
+			}
+
 			this.initialized = true;
 		}
 	}
@@ -289,27 +372,43 @@ public class GatewayProxyFactoryBean extends AbstractEndpoint implements Trackab
 
 	@Override
 	public Object invoke(final MethodInvocation invocation) throws Throwable {
-		if (Future.class.isAssignableFrom(invocation.getMethod().getReturnType())) {
-			return this.asyncExecutor.submit(new AsyncInvocationTask(invocation));
+		final Class<?> returnType = invocation.getMethod().getReturnType();
+		if (this.asyncExecutor != null && !Object.class.equals(returnType)) {
+			if (returnType.isAssignableFrom(this.asyncSubmitType)) {
+				return this.asyncExecutor.submit(new AsyncInvocationTask(invocation));
+			}
+			else if (returnType.isAssignableFrom(this.asyncSubmitListenableType)) {
+				return ((AsyncListenableTaskExecutor) this.asyncExecutor).submitListenable(new AsyncInvocationTask(invocation));
+			}
+			else if (Future.class.isAssignableFrom(returnType)) {
+				if (logger.isDebugEnabled()) {
+					logger.debug("AsyncTaskExecutor submit*() return types are incompatible with the method return type; "
+							+ "running on calling thread; the downstream flow must return the required Future: "
+							+ returnType.getSimpleName());
+				}
+			}
 		}
-		return this.doInvoke(invocation);
+		if (Mono.class.isAssignableFrom(returnType)) {
+			return Mono.fromCallable(new AsyncInvocationTask(invocation));
+		}
+		return this.doInvoke(invocation, true);
 	}
 
-	private Object doInvoke(MethodInvocation invocation) throws Throwable {
+	protected Object doInvoke(MethodInvocation invocation, boolean runningOnCallerThread) throws Throwable {
 		Method method = invocation.getMethod();
 		if (AopUtils.isToStringMethod(method)) {
 			return "gateway proxy for service interface [" + this.serviceInterface + "]";
 		}
 		try {
-			return this.invokeGatewayMethod(invocation);
+			return this.invokeGatewayMethod(invocation, runningOnCallerThread);
 		}
-		catch (Throwable e) {
+		catch (Throwable e) { //NOSONAR - ok to catch, rethrown below
 			this.rethrowExceptionCauseIfPossible(e, invocation.getMethod());
 			return null; // preceding call should always throw something
 		}
 	}
 
-	private Object invokeGatewayMethod(MethodInvocation invocation) throws Exception {
+	private Object invokeGatewayMethod(MethodInvocation invocation, boolean runningOnCallerThread) throws Exception {
 		if (!this.initialized) {
 			this.afterPropertiesSet();
 		}
@@ -317,7 +416,7 @@ public class GatewayProxyFactoryBean extends AbstractEndpoint implements Trackab
 		MethodInvocationGateway gateway = this.gatewayMap.get(method);
 		Class<?> returnType = method.getReturnType();
 		boolean shouldReturnMessage = Message.class.isAssignableFrom(returnType)
-				|| hasFutureParameterizedWithMessage(method);
+				|| hasReturnParameterizedWithMessage(method, runningOnCallerThread);
 		boolean shouldReply = returnType != void.class;
 		int paramCount = method.getParameterTypes().length;
 		Object response = null;
@@ -330,7 +429,7 @@ public class GatewayProxyFactoryBean extends AbstractEndpoint implements Trackab
 		if (paramCount == 0 && !hasPayloadExpression) {
 			if (shouldReply) {
 				if (shouldReturnMessage) {
-					return gateway.receive();
+					return gateway.receiveMessage();
 				}
 				response = gateway.receive();
 			}
@@ -370,22 +469,17 @@ public class GatewayProxyFactoryBean extends AbstractEndpoint implements Trackab
 
 	private MethodInvocationGateway createGatewayForMethod(Method method) {
 		Gateway gatewayAnnotation = method.getAnnotation(Gateway.class);
-		MessageChannel requestChannel = this.defaultRequestChannel;
-		MessageChannel replyChannel = this.defaultReplyChannel;
+		String requestChannelName = null;
+		String replyChannelName = null;
 		Long requestTimeout = this.defaultRequestTimeout;
 		Long replyTimeout = this.defaultReplyTimeout;
-		String payloadExpression = this.globalMethodMetadata != null ? this.globalMethodMetadata.getPayloadExpression()
+		String payloadExpression = this.globalMethodMetadata != null
+				? this.globalMethodMetadata.getPayloadExpression()
 				: null;
 		Map<String, Expression> headerExpressions = new HashMap<String, Expression>();
 		if (gatewayAnnotation != null) {
-			String requestChannelName = gatewayAnnotation.requestChannel();
-			if (StringUtils.hasText(requestChannelName)) {
-				requestChannel = this.resolveChannelName(requestChannelName);
-			}
-			String replyChannelName = gatewayAnnotation.replyChannel();
-			if (StringUtils.hasText(replyChannelName)) {
-				replyChannel = this.resolveChannelName(replyChannelName);
-			}
+			requestChannelName = gatewayAnnotation.requestChannel();
+			replyChannelName = gatewayAnnotation.replyChannel();
 			/*
 			 * INT-2636 Unspecified annotation attributes should not
 			 * override the default values supplied by explicit configuration.
@@ -410,16 +504,19 @@ public class GatewayProxyFactoryBean extends AbstractEndpoint implements Trackab
 					String name = gatewayHeader.name();
 					boolean hasValue = StringUtils.hasText(value);
 
-					if (!(hasValue ^ StringUtils.hasText(expression))) {
-						throw new BeanDefinitionStoreException("exactly one of 'value' or 'expression' is required on a gateway's header.");
+					if (hasValue == StringUtils.hasText(expression)) {
+						throw new BeanDefinitionStoreException("exactly one of 'value' or 'expression' " +
+								"is required on a gateway's header.");
 					}
-					headerExpressions.put(name, hasValue ? new LiteralExpression(value): PARSER.parseExpression(expression));
+					headerExpressions.put(name, hasValue
+							? new LiteralExpression(value)
+							: EXPRESSION_PARSER.parseExpression(expression));
 				}
 			}
 
 		}
-		else if (methodMetadataMap != null && methodMetadataMap.size() > 0) {
-			GatewayMethodMetadata methodMetadata = methodMetadataMap.get(method.getName());
+		else if (this.methodMetadataMap != null && this.methodMetadataMap.size() > 0) {
+			GatewayMethodMetadata methodMetadata = this.methodMetadataMap.get(method.getName());
 			if (methodMetadata != null) {
 				if (StringUtils.hasText(methodMetadata.getPayloadExpression())) {
 					payloadExpression = methodMetadata.getPayloadExpression();
@@ -427,39 +524,67 @@ public class GatewayProxyFactoryBean extends AbstractEndpoint implements Trackab
 				if (!CollectionUtils.isEmpty(methodMetadata.getHeaderExpressions())) {
 					headerExpressions.putAll(methodMetadata.getHeaderExpressions());
 				}
-				String requestChannelName = methodMetadata.getRequestChannelName();
-				if (StringUtils.hasText(requestChannelName)) {
-					requestChannel = this.resolveChannelName(requestChannelName);
-				}
-				String replyChannelName = methodMetadata.getReplyChannelName();
-				if (StringUtils.hasText(replyChannelName)) {
-					replyChannel = this.resolveChannelName(replyChannelName);
-				}
+				requestChannelName = methodMetadata.getRequestChannelName();
+				replyChannelName = methodMetadata.getReplyChannelName();
 				String reqTimeout = methodMetadata.getRequestTimeout();
-				if (StringUtils.hasText(reqTimeout)){
+				if (StringUtils.hasText(reqTimeout)) {
 					requestTimeout = this.convert(reqTimeout, Long.class);
 				}
 				String repTimeout = methodMetadata.getReplyTimeout();
-				if (StringUtils.hasText(repTimeout)){
+				if (StringUtils.hasText(repTimeout)) {
 					replyTimeout = this.convert(repTimeout, Long.class);
 				}
 			}
 		}
-		GatewayMethodInboundMessageMapper messageMapper = new GatewayMethodInboundMessageMapper(method, headerExpressions,
+		Map<String, Object> headers = null;
+		// We don't want to eagerly resolve the error channel here
+		Object errorChannel = this.errorChannel == null ? this.errorChannelName : this.errorChannel;
+		if (errorChannel != null && method.getReturnType().equals(void.class)) {
+			headers = new HashMap<>();
+			headers.put(MessageHeaders.ERROR_CHANNEL, errorChannel);
+		}
+		GatewayMethodInboundMessageMapper messageMapper = new GatewayMethodInboundMessageMapper(method,
+				headerExpressions,
 				this.globalMethodMetadata != null ? this.globalMethodMetadata.getHeaderExpressions() : null,
-				this.argsMapper, this.getMessageBuilderFactory());
+				headers, this.argsMapper, this.getMessageBuilderFactory());
 		if (StringUtils.hasText(payloadExpression)) {
 			messageMapper.setPayloadExpression(payloadExpression);
 		}
- 		messageMapper.setBeanFactory(this.getBeanFactory());
- 		MethodInvocationGateway gateway = new MethodInvocationGateway(messageMapper);
-		gateway.setErrorChannel(this.errorChannel);
+		messageMapper.setBeanFactory(this.getBeanFactory());
+		MethodInvocationGateway gateway = new MethodInvocationGateway(messageMapper);
+
+		if (this.errorChannel != null) {
+			gateway.setErrorChannel(this.errorChannel);
+		}
+		else if (StringUtils.hasText(this.errorChannelName)) {
+			gateway.setErrorChannelName(this.errorChannelName);
+		}
+
 		if (this.getTaskScheduler() != null) {
 			gateway.setTaskScheduler(this.getTaskScheduler());
 		}
 		gateway.setBeanName(this.getComponentName());
-		gateway.setRequestChannel(requestChannel);
-		gateway.setReplyChannel(replyChannel);
+
+		if (StringUtils.hasText(requestChannelName)) {
+			gateway.setRequestChannelName(requestChannelName);
+		}
+		else if (StringUtils.hasText(this.defaultRequestChannelName)) {
+			gateway.setRequestChannelName(this.defaultRequestChannelName);
+		}
+		else {
+			gateway.setRequestChannel(this.defaultRequestChannel);
+		}
+
+		if (StringUtils.hasText(replyChannelName)) {
+			gateway.setReplyChannelName(replyChannelName);
+		}
+		else if (StringUtils.hasText(this.defaultReplyChannelName)) {
+			gateway.setReplyChannelName(this.defaultReplyChannelName);
+		}
+		else {
+			gateway.setReplyChannel(this.defaultReplyChannel);
+		}
+
 		if (requestTimeout == null) {
 			gateway.setRequestTimeout(-1);
 		}
@@ -475,18 +600,9 @@ public class GatewayProxyFactoryBean extends AbstractEndpoint implements Trackab
 		if (this.getBeanFactory() != null) {
 			gateway.setBeanFactory(this.getBeanFactory());
 		}
-		if (this.shouldTrack) {
-			gateway.setShouldTrack(this.shouldTrack);
-		}
+		gateway.setShouldTrack(this.shouldTrack);
 		gateway.afterPropertiesSet();
 		return gateway;
-	}
-
-	private MessageChannel resolveChannelName(String channelName) {
-		Assert.state(this.channelResolver != null, "ChannelResolver is required");
-		MessageChannel channel = this.channelResolver.resolveDestination(channelName);
-		Assert.notNull(channel, "failed to resolve channel '" + channelName + "'");
-		return channel;
 	}
 
 	// Lifecycle implementation
@@ -510,16 +626,21 @@ public class GatewayProxyFactoryBean extends AbstractEndpoint implements Trackab
 		if (Future.class.isAssignableFrom(expectedReturnType)) {
 			return (T) source;
 		}
+		if (Mono.class.isAssignableFrom(expectedReturnType)) {
+			return (T) source;
+		}
 		if (this.getConversionService() != null) {
 			return this.getConversionService().convert(source, expectedReturnType);
 		}
 		else {
-			return typeConverter.convertIfNecessary(source, expectedReturnType);
+			return this.typeConverter.convertIfNecessary(source, expectedReturnType);
 		}
 	}
 
-	private static boolean hasFutureParameterizedWithMessage(Method method) {
-		if (Future.class.isAssignableFrom(method.getReturnType())) {
+	private static boolean hasReturnParameterizedWithMessage(Method method, boolean runningOnCallerThread) {
+		if (!runningOnCallerThread &&
+				(Future.class.isAssignableFrom(method.getReturnType())
+				|| Mono.class.isAssignableFrom(method.getReturnType()))) {
 			Type returnType = method.getGenericReturnType();
 			if (returnType instanceof ParameterizedType) {
 				Type[] typeArgs = ((ParameterizedType) returnType).getActualTypeArguments();
@@ -538,15 +659,16 @@ public class GatewayProxyFactoryBean extends AbstractEndpoint implements Trackab
 	}
 
 
-	private static class MethodInvocationGateway extends MessagingGatewaySupport {
+	private static final class MethodInvocationGateway extends MessagingGatewaySupport {
 
 		private MethodInvocationGateway(GatewayMethodInboundMessageMapper messageMapper) {
 			this.setRequestMapper(messageMapper);
 		}
+
 	}
 
 
-	private class AsyncInvocationTask implements Callable<Object> {
+	private final class AsyncInvocationTask implements Callable<Object> {
 
 		private final MethodInvocation invocation;
 
@@ -557,15 +679,19 @@ public class GatewayProxyFactoryBean extends AbstractEndpoint implements Trackab
 		@Override
 		public Object call() throws Exception {
 			try {
-				return doInvoke(this.invocation);
+				return doInvoke(this.invocation, false);
 			}
-			catch (Throwable t) {
+			catch (Error e) { //NOSONAR
+				throw e;
+			}
+			catch (Throwable t) { //NOSONAR
 				if (t instanceof RuntimeException) {
 					throw (RuntimeException) t;
 				}
-				throw new MessagingException("asynchronous gateway invocation failed", t);
+				throw new MessagingException("Asynchronous gateway invocation failed", t);
 			}
 		}
+
 	}
 
 }

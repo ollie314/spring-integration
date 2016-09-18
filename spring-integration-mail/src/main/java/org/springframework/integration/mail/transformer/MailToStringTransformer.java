@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,15 +20,16 @@ import java.io.ByteArrayOutputStream;
 import java.nio.charset.Charset;
 
 import javax.mail.Multipart;
+import javax.mail.Part;
 
 import org.springframework.integration.support.AbstractIntegrationMessageBuilder;
 import org.springframework.util.Assert;
 
 /**
- * Transforms a Message payload of type {@link javax.mail.Message} to a String.
- * If the mail message's content is a String, it will be the payload of the
- * result Message. If the content is a Multipart, a String will be created from
- * an output stream of bytes using the provided charset (or UTF-8 by default).
+ * Transforms a Message payload of type {@link javax.mail.Message} to a String. If the
+ * mail message's content is a String, it will be the payload of the result Message. If
+ * the content is a Part or Multipart, a String will be created from an output stream of
+ * bytes using the provided charset (or UTF-8 by default).
  *
  * @author Mark Fisher
  * @author Gary Russell
@@ -62,8 +63,14 @@ public class MailToStringTransformer extends AbstractMailMessageTransformer<Stri
 			return this.getMessageBuilderFactory().withPayload(
 					new String(outputStream.toByteArray(), this.charset));
 		}
+		else if (content instanceof Part) {
+			ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+			((Part) content).writeTo(outputStream);
+			return this.getMessageBuilderFactory().withPayload(
+					new String(outputStream.toByteArray(), this.charset));
+		}
 		throw new IllegalArgumentException("failed to transform contentType ["
-				+ mailMessage.getContentType() +"] to String.");
+				+ mailMessage.getContentType() + "] to String.");
 	}
 
 }

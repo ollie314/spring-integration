@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,9 +13,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.jms.request_reply;
 
 import static org.junit.Assert.assertEquals;
+
+import java.util.UUID;
 
 import org.junit.Rule;
 import org.junit.Test;
@@ -28,9 +31,12 @@ import org.springframework.integration.jms.config.ActiveMqTestUtils;
 import org.springframework.integration.support.MessageBuilder;
 import org.springframework.integration.test.support.LongRunningIntegrationTest;
 import org.springframework.integration.test.util.TestUtils;
+import org.springframework.jms.support.JmsHeaders;
+import org.springframework.messaging.Message;
 /**
  * @author Oleg Zhurakousky
  * @author Gary Russell
+ * @author Artem Bilan
  */
 public class RequestReplyScenariosWithCorrelationKeyProvidedTests extends ActiveMQMultiContextTests {
 
@@ -38,7 +44,7 @@ public class RequestReplyScenariosWithCorrelationKeyProvidedTests extends Active
 	public LongRunningIntegrationTest longTests = new LongRunningIntegrationTest();
 
 	@Test
-	public void messageCorrelationBasedCustomCorrelationKey() throws Exception{
+	public void messageCorrelationBasedCustomCorrelationKey() throws Exception {
 		ActiveMqTestUtils.prepare();
 
 		ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext("explicit-correlation-key.xml", this.getClass());
@@ -49,7 +55,7 @@ public class RequestReplyScenariosWithCorrelationKeyProvidedTests extends Active
 	}
 
 	@Test
-	public void messageCorrelationBasedCustomCorrelationKeyAsJMSCorrelationID() throws Exception{
+	public void messageCorrelationBasedCustomCorrelationKeyAsJMSCorrelationID() throws Exception {
 		ActiveMqTestUtils.prepare();
 
 		ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext("explicit-correlation-key.xml", this.getClass());
@@ -60,7 +66,22 @@ public class RequestReplyScenariosWithCorrelationKeyProvidedTests extends Active
 	}
 
 	@Test
-	public void messageCorrelationBasedCustomCorrelationKeyDelayedReplies() throws Exception{
+	public void messageCorrelationBasedOnProvidedJMSCorrelationID() throws Exception {
+		ActiveMqTestUtils.prepare();
+
+		ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext("explicit-correlation-key.xml", this.getClass());
+		RequestReplyExchanger gateway = context.getBean("existingCorrelationKeyGatewayB", RequestReplyExchanger.class);
+
+		String correlationId = UUID.randomUUID().toString().replaceAll("'", "''");
+		Message<?> result = gateway.exchange(MessageBuilder.withPayload("foo")
+				.setHeader(JmsHeaders.CORRELATION_ID, correlationId)
+				.build());
+		assertEquals(correlationId, result.getHeaders().get("receivedCorrelationId"));
+		context.close();
+	}
+
+	@Test
+	public void messageCorrelationBasedCustomCorrelationKeyDelayedReplies() throws Exception {
 		ActiveMqTestUtils.prepare();
 
 		ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext("explicit-correlation-key.xml", this.getClass());
@@ -70,7 +91,8 @@ public class RequestReplyScenariosWithCorrelationKeyProvidedTests extends Active
 		for (int i = 0; i < 3; i++) {
 			try {
 				gateway.exchange(MessageBuilder.withPayload("hello").build());
-			} catch (Exception e) {
+			}
+			catch (Exception e) {
 				// ignore
 			}
 		}
@@ -83,7 +105,7 @@ public class RequestReplyScenariosWithCorrelationKeyProvidedTests extends Active
 
 
 	public static class DelayedService {
-		public String echo(String s) throws Exception{
+		public String echo(String s) throws Exception {
 			Thread.sleep(200);
 			return s;
 		}

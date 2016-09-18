@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -50,6 +50,7 @@ import org.springframework.util.StringUtils;
  *
  * @author Juergen Hoeller
  * @author Mark Fisher
+ * @author Gary Russell
  * @since 2.0
  * @see #setCacheSeconds
  * @see #setBasenames
@@ -536,7 +537,7 @@ public class ReloadableResourceBundleExpressionSource implements ExpressionSourc
 	 * change detection, and the timestamp of the last refresh attempt
 	 * (updated every time the cache entry gets re-validated).
 	 */
-	private class PropertiesHolder {
+	private final class PropertiesHolder {
 
 		private Properties properties;
 
@@ -545,20 +546,20 @@ public class ReloadableResourceBundleExpressionSource implements ExpressionSourc
 		private long refreshTimestamp = -1;
 
 
-		public PropertiesHolder(Properties properties, long fileTimestamp) {
+		private PropertiesHolder(Properties properties, long fileTimestamp) {
 			this.properties = properties;
 			this.fileTimestamp = fileTimestamp;
 		}
 
-		public PropertiesHolder() {
+		private PropertiesHolder() {
 		}
 
 		public Properties getProperties() {
-			return properties;
+			return this.properties;
 		}
 
 		public long getFileTimestamp() {
-			return fileTimestamp;
+			return this.fileTimestamp;
 		}
 
 		public void setRefreshTimestamp(long refreshTimestamp) {
@@ -566,7 +567,7 @@ public class ReloadableResourceBundleExpressionSource implements ExpressionSourc
 		}
 
 		public long getRefreshTimestamp() {
-			return refreshTimestamp;
+			return this.refreshTimestamp;
 		}
 
 		public String getProperty(String code) {

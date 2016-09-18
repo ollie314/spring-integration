@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import static org.junit.Assert.assertEquals;
 
 import org.junit.Test;
 
+import org.springframework.integration.support.json.BoonJsonObjectMapper;
 import org.springframework.integration.support.json.Jackson2JsonObjectMapper;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.support.GenericMessage;
@@ -30,6 +31,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 /**
  * @author Mark Fisher
  * @author Artem Bilan
+ * @author Gary Russell
  * @since 2.0
  */
 public class JsonToObjectTransformerTests {
@@ -37,8 +39,11 @@ public class JsonToObjectTransformerTests {
 	@Test
 	public void objectPayload() throws Exception {
 		JsonToObjectTransformer transformer = new JsonToObjectTransformer(TestPerson.class);
-		String jsonString = "{\"firstName\":\"John\",\"lastName\":\"Doe\",\"age\":42,\"address\":{\"number\":123,\"street\":\"Main Street\"}}";
-		Message<?> message = transformer.transform(new GenericMessage<String>(jsonString));
+		// Since DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES is disabled by default (see Jackson2JsonObjectMapper)
+		// the extra "foo" property is ignored.
+		String jsonString = "{\"firstName\":\"John\",\"lastName\":\"Doe\",\"age\":42," +
+				"\"address\":{\"number\":123,\"street\":\"Main Street\"}, \"foo\":\"bar\"}";
+		Message<?> message = transformer.transform(new GenericMessage<>(jsonString));
 		TestPerson person = (TestPerson) message.getPayload();
 		assertEquals("John", person.getFirstName());
 		assertEquals("Doe", person.getLastName());
@@ -54,6 +59,20 @@ public class JsonToObjectTransformerTests {
 		JsonToObjectTransformer transformer =
 				new JsonToObjectTransformer(TestPerson.class, new Jackson2JsonObjectMapper(customMapper));
 		String jsonString = "{firstName:'John', lastName:'Doe', age:42, address:{number:123, street:'Main Street'}}";
+		Message<?> message = transformer.transform(new GenericMessage<String>(jsonString));
+		TestPerson person = (TestPerson) message.getPayload();
+		assertEquals("John", person.getFirstName());
+		assertEquals("Doe", person.getLastName());
+		assertEquals(42, person.getAge());
+		assertEquals("123 Main Street", person.getAddress().toString());
+	}
+
+
+	@Test
+	public void testBoonJsonObjectMapper() throws Exception {
+		JsonToObjectTransformer transformer = new JsonToObjectTransformer(TestPerson.class, new BoonJsonObjectMapper());
+		String jsonString = "{\"firstName\":\"John\",\"lastName\":\"Doe\",\"age\":42," +
+				"\"address\":{\"number\":123,\"street\":\"Main Street\"}}";
 		Message<?> message = transformer.transform(new GenericMessage<String>(jsonString));
 		TestPerson person = (TestPerson) message.getPayload();
 		assertEquals("John", person.getFirstName());

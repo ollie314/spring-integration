@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 
 package org.springframework.integration.jms.config;
 
+import org.w3c.dom.Element;
+
 import org.springframework.beans.factory.support.BeanDefinitionBuilder;
 import org.springframework.beans.factory.xml.ParserContext;
 import org.springframework.integration.config.ExpressionFactoryBean;
@@ -24,8 +26,6 @@ import org.springframework.integration.config.xml.IntegrationNamespaceUtils;
 import org.springframework.integration.jms.JmsOutboundGateway;
 import org.springframework.util.StringUtils;
 import org.springframework.util.xml.DomUtils;
-
-import org.w3c.dom.Element;
 
 /**
  * Parser for the &lt;outbound-gateway&gt; element of the integration 'jms' namespace.
@@ -45,7 +45,8 @@ public class JmsOutboundGatewayParser extends AbstractConsumerEndpointParser {
 	@Override
 	protected BeanDefinitionBuilder parseHandler(Element element, ParserContext parserContext) {
 		BeanDefinitionBuilder builder = BeanDefinitionBuilder.genericBeanDefinition(JmsOutboundGateway.class);
-		builder.addPropertyReference("connectionFactory", element.getAttribute("connection-factory"));
+		builder.addPropertyReference(JmsParserUtils.CONNECTION_FACTORY_PROPERTY,
+				JmsParserUtils.determineConnectionFactoryBeanName(element, parserContext));
 		parseDestination(element, parserContext, builder, "request-destination", "request-destination-name",
 				"request-destination-expression", "requestDestination", "requestDestinationName",
 				"requestDestinationExpression", true);
@@ -67,12 +68,16 @@ public class JmsOutboundGatewayParser extends AbstractConsumerEndpointParser {
 		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "priority");
 		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "explicit-qos-enabled");
 		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "requires-reply");
+		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "idle-reply-listener-timeout",
+				"idleReplyContainerTimeout");
+		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "async");
 
 		String deliveryPersistent = element.getAttribute("delivery-persistent");
 		if (StringUtils.hasText(deliveryPersistent)) {
 			builder.addPropertyValue("deliveryPersistent", deliveryPersistent);
 		}
 		Element container = DomUtils.getChildElementByTagName(element, "reply-listener");
+
 		if (container != null) {
 			this.parseReplyContainer(builder, parserContext, container);
 		}
@@ -119,15 +124,7 @@ public class JmsOutboundGatewayParser extends AbstractConsumerEndpointParser {
 
 	private void parseReplyContainer(BeanDefinitionBuilder gatewayBuilder, ParserContext parserContext, Element element) {
 		BeanDefinitionBuilder builder = BeanDefinitionBuilder.genericBeanDefinition(JmsOutboundGateway.ReplyContainerProperties.class);
-		Integer acknowledgeMode = JmsAdapterParserUtils.parseAcknowledgeMode(element, parserContext);
-		if (acknowledgeMode != null) {
-			if (JmsAdapterParserUtils.SESSION_TRANSACTED == acknowledgeMode) {
-				builder.addPropertyValue("sessionTransacted", Boolean.TRUE);
-			}
-			else {
-				builder.addPropertyValue("sessionAcknowledgeMode", acknowledgeMode);
-			}
-		}
+		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "acknowledge", "sessionAcknowledgeModeName");
 		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "concurrent-consumers");
 		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "max-concurrent-consumers");
 		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "max-messages-per-task");

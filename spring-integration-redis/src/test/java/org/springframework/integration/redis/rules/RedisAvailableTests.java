@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,25 +13,24 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.redis.rules;
 
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
-
-import java.util.UUID;
 
 import org.junit.Rule;
 
-import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.connection.RedisConnection;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
-import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.BoundListOperations;
 import org.springframework.data.redis.core.BoundZSetOperations;
-import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
+import org.springframework.integration.channel.QueueChannel;
 import org.springframework.integration.test.util.TestUtils;
+import org.springframework.messaging.Message;
 
 /**
  * @author Oleg Zhurakousky
@@ -44,33 +43,39 @@ public class RedisAvailableTests {
 	@Rule
 	public RedisAvailableRule redisAvailableRule = new RedisAvailableRule();
 
-	protected RedisConnectionFactory getConnectionFactoryForTest(){
-		LettuceConnectionFactory connectionFactory =  RedisAvailableRule.connectionFactoryResource.get();
-		RedisTemplate<UUID, Object> rt = new RedisTemplate<UUID, Object>();
-		rt.setConnectionFactory(connectionFactory);
-		rt.afterPropertiesSet();
-		rt.execute(new RedisCallback<Object>() {
+	private RedisConnectionFactory connectionFactory;
 
-			public Object doInRedis(RedisConnection connection)
-					throws DataAccessException {
-				connection.flushDb();
-				return null;
-			}
-		});
+	protected RedisConnectionFactory getConnectionFactoryForTest() {
+		if (this.connectionFactory != null) {
+			return this.connectionFactory;
+		}
+		RedisConnectionFactory connectionFactory =  RedisAvailableRule.connectionFactoryResource.get();
+		this.connectionFactory = connectionFactory;
 		return connectionFactory;
 	}
 
 	protected void awaitContainerSubscribed(RedisMessageListenerContainer container) throws Exception {
-		RedisConnection connection = TestUtils.getPropertyValue(container, "subscriptionTask.connection",
-				RedisConnection.class);
+		awaitContainerSubscribedNoWait(container);
+		// wait another second because of race condition
+		Thread.sleep(1000);
+	}
+
+	private void awaitContainerSubscribedNoWait(RedisMessageListenerContainer container) throws InterruptedException {
+		RedisConnection connection = null;
 
 		int n = 0;
-		while (n++ < 100 && !connection.isSubscribed()) {
+		while (n++ < 300 &&
+				(connection =
+				TestUtils.getPropertyValue(container, "subscriptionTask.connection", RedisConnection .class)) == null) {
 			Thread.sleep(100);
 		}
-		// TODO: remove this additional delay when/if https://jira.springsource.org/browse/DATAREDIS-242 is resolved
-		Thread.sleep(250);
-		assertTrue("RedisMessageListenerContainer Failed to Subscribe", n < 100);
+		assertNotNull("RedisMessageListenerContainer Failed to Connect", connection);
+
+		n = 0;
+		while (n++ < 300 && !connection.isSubscribed()) {
+			Thread.sleep(100);
+		}
+		assertTrue("RedisMessageListenerContainer Failed to Subscribe", n < 300);
 	}
 
 	protected void awaitContainerSubscribedWithPatterns(RedisMessageListenerContainer container) throws Exception {
@@ -79,19 +84,38 @@ public class RedisAvailableTests {
 				RedisConnection.class);
 
 		int n = 0;
-		while (n++ < 100 && connection.getSubscription().getPatterns().size() == 0) {
+		while (n++ < 300 && connection.getSubscription().getPatterns().size() == 0) {
 			Thread.sleep(100);
 		}
-		// TODO: remove this additional delay when/if https://jira.springsource.org/browse/DATAREDIS-242 is resolved
-		Thread.sleep(250);
-		assertTrue("RedisMessageListenerContainer Failed to Subscribe with patterns", n < 100);
+		assertTrue("RedisMessageListenerContainer Failed to Subscribe with patterns", n < 300);
+		// wait another second because of race condition
+		Thread.sleep(1000);
 	}
 
-	protected void prepareList(RedisConnectionFactory connectionFactory){
+	protected void awaitFullySubscribed(RedisMessageListenerContainer container, RedisTemplate<?, ?> redisTemplate,
+			String redisChannelName, QueueChannel channel, Object message) throws Exception {
+		awaitContainerSubscribedNoWait(container);
+		drain(channel);
+		long now = System.currentTimeMillis();
+		Message<?> received = null;
+		while (received == null && System.currentTimeMillis() - now < 30000) {
+			redisTemplate.convertAndSend(redisChannelName, message);
+			received = channel.receive(1000);
+		}
+		drain(channel);
+		assertNotNull("Container failed to fully start", received);
+	}
 
-		StringRedisTemplate redisTemplate = new StringRedisTemplate();
-		redisTemplate.setConnectionFactory(connectionFactory);
-		redisTemplate.afterPropertiesSet();
+	private void drain(QueueChannel channel) {
+		while (channel.receive(0) != null) {
+			// drain
+		}
+	}
+
+	protected void prepareList(RedisConnectionFactory connectionFactory) {
+
+		StringRedisTemplate redisTemplate = createStringRedisTemplate(connectionFactory);
+		redisTemplate.delete("presidents");
 		BoundListOperations<String, String> ops = redisTemplate.boundListOps("presidents");
 
 		ops.rightPush("John Adams");
@@ -111,12 +135,11 @@ public class RedisAvailableTests {
 		ops.rightPush("George Washington");
 	}
 
-	protected void prepareZset(RedisConnectionFactory connectionFactory){
+	protected void prepareZset(RedisConnectionFactory connectionFactory) {
 
-		StringRedisTemplate redisTemplate = new StringRedisTemplate();
-		redisTemplate.setConnectionFactory(connectionFactory);
-		redisTemplate.afterPropertiesSet();
+		StringRedisTemplate redisTemplate = createStringRedisTemplate(connectionFactory);
 
+		redisTemplate.delete("presidents");
 		BoundZSetOperations<String, String> ops = redisTemplate.boundZSetOps("presidents");
 
 		ops.add("John Adams", 18);
@@ -134,6 +157,22 @@ public class RedisAvailableTests {
 		ops.add("William J. Clinton", 20);
 		ops.add("Abraham Lincoln", 19);
 		ops.add("George Washington", 18);
+	}
+
+	protected void deletePresidents(RedisConnectionFactory connectionFactory) {
+		this.deleteKey(connectionFactory, "presidents");
+	}
+
+	protected void deleteKey(RedisConnectionFactory connectionFactory, String key) {
+		StringRedisTemplate redisTemplate = createStringRedisTemplate(connectionFactory);
+		redisTemplate.delete(key);
+	}
+
+	protected StringRedisTemplate createStringRedisTemplate(RedisConnectionFactory connectionFactory) {
+		StringRedisTemplate redisTemplate = new StringRedisTemplate();
+		redisTemplate.setConnectionFactory(connectionFactory);
+		redisTemplate.afterPropertiesSet();
+		return redisTemplate;
 	}
 
 }

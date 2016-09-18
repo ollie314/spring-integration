@@ -1,11 +1,11 @@
 /*
- * Copyright 2014 the original author or authors.
+ * Copyright 2014-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -45,7 +45,8 @@ public class HttpIntegrationConfigurationInitializer implements IntegrationConfi
 			this.registerRequestMappingHandlerMappingIfNecessary((BeanDefinitionRegistry) beanFactory);
 		}
 		else {
-			logger.warn("'IntegrationRequestMappingHandlerMapping' isn't registered because 'beanFactory' isn't an instance of `BeanDefinitionRegistry`.");
+			logger.warn("'IntegrationRequestMappingHandlerMapping' isn't registered because 'beanFactory'" +
+					" isn't an instance of `BeanDefinitionRegistry`.");
 		}
 	}
 
@@ -54,14 +55,20 @@ public class HttpIntegrationConfigurationInitializer implements IntegrationConfi
 	 * which could also be overridden by the user by simply registering
 	 * a {@link IntegrationRequestMappingHandlerMapping} {@code <bean>} with 'id'
 	 * {@link HttpContextUtils#HANDLER_MAPPING_BEAN_NAME}.
+	 * <p>
+	 * In addition, checks if the {@code javax.servlet.Servlet} class is present on the classpath.
+	 * When Spring Integration HTTP is used only as an HTTP client, there is no reason to use and register
+	 * the HTTP server components.
 	 */
 	private void registerRequestMappingHandlerMappingIfNecessary(BeanDefinitionRegistry registry) {
-		if (!registry.containsBeanDefinition(HttpContextUtils.HANDLER_MAPPING_BEAN_NAME)) {
+		if (HttpContextUtils.SERVLET_PRESENT &&
+				!registry.containsBeanDefinition(HttpContextUtils.HANDLER_MAPPING_BEAN_NAME)) {
 			BeanDefinitionBuilder requestMappingBuilder =
 					BeanDefinitionBuilder.genericBeanDefinition(IntegrationRequestMappingHandlerMapping.class);
 			requestMappingBuilder.setRole(BeanDefinition.ROLE_INFRASTRUCTURE);
 			requestMappingBuilder.addPropertyValue(IntegrationNamespaceUtils.ORDER, 0);
-			registry.registerBeanDefinition(HttpContextUtils.HANDLER_MAPPING_BEAN_NAME, requestMappingBuilder.getBeanDefinition());
+			registry.registerBeanDefinition(HttpContextUtils.HANDLER_MAPPING_BEAN_NAME,
+					requestMappingBuilder.getBeanDefinition());
 		}
 	}
 

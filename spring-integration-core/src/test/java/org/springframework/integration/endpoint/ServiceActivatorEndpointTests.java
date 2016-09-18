@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2011 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,21 +20,27 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
+import static org.mockito.Mockito.mock;
 
 import org.junit.Test;
+
+import org.springframework.beans.factory.BeanFactory;
 import org.springframework.integration.IntegrationMessageHeaderAccessor;
 import org.springframework.integration.channel.QueueChannel;
 import org.springframework.integration.channel.TestChannelResolver;
 import org.springframework.integration.handler.ReplyRequiredException;
 import org.springframework.integration.handler.ServiceActivatingHandler;
-import org.springframework.messaging.support.GenericMessage;
 import org.springframework.integration.support.MessageBuilder;
+import org.springframework.integration.test.util.TestUtils;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessagingException;
+import org.springframework.messaging.support.GenericMessage;
 
 /**
  * @author Mark Fisher
  * @author Marius Bogoevici
+ * @author Artem Bilan
  */
 public class ServiceActivatorEndpointTests {
 
@@ -84,6 +90,8 @@ public class ServiceActivatorEndpointTests {
 		channelResolver.addChannel("testChannel", channel);
 		ServiceActivatingHandler endpoint = this.createEndpoint();
 		endpoint.setChannelResolver(channelResolver);
+		endpoint.setBeanFactory(mock(BeanFactory.class));
+		endpoint.afterPropertiesSet();
 		Message<?> message = MessageBuilder.withPayload("foo")
 				.setReplyChannelName("testChannel").build();
 		endpoint.handleMessage(message);
@@ -107,6 +115,8 @@ public class ServiceActivatorEndpointTests {
 		TestChannelResolver channelResolver = new TestChannelResolver();
 		channelResolver.addChannel("replyChannel2", replyChannel2);
 		endpoint.setChannelResolver(channelResolver);
+		endpoint.setBeanFactory(mock(BeanFactory.class));
+		endpoint.afterPropertiesSet();
 		Message<String> testMessage1 = MessageBuilder.withPayload("bar")
 				.setReplyChannel(replyChannel1).build();
 		endpoint.handleMessage(testMessage1);
@@ -198,6 +208,17 @@ public class ServiceActivatorEndpointTests {
 		Object correlationId = new IntegrationMessageHeaderAccessor(reply).getCorrelationId();
 		assertFalse(message.getHeaders().getId().equals(correlationId));
 		assertEquals("ABC-123", correlationId);
+	}
+
+	@Test
+	public void testBeanFactoryPopulation() {
+		ServiceActivatingHandler endpoint = this.createEndpoint();
+		BeanFactory mock = mock(BeanFactory.class);
+		endpoint.setBeanFactory(mock);
+		endpoint.afterPropertiesSet();
+		Object beanFactory = TestUtils.getPropertyValue(endpoint, "processor.beanFactory");
+		assertNotNull(beanFactory);
+		assertSame(mock, beanFactory);
 	}
 
 

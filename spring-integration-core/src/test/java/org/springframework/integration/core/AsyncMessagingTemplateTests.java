@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2010 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -58,7 +58,7 @@ public class AsyncMessagingTemplateTests {
 		template.setDefaultDestination(channel);
 		Message<?> message = MessageBuilder.withPayload("test").build();
 		Future<?> future = template.asyncSend(message);
-		assertNull(future.get(1000, TimeUnit.MILLISECONDS));
+		assertNull(future.get(10000, TimeUnit.MILLISECONDS));
 		Message<?> result = channel.receive(0);
 		assertEquals(message, result);
 	}
@@ -69,7 +69,7 @@ public class AsyncMessagingTemplateTests {
 		AsyncMessagingTemplate template = new AsyncMessagingTemplate();
 		Message<?> message = MessageBuilder.withPayload("test").build();
 		Future<?> future = template.asyncSend(channel, message);
-		assertNull(future.get(1000, TimeUnit.MILLISECONDS));
+		assertNull(future.get(10000, TimeUnit.MILLISECONDS));
 		Message<?> result = channel.receive(0);
 		assertEquals(message, result);
 	}
@@ -84,7 +84,7 @@ public class AsyncMessagingTemplateTests {
 		template.setBeanFactory(context);
 		Message<?> message = MessageBuilder.withPayload("test").build();
 		Future<?> future = template.asyncSend("testChannel", message);
-		assertNull(future.get(1000, TimeUnit.MILLISECONDS));
+		assertNull(future.get(10000, TimeUnit.MILLISECONDS));
 		Message<?> result = channel.receive(0);
 		assertEquals(message, result);
 	}
@@ -104,7 +104,7 @@ public class AsyncMessagingTemplateTests {
 		AsyncMessagingTemplate template = new AsyncMessagingTemplate();
 		template.setDefaultDestination(channel);
 		Future<?> future = template.asyncConvertAndSend("test");
-		assertNull(future.get(1000, TimeUnit.MILLISECONDS));
+		assertNull(future.get(10000, TimeUnit.MILLISECONDS));
 		Message<?> result = channel.receive(0);
 		assertEquals("test", result.getPayload());
 	}
@@ -114,7 +114,7 @@ public class AsyncMessagingTemplateTests {
 		QueueChannel channel = new QueueChannel();
 		AsyncMessagingTemplate template = new AsyncMessagingTemplate();
 		Future<?> future = template.asyncConvertAndSend(channel, "test");
-		assertNull(future.get(1000, TimeUnit.MILLISECONDS));
+		assertNull(future.get(10000, TimeUnit.MILLISECONDS));
 		Message<?> result = channel.receive(0);
 		assertEquals("test", result.getPayload());
 	}
@@ -128,7 +128,7 @@ public class AsyncMessagingTemplateTests {
 		AsyncMessagingTemplate template = new AsyncMessagingTemplate();
 		template.setBeanFactory(context);
 		Future<?> future = template.asyncConvertAndSend("testChannel", "test");
-		assertNull(future.get(1000, TimeUnit.MILLISECONDS));
+		assertNull(future.get(10000, TimeUnit.MILLISECONDS));
 		Message<?> result = channel.receive(0);
 		assertEquals("test", result.getPayload());
 	}
@@ -150,10 +150,10 @@ public class AsyncMessagingTemplateTests {
 		Future<Message<?>> result = template.asyncReceive();
 		sendMessageAfterDelay(channel, new GenericMessage<String>("test"), 200);
 		long start = System.currentTimeMillis();
-		assertNotNull(result.get(1000, TimeUnit.MILLISECONDS));
+		assertNotNull(result.get(100000, TimeUnit.MILLISECONDS));
 		long elapsed = System.currentTimeMillis() - start;
 		assertEquals("test", result.get().getPayload());
-		assertTrue(elapsed >= 200-safety);
+		assertTrue(elapsed >= 200 - safety);
 	}
 
 	@Test
@@ -163,10 +163,10 @@ public class AsyncMessagingTemplateTests {
 		Future<Message<?>> result = template.asyncReceive(channel);
 		sendMessageAfterDelay(channel, new GenericMessage<String>("test"), 200);
 		long start = System.currentTimeMillis();
-		assertNotNull(result.get(1000, TimeUnit.MILLISECONDS));
+		assertNotNull(result.get(10000, TimeUnit.MILLISECONDS));
 		long elapsed = System.currentTimeMillis() - start;
 		assertEquals("test", result.get().getPayload());
-		assertTrue(elapsed >= 200-safety);
+		assertTrue(elapsed >= 200 - safety);
 	}
 
 	@Test
@@ -180,10 +180,10 @@ public class AsyncMessagingTemplateTests {
 		Future<Message<?>> result = template.asyncReceive("testChannel");
 		sendMessageAfterDelay(channel, new GenericMessage<String>("test"), 200);
 		long start = System.currentTimeMillis();
-		assertNotNull(result.get(1000, TimeUnit.MILLISECONDS));
+		assertNotNull(result.get(10000, TimeUnit.MILLISECONDS));
 		long elapsed = System.currentTimeMillis() - start;
 
-		assertTrue(elapsed >= 200-safety);
+		assertTrue(elapsed >= 200 - safety);
 		assertEquals("test", result.get().getPayload());
 	}
 
@@ -202,11 +202,11 @@ public class AsyncMessagingTemplateTests {
 		Future<?> result = template.asyncReceiveAndConvert();
 		sendMessageAfterDelay(channel, new GenericMessage<String>("test"), 200);
 		long start = System.currentTimeMillis();
-		assertNotNull(result.get(1000, TimeUnit.MILLISECONDS));
+		assertNotNull(result.get(10000, TimeUnit.MILLISECONDS));
 		long elapsed = System.currentTimeMillis() - start;
 		assertEquals("test", result.get());
 
-		assertTrue(elapsed >= 200-safety);
+		assertTrue(elapsed >= 200 - safety);
 	}
 
 	@Test
@@ -216,11 +216,11 @@ public class AsyncMessagingTemplateTests {
 		Future<?> result = template.asyncReceiveAndConvert(channel);
 		sendMessageAfterDelay(channel, new GenericMessage<String>("test"), 200);
 		long start = System.currentTimeMillis();
-		assertNotNull(result.get(1000, TimeUnit.MILLISECONDS));
+		assertNotNull(result.get(10000, TimeUnit.MILLISECONDS));
 		long elapsed = System.currentTimeMillis() - start;
 		assertEquals("test", result.get());
 
-		assertTrue(elapsed >= 200-safety);
+		assertTrue(elapsed >= 200 - safety);
 	}
 
 	@Test
@@ -234,10 +234,10 @@ public class AsyncMessagingTemplateTests {
 		Future<?> result = template.asyncReceiveAndConvert("testChannel");
 		sendMessageAfterDelay(channel, new GenericMessage<String>("test"), 200);
 		long start = System.currentTimeMillis();
-		assertNotNull(result.get(1000, TimeUnit.MILLISECONDS));
+		assertNotNull(result.get(10000, TimeUnit.MILLISECONDS));
 		long elapsed = System.currentTimeMillis() - start;
 
-		assertTrue(elapsed >= 200-safety);
+		assertTrue(elapsed >= 200 - safety);
 		assertEquals("test", result.get());
 	}
 
@@ -259,7 +259,7 @@ public class AsyncMessagingTemplateTests {
 		assertNotNull(result.get());
 		long elapsed = System.currentTimeMillis() - start;
 
-		assertTrue(elapsed >= 200-safety);
+		assertTrue(elapsed >= 200 - safety);
 	}
 
 	@Test
@@ -272,7 +272,7 @@ public class AsyncMessagingTemplateTests {
 		assertNotNull(result.get());
 		long elapsed = System.currentTimeMillis() - start;
 
-		assertTrue(elapsed >= 200-safety);
+		assertTrue(elapsed >= 200 - safety);
 		assertEquals("TEST", result.get().getPayload());
 	}
 
@@ -290,7 +290,7 @@ public class AsyncMessagingTemplateTests {
 		assertNotNull(result.get());
 		long elapsed = System.currentTimeMillis() - start;
 
-		assertTrue(elapsed >= 200-safety);
+		assertTrue(elapsed >= 200 - safety);
 		assertEquals("TEST", result.get().getPayload());
 	}
 
@@ -305,7 +305,7 @@ public class AsyncMessagingTemplateTests {
 		assertNotNull(result.get());
 		long elapsed = System.currentTimeMillis() - start;
 
-		assertTrue(elapsed >= 200-safety);
+		assertTrue(elapsed >= 200 - safety);
 		assertEquals("TEST", result.get());
 	}
 
@@ -319,7 +319,7 @@ public class AsyncMessagingTemplateTests {
 		assertNotNull(result.get());
 		long elapsed = System.currentTimeMillis() - start;
 
-		assertTrue(elapsed >= 200-safety);
+		assertTrue(elapsed >= 200 - safety);
 		assertEquals("TEST", result.get());
 	}
 
@@ -337,7 +337,7 @@ public class AsyncMessagingTemplateTests {
 		assertNotNull(result.get());
 		long elapsed = System.currentTimeMillis() - start;
 
-		assertTrue(elapsed >= 200-safety);
+		assertTrue(elapsed >= 200 - safety);
 		assertEquals("TEST", result.get());
 	}
 
@@ -348,11 +348,11 @@ public class AsyncMessagingTemplateTests {
 		AsyncMessagingTemplate template = new AsyncMessagingTemplate();
 		template.setDefaultDestination(channel);
 		long start = System.currentTimeMillis();
-		Future<String> result = template.asyncConvertSendAndReceive(new Integer(123), new TestMessagePostProcessor());
+		Future<String> result = template.asyncConvertSendAndReceive(123, new TestMessagePostProcessor());
 		assertNotNull(result.get());
 		long elapsed = System.currentTimeMillis() - start;
 
-		assertTrue(elapsed >= 200-safety);
+		assertTrue(elapsed >= 200 - safety);
 		assertEquals("123-bar", result.get());
 	}
 
@@ -366,7 +366,7 @@ public class AsyncMessagingTemplateTests {
 		assertNotNull(result.get());
 		long elapsed = System.currentTimeMillis() - start;
 
-		assertTrue(elapsed >= 200-safety);
+		assertTrue(elapsed >= 200 - safety);
 		assertEquals("TEST-bar", result.get());
 	}
 
@@ -384,14 +384,14 @@ public class AsyncMessagingTemplateTests {
 		assertNotNull(result.get());
 		long elapsed = System.currentTimeMillis() - start;
 
-		assertTrue(elapsed >= 200-safety);
+		assertTrue(elapsed >= 200 - safety);
 		assertEquals("TEST-bar", result.get());
 	}
 
 	@Test(expected = TimeoutException.class)
 	public void timeoutException() throws Exception {
 		DirectChannel channel = new DirectChannel();
-		channel.subscribe(new EchoHandler(200));
+		channel.subscribe(new EchoHandler(10000));
 		AsyncMessagingTemplate template = new AsyncMessagingTemplate();
 		template.setDefaultDestination(channel);
 		Future<Message<?>> result = template.asyncSendAndReceive(MessageBuilder.withPayload("test").build());
@@ -406,7 +406,7 @@ public class AsyncMessagingTemplateTests {
 		template.setDefaultDestination(channel);
 		Future<Message<?>> result = template.asyncSendAndReceive(MessageBuilder.withPayload("test").build());
 		try {
-			result.get(10, TimeUnit.MILLISECONDS);
+			result.get(10, TimeUnit.SECONDS);
 			fail();
 		}
 		catch (ExecutionException e) {
@@ -435,8 +435,10 @@ public class AsyncMessagingTemplateTests {
 	}
 
 
-	private static void sendMessageAfterDelay(final MessageChannel channel, final GenericMessage<String> message, final int delay) {
+	private static void sendMessageAfterDelay(final MessageChannel channel, final GenericMessage<String> message,
+	                                          final int delay) {
 		Executors.newSingleThreadExecutor().execute(new Runnable() {
+
 			public void run() {
 				try {
 					Thread.sleep(delay);
@@ -447,6 +449,7 @@ public class AsyncMessagingTemplateTests {
 				}
 				channel.send(message);
 			}
+
 		});
 	}
 
@@ -480,6 +483,7 @@ public class AsyncMessagingTemplateTests {
 			String header = requestMessage.getHeaders().get("foo", String.class);
 			return (header != null) ? result + "-" + header : result;
 		}
+
 	}
 
 
@@ -488,6 +492,7 @@ public class AsyncMessagingTemplateTests {
 		public Message<?> postProcessMessage(Message<?> message) {
 			return MessageBuilder.fromMessage(message).setHeader("foo", "bar").build();
 		}
+
 	}
 
 }

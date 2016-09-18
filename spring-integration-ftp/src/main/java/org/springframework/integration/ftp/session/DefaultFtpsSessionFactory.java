@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2010 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,19 +17,22 @@
 package org.springframework.integration.ftp.session;
 
 import java.io.IOException;
+import java.util.Arrays;
 
 import javax.net.ssl.KeyManager;
 import javax.net.ssl.TrustManager;
 
 import org.apache.commons.net.ftp.FTPSClient;
+
 import org.springframework.util.StringUtils;
 
 /**
  * SessionFactory for FTPS.
- * 
+ *
  * @author Josh Long
  * @author Iwein Fuld
  * @author Mark Fisher
+ * @author Gary Russell
  * @since 2.0
  */
 public class DefaultFtpsSessionFactory extends AbstractFtpSessionFactory<FTPSClient> {
@@ -80,11 +83,11 @@ public class DefaultFtpsSessionFactory extends AbstractFtpSessionFactory<FTPSCli
 	}
 
 	public void setCipherSuites(String[] cipherSuites) {
-		this.cipherSuites = cipherSuites;
+		this.cipherSuites = Arrays.copyOf(cipherSuites, cipherSuites.length);
 	}
 
 	public void setProtocols(String[] protocols) {
-		this.protocols = protocols;
+		this.protocols = Arrays.copyOf(protocols, protocols.length);
 	}
 
 	public void setKeyManager(KeyManager keyManager) {
@@ -116,17 +119,17 @@ public class DefaultFtpsSessionFactory extends AbstractFtpSessionFactory<FTPSCli
 			return new FTPSClient(this.implicit);
 		}
 		catch (Exception e) {
-		    
-			/* 
-			 This catch block is technically not necessary but it allows users 
-			 to use the older Commons Net 2.0 if necessary, which requires you 
-			 to catch a NoSuchAlgorithmException. 
+
+			/*
+			 This catch block is technically not necessary but it allows users
+			 to use the older Commons Net 2.0 if necessary, which requires you
+			 to catch a NoSuchAlgorithmException.
 			 */
-			
-			if (e instanceof RuntimeException) {
+
+			if (e instanceof RuntimeException) { //NOSONAR false positive
 		        throw (RuntimeException) e;
 		    }
-		    
+
 			throw new RuntimeException("Failed to create FTPS client.", e);
 		}
 	}
@@ -140,7 +143,7 @@ public class DefaultFtpsSessionFactory extends AbstractFtpSessionFactory<FTPSCli
 	@Override
 	protected void postProcessClientBeforeConnect(FTPSClient ftpsClient) throws IOException {
 		if (StringUtils.hasText(this.authValue)) {
-			ftpsClient.setAuthValue(authValue);
+			ftpsClient.setAuthValue(this.authValue);
 		}
 		if (this.trustManager != null) {
 			ftpsClient.setTrustManager(this.trustManager);
@@ -161,7 +164,7 @@ public class DefaultFtpsSessionFactory extends AbstractFtpSessionFactory<FTPSCli
 			ftpsClient.setEnabledSessionCreation(this.sessionCreation);
 		}
 		if (this.keyManager != null) {
-			ftpsClient.setKeyManager(keyManager);
+			ftpsClient.setKeyManager(this.keyManager);
 		}
 		if (this.needClientAuth != null) {
 			ftpsClient.setNeedClientAuth(this.needClientAuth);

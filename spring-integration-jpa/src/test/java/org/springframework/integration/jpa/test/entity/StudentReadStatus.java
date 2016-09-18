@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.jpa.test.entity;
 
 import java.util.Date;
@@ -31,14 +32,14 @@ import javax.persistence.TemporalType;
  *
  */
 @Entity
-@Table(name="StudentReadStatus")
+@Table(name = "StudentReadStatus")
 public class StudentReadStatus {
 
 	@Id
-	@Column(name="rollNumber")
+	@Column(name = "rollNumber")
 	private int rollNumber;
 
-	@Column(name="readAt")
+	@Column(name = "readAt")
 	@Temporal(TemporalType.TIMESTAMP)
 	private Date readAt;
 

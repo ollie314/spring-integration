@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,23 @@
 
 package org.springframework.integration.amqp.channel;
 
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.List;
+import java.util.Map;
+
 import org.springframework.amqp.core.AmqpAdmin;
 import org.springframework.amqp.core.AmqpTemplate;
 import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.rabbit.core.RabbitAdmin;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.integration.amqp.support.AmqpHeaderMapper;
+import org.springframework.integration.channel.ExecutorChannelInterceptorAware;
+import org.springframework.integration.support.management.PollableChannelManagement;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.PollableChannel;
+import org.springframework.messaging.support.ChannelInterceptor;
+import org.springframework.messaging.support.ExecutorChannelInterceptor;
 import org.springframework.util.Assert;
 
 /**
@@ -31,9 +41,12 @@ import org.springframework.util.Assert;
  * name as the routing key.
  *
  * @author Mark Fisher
+ * @author Artem Bilan
+ * @author Gary Russell
  * @since 2.1
  */
-public class PollableAmqpChannel extends AbstractAmqpChannel implements PollableChannel {
+public class PollableAmqpChannel extends AbstractAmqpChannel
+		implements PollableChannel, PollableChannelManagement, ExecutorChannelInterceptorAware {
 
 	private final String channelName;
 
@@ -41,9 +54,33 @@ public class PollableAmqpChannel extends AbstractAmqpChannel implements Pollable
 
 	private volatile AmqpAdmin amqpAdmin;
 
+	private volatile int executorInterceptorsSize;
 
+	/**
+	 * Construct an instance with the supplied name, template and default header mappers
+	 * used if the template is a {@link RabbitTemplate} and the message is mapped.
+	 * @param channelName the channel name.
+	 * @param amqpTemplate the template.
+	 * @see #setExtractPayload(boolean)
+	 */
 	public PollableAmqpChannel(String channelName, AmqpTemplate amqpTemplate) {
 		super(amqpTemplate);
+		Assert.hasText(channelName, "channel name must not be empty");
+		this.channelName = channelName;
+	}
+
+	/**
+	 * Construct an instance with the supplied name, template and header mappers.
+	 * @param channelName the channel name.
+	 * @param amqpTemplate the template.
+	 * @param outboundMapper the outbound mapper.
+	 * @param inboundMapper the inbound mapper.
+	 * @see #setExtractPayload(boolean)
+	 * @since 4.3
+	 */
+	public PollableAmqpChannel(String channelName, AmqpTemplate amqpTemplate, AmqpHeaderMapper outboundMapper,
+			AmqpHeaderMapper inboundMapper) {
+		super(amqpTemplate, outboundMapper, inboundMapper);
 		Assert.hasText(channelName, "channel name must not be empty");
 		this.channelName = channelName;
 	}
@@ -72,7 +109,33 @@ public class PollableAmqpChannel extends AbstractAmqpChannel implements Pollable
 	}
 
 	@Override
+	public int getReceiveCount() {
+		return getMetrics().getReceiveCount();
+	}
+
+	@Override
+	public long getReceiveCountLong() {
+		return getMetrics().getReceiveCountLong();
+	}
+
+	@Override
+	public int getReceiveErrorCount() {
+		return getMetrics().getReceiveErrorCount();
+	}
+
+	@Override
+	public long getReceiveErrorCountLong() {
+		return getMetrics().getReceiveErrorCountLong();
+	}
+
+	@Override
+	protected String getRoutingKey() {
+		return this.queueName;
+	}
+
+	@Override
 	protected void onInit() throws Exception {
+		super.onInit();
 		AmqpTemplate amqpTemplate = this.getAmqpTemplate();
 		if (this.queueName == null) {
 			if (this.amqpAdmin == null && amqpTemplate instanceof RabbitTemplate) {
@@ -87,36 +150,139 @@ public class PollableAmqpChannel extends AbstractAmqpChannel implements Pollable
 	}
 
 	@Override
-	protected String getRoutingKey() {
-		return this.queueName;
+	public Message<?> receive() {
+		ChannelInterceptorList interceptorList = getInterceptors();
+		Deque<ChannelInterceptor> interceptorStack = null;
+		boolean counted = false;
+		boolean countsEnabled = isCountsEnabled();
+		try {
+			if (isLoggingEnabled() && logger.isTraceEnabled()) {
+				logger.trace("preReceive on channel '" + this + "'");
+			}
+			if (interceptorList.getInterceptors().size() > 0) {
+				interceptorStack = new ArrayDeque<ChannelInterceptor>();
+
+				if (!interceptorList.preReceive(this, interceptorStack)) {
+					 return null;
+				}
+			}
+			Object object = doReceive();
+			if (object == null) {
+				if (isLoggingEnabled() && logger.isTraceEnabled()) {
+					logger.trace("postReceive on channel '" + this + "', message is null");
+				}
+				return null;
+			}
+			if (countsEnabled) {
+				getMetrics().afterReceive();
+				counted = true;
+			}
+			Message<?> message = null;
+			if (object instanceof Message<?>) {
+				message = (Message<?>) object;
+			}
+			else {
+				message = getMessageBuilderFactory().withPayload(object).build();
+			}
+			if (isLoggingEnabled() && logger.isDebugEnabled()) {
+				logger.debug("postReceive on channel '" + this + "', message: " + message);
+			}
+			if (interceptorStack != null) {
+				message = interceptorList.postReceive(message, this);
+				interceptorList.afterReceiveCompletion(message, this, null, interceptorStack);
+			}
+			return message;
+		}
+		catch (RuntimeException e) {
+			if (countsEnabled && !counted) {
+				getMetrics().afterError();
+			}
+			if (interceptorStack != null) {
+				interceptorList.afterReceiveCompletion(null, this, e, interceptorStack);
+			}
+			throw e;
+		}
 	}
 
-	@Override
-	public Message<?> receive() {
-		if (!this.getInterceptors().preReceive(this)) {
- 			return null;
- 		}
-		Object object = this.getAmqpTemplate().receiveAndConvert(this.queueName);
-		if (object == null) {
-			return null;
-		}
-		Message<?> replyMessage = null;
-		if (object instanceof Message<?>) {
-			replyMessage = (Message<?>) object;
+
+	protected Object doReceive() {
+		if (!isExtractPayload()) {
+			return getAmqpTemplate().receiveAndConvert(this.queueName);
 		}
 		else {
-			replyMessage = this.getMessageBuilderFactory().withPayload(object).build();
+			RabbitTemplate rabbitTemplate = getRabbitTemplate();
+			org.springframework.amqp.core.Message message = rabbitTemplate.receive(this.queueName);
+			if (message != null) {
+				Object payload = rabbitTemplate.getMessageConverter().fromMessage(message);
+				Map<String, Object> headers = getInboundHeaderMapper()
+						.toHeadersFromRequest(message.getMessageProperties());
+				return getMessageBuilderFactory()
+						.withPayload(payload)
+						.copyHeaders(headers)
+						.build();
+			}
+			else {
+				return null;
+			}
 		}
-		return this.getInterceptors().postReceive(replyMessage, this) ;
 	}
 
 	@Override
 	public Message<?> receive(long timeout) {
-		if (logger.isInfoEnabled()) {
+		if (isLoggingEnabled() && logger.isInfoEnabled()) {
 			logger.info("Calling receive with a timeout value on PollableAmqpChannel. " +
 					"The timeout will be ignored since no receive timeout is supported.");
 		}
 		return this.receive();
+	}
+
+	@Override
+	public void setInterceptors(List<ChannelInterceptor> interceptors) {
+		super.setInterceptors(interceptors);
+		for (ChannelInterceptor interceptor : interceptors) {
+			if (interceptor instanceof ExecutorChannelInterceptor) {
+				this.executorInterceptorsSize++;
+			}
+		}
+	}
+
+	@Override
+	public void addInterceptor(ChannelInterceptor interceptor) {
+		super.addInterceptor(interceptor);
+		if (interceptor instanceof ExecutorChannelInterceptor) {
+			this.executorInterceptorsSize++;
+		}
+	}
+
+	@Override
+	public void addInterceptor(int index, ChannelInterceptor interceptor) {
+		super.addInterceptor(index, interceptor);
+		if (interceptor instanceof ExecutorChannelInterceptor) {
+			this.executorInterceptorsSize++;
+		}
+	}
+
+	@Override
+	public boolean removeInterceptor(ChannelInterceptor interceptor) {
+		boolean removed = super.removeInterceptor(interceptor);
+		if (removed && interceptor instanceof ExecutorChannelInterceptor) {
+			this.executorInterceptorsSize--;
+		}
+		return removed;
+	}
+
+	@Override
+	public ChannelInterceptor removeInterceptor(int index) {
+		ChannelInterceptor interceptor = super.removeInterceptor(index);
+		if (interceptor instanceof ExecutorChannelInterceptor) {
+			this.executorInterceptorsSize--;
+		}
+		return interceptor;
+	}
+
+	@Override
+	public boolean hasExecutorInterceptors() {
+		return this.executorInterceptorsSize > 0;
 	}
 
 }

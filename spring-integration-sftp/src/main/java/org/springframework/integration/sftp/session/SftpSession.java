@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -47,7 +47,7 @@ import com.jcraft.jsch.SftpException;
  * @author Gary Russell
  * @since 2.0
  */
-class SftpSession implements Session<LsEntry> {
+public class SftpSession implements Session<LsEntry> {
 
 	private final Log logger = LogFactory.getLog(this.getClass());
 
@@ -80,7 +80,7 @@ class SftpSession implements Session<LsEntry> {
 			return true;
 		}
 		catch (SftpException e) {
-			throw new NestedIOException("Failed to remove file: "+ e);
+			throw new NestedIOException("Failed to remove file.", e);
 		}
 	}
 
@@ -160,6 +160,17 @@ class SftpSession implements Session<LsEntry> {
 	}
 
 	@Override
+	public void append(InputStream inputStream, String destination) throws IOException {
+		Assert.state(this.channel != null, "session is not connected");
+		try {
+			this.channel.put(inputStream, destination, ChannelSftp.APPEND);
+		}
+		catch (SftpException e) {
+			throw new NestedIOException("failed to write file", e);
+		}
+	}
+
+	@Override
 	public void close() {
 		this.closed = true;
 		if (this.wrapper != null) {
@@ -186,14 +197,14 @@ class SftpSession implements Session<LsEntry> {
 			this.channel.rename(pathFrom, pathTo);
 		}
 		catch (SftpException sftpex) {
-			if (logger.isDebugEnabled()){
-				logger.debug("Initial File rename failed, possibly because file already exists. Will attempt to delete file: "
+			if (this.logger.isDebugEnabled()) {
+				this.logger.debug("Initial File rename failed, possibly because file already exists. Will attempt to delete file: "
 						+ pathTo + " and execute rename again.");
 			}
 			try {
 				this.remove(pathTo);
-				if (logger.isDebugEnabled()) {
-					logger.debug("Delete file: " + pathTo + " succeeded. Will attempt rename again");
+				if (this.logger.isDebugEnabled()) {
+					this.logger.debug("Delete file: " + pathTo + " succeeded. Will attempt rename again");
 				}
 			}
 			catch (IOException ioex) {
@@ -207,8 +218,8 @@ class SftpSession implements Session<LsEntry> {
 				throw new NestedIOException("failed to rename from " + pathFrom + " to " + pathTo, sftpex2);
 			}
 		}
-		if (logger.isDebugEnabled()) {
-			logger.debug("File: " + pathFrom + " was successfully renamed to " + pathTo);
+		if (this.logger.isDebugEnabled()) {
+			this.logger.debug("File: " + pathFrom + " was successfully renamed to " + pathTo);
 		}
 	}
 
@@ -219,6 +230,17 @@ class SftpSession implements Session<LsEntry> {
 		}
 		catch (SftpException e) {
 			throw new NestedIOException("failed to create remote directory '" + remoteDirectory + "'.", e);
+		}
+		return true;
+	}
+
+	@Override
+	public boolean rmdir(String remoteDirectory) throws IOException {
+		try {
+			this.channel.rmdir(remoteDirectory);
+		}
+		catch (SftpException e) {
+			throw new NestedIOException("failed to remove remote directory '" + remoteDirectory + "'.", e);
 		}
 		return true;
 	}
@@ -249,6 +271,11 @@ class SftpSession implements Session<LsEntry> {
 			this.close();
 			throw new IllegalStateException("failed to connect", e);
 		}
+	}
+
+	@Override
+	public ChannelSftp getClientInstance() {
+		return this.channel;
 	}
 
 }

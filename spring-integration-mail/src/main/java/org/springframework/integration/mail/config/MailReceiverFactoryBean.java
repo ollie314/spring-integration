@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2011 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import java.util.Properties;
 import javax.mail.Authenticator;
 import javax.mail.Session;
 import javax.mail.URLName;
+import javax.mail.internet.MimeMessage;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -36,12 +37,14 @@ import org.springframework.integration.mail.ImapMailReceiver;
 import org.springframework.integration.mail.MailReceiver;
 import org.springframework.integration.mail.Pop3MailReceiver;
 import org.springframework.integration.mail.SearchTermStrategy;
+import org.springframework.integration.mapping.HeaderMapper;
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
 
 /**
  * @author Mark Fisher
  * @author Oleg Zhurakousky
+ * @author Gary Russell
  * @since 1.0.3
  */
 public class MailReceiverFactoryBean implements FactoryBean<MailReceiver>, DisposableBean, BeanFactoryAware {
@@ -74,7 +77,15 @@ public class MailReceiverFactoryBean implements FactoryBean<MailReceiver>, Dispo
 
 	private volatile SearchTermStrategy searchTermStrategy;
 
+	private volatile String userFlag;
+
 	private volatile BeanFactory beanFactory;
+
+	private volatile HeaderMapper<MimeMessage> headerMapper;
+
+	private Boolean embeddedPartsAsBytes;
+
+	private Boolean simpleContent;
 
 	public void setStoreUri(String storeUri) {
 		this.storeUri = storeUri;
@@ -105,7 +116,7 @@ public class MailReceiverFactoryBean implements FactoryBean<MailReceiver>, Dispo
 	}
 
 	public Boolean isShouldMarkMessagesAsRead() {
-		return shouldMarkMessagesAsRead != null && shouldMarkMessagesAsRead;
+		return this.shouldMarkMessagesAsRead != null && this.shouldMarkMessagesAsRead;
 	}
 
 	public void setMaxFetchSize(int maxFetchSize) {
@@ -120,11 +131,28 @@ public class MailReceiverFactoryBean implements FactoryBean<MailReceiver>, Dispo
 		this.searchTermStrategy = searchTermStrategy;
 	}
 
+	public void setUserFlag(String userFlag) {
+		this.userFlag = userFlag;
+	}
+
+	public void setHeaderMapper(HeaderMapper<MimeMessage> headerMapper) {
+		this.headerMapper = headerMapper;
+	}
+
+	public void setEmbeddedPartsAsBytes(Boolean embeddedPartsAsBytes) {
+		this.embeddedPartsAsBytes = embeddedPartsAsBytes;
+	}
+
+	public void setSimpleContent(Boolean simpleContent) {
+		this.simpleContent = simpleContent;
+	}
+
 	@Override
 	public void setBeanFactory(BeanFactory beanFactory) throws BeansException {
 		this.beanFactory = beanFactory;
 	}
 
+	@Override
 	public MailReceiver getObject() throws Exception {
 		if (this.receiver == null) {
 			this.receiver = this.createReceiver();
@@ -132,10 +160,12 @@ public class MailReceiverFactoryBean implements FactoryBean<MailReceiver>, Dispo
 		return this.receiver;
 	}
 
+	@Override
 	public Class<?> getObjectType() {
 		return (this.receiver != null) ? this.receiver.getClass() : MailReceiver.class;
 	}
 
+	@Override
 	public boolean isSingleton() {
 		return true;
 	}
@@ -165,7 +195,7 @@ public class MailReceiverFactoryBean implements FactoryBean<MailReceiver>, Dispo
 		AbstractMailReceiver receiver = isPop3 ? new Pop3MailReceiver(this.storeUri) : new ImapMailReceiver(this.storeUri);
 		if (this.session != null) {
 			Assert.isNull(this.javaMailProperties, "JavaMail Properties are not allowed when a Session has been provided.");
-			Assert.isNull(this.authenticator, "A JavaMail Authenticator is not allowed when a Session has been provied.");
+			Assert.isNull(this.authenticator, "A JavaMail Authenticator is not allowed when a Session has been provided.");
 			receiver.setSession(this.session);
 		}
 		if (this.searchTermStrategy != null) {
@@ -184,11 +214,14 @@ public class MailReceiverFactoryBean implements FactoryBean<MailReceiver>, Dispo
 			receiver.setShouldDeleteMessages(this.shouldDeleteMessages);
 		}
 		receiver.setMaxFetchSize(this.maxFetchSize);
-		receiver.setSelectorExpression(selectorExpression);
+		receiver.setSelectorExpression(this.selectorExpression);
+		if (StringUtils.hasText(this.userFlag)) {
+			receiver.setUserFlag(this.userFlag);
+		}
 
 		if (isPop3) {
 			if (this.isShouldMarkMessagesAsRead() && this.logger.isWarnEnabled()) {
-				logger.warn("Setting 'should-mark-messages-as-read' to 'true' while using POP3 has no effect");
+				this.logger.warn("Setting 'should-mark-messages-as-read' to 'true' while using POP3 has no effect");
 			}
 		}
 		else if (isImap) {
@@ -197,10 +230,20 @@ public class MailReceiverFactoryBean implements FactoryBean<MailReceiver>, Dispo
 		if (this.beanFactory != null) {
 			receiver.setBeanFactory(this.beanFactory);
 		}
+		if (this.headerMapper != null) {
+			receiver.setHeaderMapper(this.headerMapper);
+		}
+		if (this.embeddedPartsAsBytes != null) {
+			receiver.setEmbeddedPartsAsBytes(this.embeddedPartsAsBytes);
+		}
+		if (this.simpleContent != null) {
+			receiver.setSimpleContent(this.simpleContent);
+		}
 		receiver.afterPropertiesSet();
 		return receiver;
 	}
 
+	@Override
 	public void destroy() throws Exception {
 		if (this.receiver != null && this.receiver instanceof DisposableBean) {
 			((DisposableBean) this.receiver).destroy();

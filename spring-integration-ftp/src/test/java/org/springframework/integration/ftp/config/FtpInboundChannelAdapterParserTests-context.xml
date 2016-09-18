@@ -17,7 +17,6 @@
 	<int-ftp:inbound-channel-adapter id="ftpInbound"
 				channel="ftpChannel"
 				session-factory="ftpSessionFactory"
-				charset="UTF-8"
 				auto-create-local-directory="true"
 				auto-startup="false"
 				delete-remote-files="true"
@@ -28,8 +27,9 @@
 				local-filename-generator-expression="#this.toUpperCase() + '.a' + @fooString"
 				comparator="comparator"
 				temporary-file-suffix=".foo"
+				max-fetch-size="42"
 				local-filter="acceptAllFilter"
-				remote-directory="foo/bar">
+				remote-directory-expression="'foo/bar'">
 			<int:poller fixed-rate="1000">
 				<int:transactional synchronization-factory="syncFactory"/>
 			</int:poller>
@@ -57,7 +57,6 @@
 	<int-ftp:inbound-channel-adapter
 				channel="ftpChannel"
 				session-factory="ftpSessionFactory"
-				charset="UTF-8"
 				auto-create-local-directory="true"
 				delete-remote-files="true"
 				filter="entryListFilter"

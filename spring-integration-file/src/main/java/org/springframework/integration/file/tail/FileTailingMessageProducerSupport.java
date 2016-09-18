@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.file.tail;
 
 import java.io.File;
@@ -86,7 +87,7 @@ public abstract class FileTailingMessageProducerSupport extends MessageProducerS
 	}
 
 	protected long getMissingFileDelay() {
-		return tailAttemptsDelay;
+		return this.tailAttemptsDelay;
 	}
 
 	protected TaskExecutor getTaskExecutor() {
@@ -130,11 +131,11 @@ public abstract class FileTailingMessageProducerSupport extends MessageProducerS
 		}
 
 		protected String getMessage() {
-			return message;
+			return this.message;
 		}
 
 		public File getFile() {
-			return file;
+			return this.file;
 		}
 
 		@Override

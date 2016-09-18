@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2011 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.ip.tcp;
 
 import java.util.Map;
@@ -20,8 +21,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import org.springframework.messaging.Message;
-import org.springframework.messaging.support.ErrorMessage;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.integration.context.OrderlyShutdownCapable;
 import org.springframework.integration.gateway.MessagingGatewaySupport;
 import org.springframework.integration.ip.IpHeaders;
@@ -31,8 +31,12 @@ import org.springframework.integration.ip.tcp.connection.AbstractServerConnectio
 import org.springframework.integration.ip.tcp.connection.ClientModeCapable;
 import org.springframework.integration.ip.tcp.connection.ClientModeConnectionManager;
 import org.springframework.integration.ip.tcp.connection.TcpConnection;
+import org.springframework.integration.ip.tcp.connection.TcpConnectionFailedCorrelationEvent;
 import org.springframework.integration.ip.tcp.connection.TcpListener;
 import org.springframework.integration.ip.tcp.connection.TcpSender;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.MessagingException;
+import org.springframework.messaging.support.ErrorMessage;
 import org.springframework.util.Assert;
 
 /**
@@ -43,9 +47,9 @@ import org.springframework.util.Assert;
  * is not used, but multiple concurrent connections can be used if the connection factory uses
  * single-use connections. For true asynchronous bi-directional communication, a pair of
  * inbound / outbound channel adapters should be used.
+ *
  * @author Gary Russell
  * @since 2.0
- *
  */
 public class TcpInboundGateway extends MessagingGatewaySupport implements
 		TcpListener, TcpSender, ClientModeCapable, OrderlyShutdownCapable {
@@ -57,6 +61,8 @@ public class TcpInboundGateway extends MessagingGatewaySupport implements
 	private final Map<String, TcpConnection> connections = new ConcurrentHashMap<String, TcpConnection>();
 
 	private volatile boolean isClientMode;
+
+	private volatile boolean isSingleUse;
 
 	private volatile long retryInterval = 60000;
 
@@ -70,29 +76,44 @@ public class TcpInboundGateway extends MessagingGatewaySupport implements
 
 	private final AtomicInteger activeCount = new AtomicInteger();
 
+	@Override
 	public boolean onMessage(Message<?> message) {
-		if (this.shuttingDown) {
-			if (logger.isInfoEnabled()) {
-				logger.info("Inbound message ignored; shutting down; " + message.toString());
+		boolean isErrorMessage = message instanceof ErrorMessage;
+		try {
+			if (this.shuttingDown) {
+				if (logger.isInfoEnabled()) {
+					logger.info("Inbound message ignored; shutting down; " + message.toString());
+				}
+			}
+			else {
+				if (isErrorMessage) {
+					/*
+					 * Socket errors are sent here so they can be conveyed to any waiting thread.
+					 * There's not one here; simply ignore.
+					 */
+					return false;
+				}
+				this.activeCount.incrementAndGet();
+				try {
+					return doOnMessage(message);
+				}
+				finally {
+					this.activeCount.decrementAndGet();
+				}
+			}
+			return false;
+		}
+		finally {
+			String connectionId = (String) message.getHeaders().get(IpHeaders.CONNECTION_ID);
+			if (connectionId != null && !isErrorMessage && this.isSingleUse) {
+				if (this.serverConnectionFactory != null) {
+					this.serverConnectionFactory.closeConnection(connectionId);
+				}
+				else {
+					this.clientConnectionFactory.closeConnection(connectionId);
+				}
 			}
 		}
-		else {
-			if (message instanceof ErrorMessage) {
-				/*
-				 * Socket errors are sent here so they can be conveyed to any waiting thread.
-				 * There's not one here; simply ignore.
-				 */
-				return false;
-			}
-			this.activeCount.incrementAndGet();
-			try {
-				return doOnMessage(message);
-			}
-			finally {
-				this.activeCount.decrementAndGet();
-			}
-		}
-		return false;
 	}
 
 	private boolean doOnMessage(Message<?> message) {
@@ -106,26 +127,38 @@ public class TcpInboundGateway extends MessagingGatewaySupport implements
 		String connectionId = (String) message.getHeaders().get(IpHeaders.CONNECTION_ID);
 		TcpConnection connection = null;
 		if (connectionId != null) {
-			connection = connections.get(connectionId);
+			connection = this.connections.get(connectionId);
 		}
 		if (connection == null) {
+			publishNoConnectionEvent(message, connectionId);
 			logger.error("Connection not found when processing reply " + reply + " for " + message);
 			return false;
 		}
 		try {
 			connection.send(reply);
-		} catch (Exception e) {
+		}
+		catch (Exception e) {
 			logger.error("Failed to send reply", e);
 		}
 		return false;
+	}
+
+	private void publishNoConnectionEvent(Message<?> message, String connectionId) {
+		AbstractConnectionFactory cf = this.serverConnectionFactory != null ? this.serverConnectionFactory
+				: this.clientConnectionFactory;
+		ApplicationEventPublisher applicationEventPublisher = cf.getApplicationEventPublisher();
+		if (applicationEventPublisher != null) {
+			applicationEventPublisher.publishEvent(
+				new TcpConnectionFailedCorrelationEvent(this, connectionId,
+						new MessagingException(message, "Connection not found to process reply.")));
+		}
 	}
 
 	/**
 	 * @return true if the associated connection factory is listening.
 	 */
 	public boolean isListening() {
-		return this.serverConnectionFactory == null ? false
-				: this.serverConnectionFactory.isListening();
+		return this.serverConnectionFactory != null && this.serverConnectionFactory.isListening();
 	}
 
 	/**
@@ -137,25 +170,30 @@ public class TcpInboundGateway extends MessagingGatewaySupport implements
 		Assert.notNull(connectionFactory, "Connection factory must not be null");
 		if (connectionFactory instanceof AbstractServerConnectionFactory) {
 			this.serverConnectionFactory = (AbstractServerConnectionFactory) connectionFactory;
-		} else if (connectionFactory instanceof AbstractClientConnectionFactory) {
+		}
+		else if (connectionFactory instanceof AbstractClientConnectionFactory) {
 			this.clientConnectionFactory = (AbstractClientConnectionFactory) connectionFactory;
-		} else {
+		}
+		else {
 			throw new IllegalArgumentException("Connection factory must be either an " +
 					"AbstractServerConnectionFactory or an AbstractClientConnectionFactory");
 		}
 		connectionFactory.registerListener(this);
 		connectionFactory.registerSender(this);
+		this.isSingleUse = connectionFactory.isSingleUse();
 	}
 
+	@Override
 	public void addNewConnection(TcpConnection connection) {
-		connections.put(connection.getConnectionId(), connection);
+		this.connections.put(connection.getConnectionId(), connection);
 	}
 
+	@Override
 	public void removeDeadConnection(TcpConnection connection) {
-		connections.remove(connection.getConnectionId());
+		this.connections.remove(connection.getConnectionId());
 	}
 	@Override
-	public String getComponentType(){
+	public String getComponentType() {
 		return "ip:tcp-inbound-gateway";
 	}
 
@@ -213,8 +251,9 @@ public class TcpInboundGateway extends MessagingGatewaySupport implements
 	/**
 	 * @return the isClientMode
 	 */
+	@Override
 	public boolean isClientMode() {
-		return isClientMode;
+		return this.isClientMode;
 	}
 
 	/**
@@ -229,7 +268,7 @@ public class TcpInboundGateway extends MessagingGatewaySupport implements
 	 * @return the retryInterval
 	 */
 	public long getRetryInterval() {
-		return retryInterval;
+		return this.retryInterval;
 	}
 
 	/**
@@ -240,25 +279,30 @@ public class TcpInboundGateway extends MessagingGatewaySupport implements
 		this.retryInterval = retryInterval;
 	}
 
+	@Override
 	public boolean isClientModeConnected() {
 		if (this.isClientMode && this.clientModeConnectionManager != null) {
 			return this.clientModeConnectionManager.isConnected();
-		} else {
+		}
+		else {
 			return false;
 		}
 	}
 
+	@Override
 	public void retryConnection() {
 		if (this.active && this.isClientMode && this.clientModeConnectionManager != null) {
 			this.clientModeConnectionManager.run();
 		}
 	}
 
+	@Override
 	public int beforeShutdown() {
 		this.shuttingDown = true;
 		return this.activeCount.get();
 	}
 
+	@Override
 	public int afterShutdown() {
 		this.stop();
 		return this.activeCount.get();

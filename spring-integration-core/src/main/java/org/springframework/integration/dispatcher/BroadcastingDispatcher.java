@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,12 +17,22 @@
 package org.springframework.integration.dispatcher;
 
 import java.util.Collection;
+import java.util.UUID;
 import java.util.concurrent.Executor;
 
+import org.springframework.beans.BeansException;
+import org.springframework.beans.factory.BeanFactory;
+import org.springframework.beans.factory.BeanFactoryAware;
 import org.springframework.integration.MessageDispatchingException;
+import org.springframework.integration.support.DefaultMessageBuilderFactory;
+import org.springframework.integration.support.MessageBuilderFactory;
+import org.springframework.integration.support.MessageDecorator;
+import org.springframework.integration.support.utils.IntegrationUtils;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageHandler;
 import org.springframework.messaging.MessagingException;
+import org.springframework.messaging.support.MessageHandlingRunnable;
+import org.springframework.util.Assert;
 
 /**
  * A broadcasting dispatcher implementation. If the 'ignoreFailures' property is set to <code>false</code> (the
@@ -38,8 +48,9 @@ import org.springframework.messaging.MessagingException;
  * @author Iwein Fuld
  * @author Gary Russell
  * @author Oleg Zhurakousky
+ * @author Artem Bilan
  */
-public class BroadcastingDispatcher extends AbstractDispatcher {
+public class BroadcastingDispatcher extends AbstractDispatcher implements BeanFactoryAware {
 
 	private final boolean requireSubscribers;
 
@@ -50,6 +61,23 @@ public class BroadcastingDispatcher extends AbstractDispatcher {
 	private final Executor executor;
 
 	private volatile int minSubscribers;
+
+	private volatile MessageBuilderFactory messageBuilderFactory = new DefaultMessageBuilderFactory();
+
+	private volatile boolean messageBuilderFactorySet;
+
+	private volatile MessageHandlingTaskDecorator messageHandlingTaskDecorator =
+			new MessageHandlingTaskDecorator() {
+
+				@Override
+				public Runnable decorate(MessageHandlingRunnable task) {
+					return task;
+				}
+
+			};
+
+	private BeanFactory beanFactory;
+
 
 	public BroadcastingDispatcher() {
 		this(null, false);
@@ -103,6 +131,26 @@ public class BroadcastingDispatcher extends AbstractDispatcher {
 		this.minSubscribers = minSubscribers;
 	}
 
+	public void setMessageHandlingTaskDecorator(MessageHandlingTaskDecorator messageHandlingTaskDecorator) {
+		Assert.notNull(messageHandlingTaskDecorator, "'messageHandlingTaskDecorator' must not be null.");
+		this.messageHandlingTaskDecorator = messageHandlingTaskDecorator;
+	}
+
+	@Override
+	public void setBeanFactory(BeanFactory beanFactory) throws BeansException {
+		this.beanFactory = beanFactory;
+	}
+
+	protected MessageBuilderFactory getMessageBuilderFactory() {
+		if (!this.messageBuilderFactorySet) {
+			if (this.beanFactory != null) {
+				this.messageBuilderFactory = IntegrationUtils.getMessageBuilderFactory(this.beanFactory);
+			}
+			this.messageBuilderFactorySet = true;
+		}
+		return this.messageBuilderFactory;
+	}
+
 	@Override
 	public boolean dispatch(Message<?> message) {
 		int dispatched = 0;
@@ -112,16 +160,25 @@ public class BroadcastingDispatcher extends AbstractDispatcher {
 			throw new MessageDispatchingException(message, "Dispatcher has no subscribers");
 		}
 		int sequenceSize = handlers.size();
-		for (final MessageHandler handler : handlers) {
-			final Message<?> messageToSend = (!this.applySequence) ? message : this.getMessageBuilderFactory().fromMessage(message)
-					.pushSequenceDetails(message.getHeaders().getId(), sequenceNumber++, sequenceSize).build();
+		Message<?> messageToSend = message;
+		UUID sequenceId = null;
+		if (this.applySequence) {
+			sequenceId = message.getHeaders().getId();
+		}
+		for (MessageHandler handler : handlers) {
+			if (this.applySequence) {
+				messageToSend = getMessageBuilderFactory()
+						.fromMessage(message)
+						.pushSequenceDetails(sequenceId, sequenceNumber++, sequenceSize)
+						.build();
+				if (message instanceof MessageDecorator) {
+					messageToSend = ((MessageDecorator) message).decorateMessage(messageToSend);
+				}
+			}
+
 			if (this.executor != null) {
-				this.executor.execute(new Runnable() {
-					@Override
-					public void run() {
-						invokeHandler(handler, messageToSend);
-					}
-				});
+				Runnable task = createMessageHandlingTask(handler, messageToSend);
+				this.executor.execute(task);
 				dispatched++;
 			}
 			else {
@@ -138,7 +195,40 @@ public class BroadcastingDispatcher extends AbstractDispatcher {
 				logger.debug("No subscribers, default behavior is ignore");
 			}
 		}
-		return dispatched >= minSubscribers;
+		return dispatched >= this.minSubscribers;
+	}
+
+
+	private Runnable createMessageHandlingTask(final MessageHandler handler, final Message<?> message) {
+		MessageHandlingRunnable task = new MessageHandlingRunnable() {
+
+			private final MessageHandler delegate = new MessageHandler() {
+
+				@Override
+				public void handleMessage(Message<?> message) throws MessagingException {
+					invokeHandler(handler, message);
+				}
+
+			};
+
+			@Override
+			public void run() {
+				invokeHandler(handler, message);
+			}
+
+			@Override
+			public Message<?> getMessage() {
+				return message;
+			}
+
+			@Override
+			public MessageHandler getMessageHandler() {
+				return this.delegate;
+			}
+
+		};
+
+		return this.messageHandlingTaskDecorator.decorate(task);
 	}
 
 	private boolean invokeHandler(MessageHandler handler, Message<?> message) {
@@ -149,7 +239,7 @@ public class BroadcastingDispatcher extends AbstractDispatcher {
 		catch (RuntimeException e) {
 			if (!this.ignoreFailures) {
 				if (e instanceof MessagingException && ((MessagingException) e).getFailedMessage() == null) {
-					throw new MessagingException(message, e);
+					throw new MessagingException(message, "Failed to handle Message", e);
 				}
 				throw e;
 			}
@@ -159,6 +249,5 @@ public class BroadcastingDispatcher extends AbstractDispatcher {
 			return false;
 		}
 	}
-
 
 }

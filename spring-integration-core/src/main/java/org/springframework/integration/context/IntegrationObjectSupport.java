@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,8 @@ import java.util.Properties;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
+import org.springframework.aop.TargetSource;
+import org.springframework.aop.framework.Advised;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.BeanFactory;
 import org.springframework.beans.factory.BeanFactoryAware;
@@ -31,9 +33,16 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
 import org.springframework.core.convert.ConversionService;
 import org.springframework.core.convert.support.DefaultConversionService;
+import org.springframework.expression.Expression;
+import org.springframework.expression.ExpressionParser;
+import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.integration.support.DefaultMessageBuilderFactory;
 import org.springframework.integration.support.MessageBuilderFactory;
+import org.springframework.integration.support.channel.BeanFactoryChannelResolver;
 import org.springframework.integration.support.context.NamedComponent;
+import org.springframework.integration.support.utils.IntegrationUtils;
+import org.springframework.messaging.MessageChannel;
+import org.springframework.messaging.core.DestinationResolver;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
@@ -55,7 +64,9 @@ import org.springframework.util.StringUtils;
  * @author Artem Bilan
  */
 public abstract class IntegrationObjectSupport implements BeanNameAware, NamedComponent,
-		ApplicationContextAware, BeanFactoryAware, InitializingBean {
+		ApplicationContextAware, BeanFactoryAware, InitializingBean, ExpressionCapable {
+
+	protected static final ExpressionParser EXPRESSION_PARSER = new SpelExpressionParser();
 
 	/**
 	 * Logger that is available to subclasses
@@ -63,6 +74,8 @@ public abstract class IntegrationObjectSupport implements BeanNameAware, NamedCo
 	protected final Log logger = LogFactory.getLog(getClass());
 
 	private final ConversionService defaultConversionService = new DefaultConversionService();
+
+	private volatile DestinationResolver<MessageChannel> channelResolver;
 
 	private volatile String beanName;
 
@@ -79,6 +92,8 @@ public abstract class IntegrationObjectSupport implements BeanNameAware, NamedCo
 	private volatile ApplicationContext applicationContext;
 
 	private volatile MessageBuilderFactory messageBuilderFactory;
+
+	private Expression expression;
 
 	@Override
 	public final void setBeanName(String beanName) {
@@ -111,10 +126,9 @@ public abstract class IntegrationObjectSupport implements BeanNameAware, NamedCo
 	}
 
 	@Override
-	public final void setBeanFactory(BeanFactory beanFactory) {
+	public void setBeanFactory(BeanFactory beanFactory) {
 		Assert.notNull(beanFactory, "'beanFactory' must not be null");
 		this.beanFactory = beanFactory;
-		this.integrationProperties = IntegrationContextUtils.getIntegrationProperties(this.beanFactory);
 	}
 
 	@Override
@@ -123,11 +137,41 @@ public abstract class IntegrationObjectSupport implements BeanNameAware, NamedCo
 		this.applicationContext = applicationContext;
 	}
 
+	/**
+	 * Specify the {@link DestinationResolver} strategy to use.
+	 * The default is a BeanFactoryChannelResolver.
+	 * @param channelResolver The channel resolver.
+	 */
+	public void setChannelResolver(DestinationResolver<MessageChannel> channelResolver) {
+		Assert.notNull(channelResolver, "'channelResolver' must not be null");
+		this.channelResolver = channelResolver;
+	}
+
+	@Override
+	public Expression getExpression() {
+		return this.expression;
+	}
+
+	/**
+	 * For expression-based components, set the primary expression.
+	 * @param expression the expression.
+	 * @since 4.3
+	 */
+	public final void setPrimaryExpression(Expression expression) {
+		this.expression = expression;
+	}
+
 	@Override
 	public final void afterPropertiesSet() {
+		this.integrationProperties = IntegrationContextUtils.getIntegrationProperties(this.beanFactory);
 		try {
 			if (this.messageBuilderFactory == null) {
-				this.messageBuilderFactory = IntegrationContextUtils.getMessageBuilderFactory(this.beanFactory);
+				if (this.beanFactory != null) {
+					this.messageBuilderFactory = IntegrationUtils.getMessageBuilderFactory(this.beanFactory);
+				}
+				else {
+					this.messageBuilderFactory = new DefaultMessageBuilderFactory();
+				}
 			}
 			this.onInit();
 		}
@@ -157,6 +201,13 @@ public abstract class IntegrationObjectSupport implements BeanNameAware, NamedCo
 		return this.taskScheduler;
 	}
 
+	protected DestinationResolver<MessageChannel> getChannelResolver() {
+		if (this.channelResolver == null) {
+			this.channelResolver = new BeanFactoryChannelResolver(this.beanFactory);
+		}
+		return this.channelResolver;
+	}
+
 	protected void setTaskScheduler(TaskScheduler taskScheduler) {
 		Assert.notNull(taskScheduler, "taskScheduler must not be null");
 		this.taskScheduler = taskScheduler;
@@ -166,7 +217,7 @@ public abstract class IntegrationObjectSupport implements BeanNameAware, NamedCo
 		if (this.conversionService == null && this.beanFactory != null) {
 			synchronized (this) {
 				if (this.conversionService == null) {
-					this.conversionService = IntegrationContextUtils.getConversionService(this.beanFactory);
+					this.conversionService = IntegrationUtils.getConversionService(this.beanFactory);
 				}
 			}
 			if (this.conversionService == null && this.logger.isDebugEnabled()) {
@@ -189,6 +240,13 @@ public abstract class IntegrationObjectSupport implements BeanNameAware, NamedCo
 	 */
 	public String getApplicationContextId() {
 		return this.applicationContext == null ? null : this.applicationContext.getId();
+	}
+
+	/**
+	 * @return the applicationContext
+	 */
+	protected ApplicationContext getApplicationContext() {
+		return this.applicationContext;
 	}
 
 	/**
@@ -219,6 +277,29 @@ public abstract class IntegrationObjectSupport implements BeanNameAware, NamedCo
 	 */
 	protected <T> T getIntegrationProperty(String key, Class<T> tClass) {
 		return this.defaultConversionService.convert(this.integrationProperties.getProperty(key), tClass);
+	}
+
+	@SuppressWarnings("unchecked")
+	protected <T> T extractTypeIfPossible(Object targetObject, Class<T> expectedType) {
+		if (targetObject == null) {
+			return null;
+		}
+		if (expectedType.isAssignableFrom(targetObject.getClass())) {
+			return (T) targetObject;
+		}
+		if (targetObject instanceof Advised) {
+			TargetSource targetSource = ((Advised) targetObject).getTargetSource();
+			if (targetSource == null) {
+				return null;
+			}
+			try {
+				return extractTypeIfPossible(targetSource.getTarget(), expectedType);
+			}
+			catch (Exception e) {
+				throw new IllegalStateException(e);
+			}
+		}
+		return null;
 	}
 
 	@Override

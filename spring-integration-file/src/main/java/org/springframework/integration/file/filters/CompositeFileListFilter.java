@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 
 package org.springframework.integration.file.filters;
 
+import java.io.Closeable;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -28,15 +30,17 @@ import org.springframework.beans.factory.InitializingBean;
 import org.springframework.util.Assert;
 
 /**
- * Simple {@link FileListFilter} that predicates its matches against any of many
+ * Simple {@link FileListFilter} that predicates its matches against <b>all</b> of the
  * configured {@link FileListFilter}.
  *
  * @author Iwein Fuld
  * @author Josh Long
+ * @author Gary Russell
+ * @author Artem Bilan
  *
  * @param <F> The type that will be filtered.
  */
-public class CompositeFileListFilter<F> implements FileListFilter<F> {
+public class CompositeFileListFilter<F> implements ReversibleFileListFilter<F>, ResettableFileListFilter<F>, Closeable {
 
 	private final Set<FileListFilter<F>> fileFilters;
 
@@ -49,6 +53,15 @@ public class CompositeFileListFilter<F> implements FileListFilter<F> {
 		this.fileFilters = new LinkedHashSet<FileListFilter<F>>(fileFilters);
 	}
 
+
+	@Override
+	public void close() throws IOException {
+		for (FileListFilter<F> filter : this.fileFilters) {
+			if (filter instanceof Closeable) {
+				((Closeable) filter).close();
+			}
+		}
+	}
 
 	public CompositeFileListFilter<F> addFilter(FileListFilter<F> filter) {
 		return this.addFilters(Collections.singletonList(filter));
@@ -97,6 +110,27 @@ public class CompositeFileListFilter<F> implements FileListFilter<F> {
 			results.retainAll(currentResults);
 		}
 		return results;
+	}
+
+	@Override
+	public void rollback(F file, List<F> files) {
+		for (FileListFilter<F> fileFilter : this.fileFilters) {
+			if (fileFilter instanceof ReversibleFileListFilter) {
+				((ReversibleFileListFilter<F>) fileFilter).rollback(file, files);
+			}
+		}
+	}
+
+	@Override
+	public boolean remove(F f) {
+		boolean removed = false;
+		for (FileListFilter<F> fileFilter : this.fileFilters) {
+			if (fileFilter instanceof ResettableFileListFilter) {
+				((ResettableFileListFilter<F>) fileFilter).remove(f);
+				removed = true;
+			}
+		}
+		return removed;
 	}
 
 }

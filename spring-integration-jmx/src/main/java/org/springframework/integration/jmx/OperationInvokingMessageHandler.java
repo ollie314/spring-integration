@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -107,6 +107,11 @@ public class OperationInvokingMessageHandler extends AbstractReplyProducingMessa
 	}
 
 	@Override
+	public String getComponentType() {
+		return "jmx:operation-invoking-channel-adapter";
+	}
+
+	@Override
 	protected void doInit() {
 		Assert.notNull(this.server, "MBeanServer is required.");
 	}
@@ -128,8 +133,8 @@ public class OperationInvokingMessageHandler extends AbstractReplyProducingMessa
 					}
 					if (paramInfoArray.length == paramsFromMessage.size()) {
 						int index = 0;
-						Object values[] = new Object[paramInfoArray.length];
-						String signature[] = new String[paramInfoArray.length];
+						Object[] values = new Object[paramInfoArray.length];
+						String[] signature = new String[paramInfoArray.length];
 						for (MBeanParameterInfo paramInfo : paramInfoArray) {
 							Object value = paramsFromMessage.get(paramInfo.getName());
 							if (value == null) {
@@ -185,7 +190,7 @@ public class OperationInvokingMessageHandler extends AbstractReplyProducingMessa
 	 */
 	private ObjectName resolveObjectName(Message<?> message) {
 		ObjectName objectName = this.objectName;
-		if (objectName == null){
+		if (objectName == null) {
 			Object objectNameHeader = message.getHeaders().get(JmxHeaders.OBJECT_NAME);
 			if (objectNameHeader instanceof ObjectName) {
 				objectName = (ObjectName) objectNameHeader;
@@ -208,7 +213,7 @@ public class OperationInvokingMessageHandler extends AbstractReplyProducingMessa
 	 */
 	private String resolveOperationName(Message<?> message) {
 		String operationName = this.operationName;
-		if (operationName == null){
+		if (operationName == null) {
 			operationName = message.getHeaders().get(JmxHeaders.OPERATION_NAME, String.class);
 		}
 		Assert.notNull(operationName, "Failed to resolve operation name.");

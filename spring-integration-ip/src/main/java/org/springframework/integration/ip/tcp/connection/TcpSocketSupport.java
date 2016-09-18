@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.ip.tcp.connection;
 
 import java.net.ServerSocket;
@@ -27,21 +28,19 @@ import java.net.Socket;
 public interface TcpSocketSupport {
 
 	/**
-	 * Performs any further modifications to the server socket
-	 * after the connection factory has created the socket and
-	 * set any configured attributes, before invoking
+	 * Performs any further modifications to the server socket after the connection
+	 * factory has created the socket and set any configured attributes, before invoking
 	 * {@link ServerSocket#accept()}.
 	 * @param serverSocket The ServerSocket
 	 */
-    void postProcessServerSocket(ServerSocket serverSocket);
+	void postProcessServerSocket(ServerSocket serverSocket);
 
-    /**
-     * Performs any further modifications to the {@link Socket} after
-     * the socket has been created by a client, or accepted by
-     * a server, and after any configured atributes have been
-     * set.
-     * @param socket The Socket
-     */
-    void postProcessSocket(Socket socket);
+	/**
+	 * Performs any further modifications to the {@link Socket} after the socket has been
+	 * created by a client, or accepted by a server, and after any configured atributes
+	 * have been set.
+	 * @param socket The Socket
+	 */
+	void postProcessSocket(Socket socket);
 
 }

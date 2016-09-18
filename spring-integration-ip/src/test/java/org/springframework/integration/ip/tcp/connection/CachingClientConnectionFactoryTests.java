@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,21 +13,30 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.ip.tcp.connection;
 
+import static org.hamcrest.Matchers.startsWith;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
+import static org.mockito.Matchers.any;
+import static org.mockito.Matchers.anyInt;
+import static org.mockito.Matchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.Socket;
@@ -35,30 +44,44 @@ import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
+import org.apache.commons.logging.Log;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
 
 import org.springframework.beans.DirectFieldAccessor;
+import org.springframework.beans.factory.BeanFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.ApplicationEvent;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.integration.channel.QueueChannel;
 import org.springframework.integration.ip.IpHeaders;
+import org.springframework.integration.ip.tcp.TcpOutboundGateway;
+import org.springframework.integration.ip.tcp.TcpSendingMessageHandler;
 import org.springframework.integration.ip.tcp.serializer.ByteArrayCrLfSerializer;
 import org.springframework.integration.ip.util.TestingUtilities;
-import org.springframework.messaging.support.GenericMessage;
 import org.springframework.integration.support.MessageBuilder;
 import org.springframework.integration.test.util.TestUtils;
+import org.springframework.integration.util.SimplePool;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessagingException;
 import org.springframework.messaging.PollableChannel;
 import org.springframework.messaging.SubscribableChannel;
+import org.springframework.messaging.support.ErrorMessage;
+import org.springframework.messaging.support.GenericMessage;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.annotation.DirtiesContext.ClassMode;
 import org.springframework.test.context.ContextConfiguration;
@@ -66,12 +89,13 @@ import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 
 /**
  * @author Gary Russell
+ * @author Artem Bilan
  * @since 2.2
  *
  */
 @ContextConfiguration
 @RunWith(SpringJUnit4ClassRunner.class)
-@DirtiesContext(classMode=ClassMode.AFTER_EACH_TEST_METHOD)
+@DirtiesContext(classMode = ClassMode.AFTER_EACH_TEST_METHOD)
 public class CachingClientConnectionFactoryTests {
 
 	@Autowired
@@ -92,6 +116,18 @@ public class CachingClientConnectionFactoryTests {
 	@Autowired
 	PollableChannel fromGateway;
 
+	@Autowired
+	@Qualifier("gateway.caching.ccf")
+	private CachingClientConnectionFactory gatewayCF;
+
+	@Autowired
+	@Qualifier("gateway.ccf")
+	private AbstractClientConnectionFactory clientGatewayCf;
+
+	@Autowired
+	@Qualifier("ccf")
+	private AbstractClientConnectionFactory clientAdapterCf;
+
 	@Test
 	public void testReuse() throws Exception {
 		AbstractClientConnectionFactory factory = mock(AbstractClientConnectionFactory.class);
@@ -102,6 +138,16 @@ public class CachingClientConnectionFactoryTests {
 		CachingClientConnectionFactory cachingFactory = new CachingClientConnectionFactory(factory, 2);
 		cachingFactory.start();
 		TcpConnection conn1 = cachingFactory.getConnection();
+		// INT-3652
+		TcpConnectionInterceptorSupport cachedConn1 = (TcpConnectionInterceptorSupport) conn1;
+		Log logger = spy(TestUtils.getPropertyValue(cachedConn1, "logger", Log.class));
+		when(logger.isDebugEnabled()).thenReturn(true);
+		new DirectFieldAccessor(cachedConn1).setPropertyValue("logger", logger);
+		cachedConn1.onMessage(new ErrorMessage(new RuntimeException()));
+		ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
+		verify(logger).debug(captor.capture());
+		assertThat(captor.getValue(), startsWith("Message discarded; no listener:"));
+		// end INT-3652
 		assertEquals("Cached:" + mockConn1.toString(), conn1.toString());
 		conn1.close();
 		conn1 = cachingFactory.getConnection();
@@ -144,6 +190,7 @@ public class CachingClientConnectionFactoryTests {
 			public Object answer(InvocationOnMock invocation) throws Throwable {
 				return null;
 			}
+
 		}).when(mockConn1).close();
 		when(factory.getConnection()).thenReturn(mockConn1)
 				.thenReturn(mockConn2).thenReturn(mockConn1)
@@ -163,11 +210,11 @@ public class CachingClientConnectionFactoryTests {
 		TcpConnection conn2a = cachingFactory.getConnection();
 		assertEquals("Cached:" + mockConn2.toString(), conn2a.toString());
 		assertSame(TestUtils.getPropertyValue(conn2, "theConnection"),
-				   TestUtils.getPropertyValue(conn2a, "theConnection"));
+				TestUtils.getPropertyValue(conn2a, "theConnection"));
 		conn2a.close();
 	}
 
-	@Test(expected=MessagingException.class)
+	@Test(expected = MessagingException.class)
 	public void testLimit() throws Exception {
 		AbstractClientConnectionFactory factory = mock(AbstractClientConnectionFactory.class);
 		when(factory.isRunning()).thenReturn(true);
@@ -207,10 +254,14 @@ public class CachingClientConnectionFactoryTests {
 		TcpConnection conn2 = cachingFactory.getConnection();
 		assertEquals("Cached:" + mockConn2.toString(), conn2.toString());
 		cachingFactory.stop();
-		Answer<Object> answer = new Answer<Object> () {
+		Answer<Object> answer = new Answer<Object>() {
+
+			@Override
 			public Object answer(InvocationOnMock invocation) throws Throwable {
 				return null;
-			}};
+			}
+
+		};
 		doAnswer(answer).when(mockConn1).close();
 		doAnswer(answer).when(mockConn2).close();
 		when(factory.isRunning()).thenReturn(false);
@@ -223,9 +274,9 @@ public class CachingClientConnectionFactoryTests {
 		when(factory.isRunning()).thenReturn(true);
 		TcpConnection conn3 = cachingFactory.getConnection();
 		assertNotSame(TestUtils.getPropertyValue(conn1, "theConnection"),
-				      TestUtils.getPropertyValue(conn3, "theConnection"));
+				TestUtils.getPropertyValue(conn3, "theConnection"));
 		assertNotSame(TestUtils.getPropertyValue(conn2, "theConnection"),
-			          TestUtils.getPropertyValue(conn3, "theConnection"));
+				TestUtils.getPropertyValue(conn3, "theConnection"));
 	}
 
 	@Test
@@ -345,13 +396,19 @@ public class CachingClientConnectionFactoryTests {
 		Socket socket = mock(Socket.class);
 		when(socket.isClosed()).thenReturn(true); // closed when next retrieved
 		OutputStream stream = mock(OutputStream.class);
-		doThrow(new IOException("Foo")).when(stream).write(Mockito.any(byte[].class));
+		doThrow(new IOException("Foo")).when(stream).write(any(byte[].class), anyInt(), anyInt());
 		when(socket.getOutputStream()).thenReturn(stream);
 		TcpNetConnection conn = new TcpNetConnection(socket, false, false, new ApplicationEventPublisher() {
 
 			@Override
 			public void publishEvent(ApplicationEvent event) {
 			}
+
+			@Override
+			public void publishEvent(Object event) {
+
+			}
+
 		}, "foo");
 		conn.setMapper(new TcpMessageMapper());
 		conn.setSerializer(new ByteArrayCrLfSerializer());
@@ -368,6 +425,12 @@ public class CachingClientConnectionFactoryTests {
 			@Override
 			public void publishEvent(ApplicationEvent event) {
 			}
+
+			@Override
+			public void publishEvent(Object event) {
+
+			}
+
 		}, "foo");
 		conn.setMapper(new TcpMessageMapper());
 		conn.setSerializer(new ByteArrayCrLfSerializer());
@@ -392,43 +455,51 @@ public class CachingClientConnectionFactoryTests {
 	@Test
 	public void integrationTest() throws Exception {
 		TestingUtilities.waitListening(serverCf, null);
-		outbound.send(new GenericMessage<String>("Hello, world!"));
-		Message<?> m = inbound.receive(1000);
+		new DirectFieldAccessor(this.clientAdapterCf).setPropertyValue("port", this.serverCf.getPort());
+
+		this.outbound.send(new GenericMessage<>("Hello, world!"));
+		Message<?> m = inbound.receive(10000);
 		assertNotNull(m);
 		String connectionId = m.getHeaders().get(IpHeaders.CONNECTION_ID, String.class);
 
 		// assert we use the same connection from the pool
 		outbound.send(new GenericMessage<String>("Hello, world!"));
-		m = inbound.receive(1000);
+		m = inbound.receive(10000);
 		assertNotNull(m);
 		assertEquals(connectionId, m.getHeaders().get(IpHeaders.CONNECTION_ID, String.class));
 	}
 
 	@Test
+//	@Repeat(1000) // INT-3722
 	public void gatewayIntegrationTest() throws Exception {
 		final List<String> connectionIds = new ArrayList<String>();
 		final AtomicBoolean okToRun = new AtomicBoolean(true);
-		Executors.newSingleThreadExecutor().execute(new Runnable() {
-			public void run() {
-				while (okToRun.get()) {
-					Message<?> m = inbound.receive(1000);
-					if (m != null) {
-						connectionIds.add((String) m.getHeaders().get(IpHeaders.CONNECTION_ID));
-						replies.send(MessageBuilder.withPayload("foo:" + new String((byte[]) m.getPayload()))
-								.copyHeaders(m.getHeaders())
-								.build());
-					}
+		Executors.newSingleThreadExecutor().execute(() -> {
+			while (okToRun.get()) {
+				Message<?> m = inbound.receive(1000);
+				if (m != null) {
+					connectionIds.add((String) m.getHeaders().get(IpHeaders.CONNECTION_ID));
+					replies.send(MessageBuilder.withPayload("foo:" + new String((byte[]) m.getPayload()))
+							.copyHeaders(m.getHeaders())
+							.build());
 				}
 			}
 		});
 		TestingUtilities.waitListening(serverCf, null);
-		toGateway.send(new GenericMessage<String>("Hello, world!"));
+		new DirectFieldAccessor(this.clientGatewayCf).setPropertyValue("port", this.serverCf.getPort());
+
+		this.toGateway.send(new GenericMessage<>("Hello, world!"));
 		Message<?> m = fromGateway.receive(1000);
 		assertNotNull(m);
 		assertEquals("foo:" + "Hello, world!", new String((byte[]) m.getPayload()));
 
-		// wait a short time to allow the connection to be returned to the pool
-		Thread.sleep(1000);
+		BlockingQueue<?> connections = TestUtils
+				.getPropertyValue(this.gatewayCF, "pool.available", BlockingQueue.class);
+		// wait until the connection is returned to the pool
+		int n = 0;
+		while (n++ < 100 && connections.size() == 0) {
+			Thread.sleep(100);
+		}
 
 		// assert we use the same connection from the pool
 		toGateway.send(new GenericMessage<String>("Hello, world2!"));
@@ -444,18 +515,17 @@ public class CachingClientConnectionFactoryTests {
 
 	@Test
 	public void testCloseOnTimeoutNet() throws Exception {
-		TcpNetClientConnectionFactory cf = new TcpNetClientConnectionFactory("localhost", serverCf.getPort());
-		testCloseOnTimeoutGuts(cf);
+		TestingUtilities.waitListening(serverCf, null);
+		testCloseOnTimeoutGuts(new TcpNetClientConnectionFactory("localhost", serverCf.getPort()));
 	}
 
 	@Test
 	public void testCloseOnTimeoutNio() throws Exception {
-		TcpNioClientConnectionFactory cf = new TcpNioClientConnectionFactory("localhost", serverCf.getPort());
-		testCloseOnTimeoutGuts(cf);
+		TestingUtilities.waitListening(serverCf, null);
+		testCloseOnTimeoutGuts(new TcpNioClientConnectionFactory("localhost", serverCf.getPort()));
 	}
 
 	private void testCloseOnTimeoutGuts(AbstractClientConnectionFactory cf) throws Exception {
-		TestingUtilities.waitListening(serverCf, null);
 		cf.setSoTimeout(100);
 		CachingClientConnectionFactory cccf = new CachingClientConnectionFactory(cf, 1);
 		cccf.start();
@@ -483,11 +553,7 @@ public class CachingClientConnectionFactoryTests {
 		when(factory1.isActive()).thenReturn(true);
 		when(factory2.isActive()).thenReturn(true);
 		doThrow(new IOException("fail")).when(mockConn1).send(Mockito.any(Message.class));
-		doAnswer(new Answer<Object>() {
-			public Object answer(InvocationOnMock invocation) throws Throwable {
-				return null;
-			}
-		}).when(mockConn2).send(Mockito.any(Message.class));
+		doAnswer(invocation -> null).when(mockConn2).send(Mockito.any(Message.class));
 		FailoverClientConnectionFactory failoverFactory = new FailoverClientConnectionFactory(factories);
 		failoverFactory.start();
 
@@ -501,7 +567,284 @@ public class CachingClientConnectionFactoryTests {
 		Mockito.verify(mockConn2).send(message);
 	}
 
-	public TcpConnectionSupport makeMockConnection() {
+	@Test
+	public void testCachedFailoverRealClose() throws Exception {
+		TcpNetServerConnectionFactory server1 = new TcpNetServerConnectionFactory(0);
+		server1.setBeanName("server1");
+		final CountDownLatch latch1 = new CountDownLatch(3);
+		server1.registerListener(message -> {
+			latch1.countDown();
+			return false;
+		});
+		server1.start();
+		TestingUtilities.waitListening(server1, 10000L);
+		int port1 = server1.getPort();
+		TcpNetServerConnectionFactory server2 = new TcpNetServerConnectionFactory(0);
+		server1.setBeanName("server2");
+		final CountDownLatch latch2 = new CountDownLatch(2);
+		server2.registerListener(message -> {
+			latch2.countDown();
+			return false;
+		});
+		server2.start();
+		TestingUtilities.waitListening(server2, 10000L);
+		int port2 = server2.getPort();
+		// Failover
+		AbstractClientConnectionFactory factory1 = new TcpNetClientConnectionFactory("localhost", port1);
+		factory1.setBeanName("client1");
+		factory1.registerListener(message -> false);
+		AbstractClientConnectionFactory factory2 = new TcpNetClientConnectionFactory("localhost", port2);
+		factory2.setBeanName("client2");
+		factory2.registerListener(message -> false);
+		List<AbstractClientConnectionFactory> factories = new ArrayList<AbstractClientConnectionFactory>();
+		factories.add(factory1);
+		factories.add(factory2);
+		FailoverClientConnectionFactory failoverFactory = new FailoverClientConnectionFactory(factories);
+
+		// Cache
+		CachingClientConnectionFactory cachingFactory = new CachingClientConnectionFactory(failoverFactory, 2);
+		cachingFactory.start();
+		TcpConnection conn1 = cachingFactory.getConnection();
+		GenericMessage<String> message = new GenericMessage<String>("foo");
+		conn1.send(message);
+		conn1.close();
+		TcpConnection conn2 = cachingFactory.getConnection();
+		assertSame(((TcpConnectionInterceptorSupport) conn1).getTheConnection(),
+				((TcpConnectionInterceptorSupport) conn2).getTheConnection());
+		conn2.send(message);
+		conn1 = cachingFactory.getConnection();
+		assertNotSame(((TcpConnectionInterceptorSupport) conn1).getTheConnection(),
+				((TcpConnectionInterceptorSupport) conn2).getTheConnection());
+		conn1.send(message);
+		conn1.close();
+		conn2.close();
+		assertTrue(latch1.await(10, TimeUnit.SECONDS));
+		server1.stop();
+		TestingUtilities.waitStopListening(server1, 10000L);
+		TestingUtilities.waitUntilFactoryHasThisNumberOfConnections(factory1, 0);
+		conn1 = cachingFactory.getConnection();
+		conn2 = cachingFactory.getConnection();
+		conn1.send(message);
+		conn2.send(message);
+		conn1.close();
+		conn2.close();
+		assertTrue(latch2.await(10, TimeUnit.SECONDS));
+		SimplePool<?> pool = TestUtils.getPropertyValue(cachingFactory, "pool", SimplePool.class);
+		assertEquals(2, pool.getIdleCount());
+		server2.stop();
+	}
+
+	@Test
+	public void testCachedFailoverRealBadHost() throws Exception {
+		TcpNetServerConnectionFactory server1 = new TcpNetServerConnectionFactory(0);
+		server1.setBeanName("server1");
+		final CountDownLatch latch1 = new CountDownLatch(3);
+		server1.registerListener(message -> {
+			latch1.countDown();
+			return false;
+		});
+		server1.start();
+		TestingUtilities.waitListening(server1, 10000L);
+		int port1 = server1.getPort();
+		TcpNetServerConnectionFactory server2 = new TcpNetServerConnectionFactory(0);
+		server1.setBeanName("server2");
+		final CountDownLatch latch2 = new CountDownLatch(2);
+		server2.registerListener(message -> {
+			latch2.countDown();
+			return false;
+		});
+		server2.start();
+		TestingUtilities.waitListening(server2, 10000L);
+		int port2 = server2.getPort();
+		// Failover
+		AbstractClientConnectionFactory factory1 = new TcpNetClientConnectionFactory("junkjunk", port1);
+		factory1.setBeanName("client1");
+		factory1.registerListener(message -> false);
+		AbstractClientConnectionFactory factory2 = new TcpNetClientConnectionFactory("localhost", port2);
+		factory2.setBeanName("client2");
+		factory2.registerListener(message -> false);
+		List<AbstractClientConnectionFactory> factories = new ArrayList<AbstractClientConnectionFactory>();
+		factories.add(factory1);
+		factories.add(factory2);
+		FailoverClientConnectionFactory failoverFactory = new FailoverClientConnectionFactory(factories);
+
+		// Cache
+		CachingClientConnectionFactory cachingFactory = new CachingClientConnectionFactory(failoverFactory, 2);
+		cachingFactory.start();
+		TcpConnection conn1 = cachingFactory.getConnection();
+		GenericMessage<String> message = new GenericMessage<String>("foo");
+		conn1.send(message);
+		conn1.close();
+		TcpConnection conn2 = cachingFactory.getConnection();
+		assertSame(((TcpConnectionInterceptorSupport) conn1).getTheConnection(),
+				((TcpConnectionInterceptorSupport) conn2).getTheConnection());
+		conn2.send(message);
+		conn1 = cachingFactory.getConnection();
+		assertNotSame(((TcpConnectionInterceptorSupport) conn1).getTheConnection(),
+				((TcpConnectionInterceptorSupport) conn2).getTheConnection());
+		conn1.send(message);
+		conn1.close();
+		conn2.close();
+		assertTrue(latch2.await(10, TimeUnit.SECONDS));
+		assertEquals(3, latch1.getCount());
+		server1.stop();
+		server2.stop();
+	}
+
+	@Test //INT-3650
+	public void testRealConnection() throws Exception {
+		TcpNetServerConnectionFactory in = new TcpNetServerConnectionFactory(0);
+		final CountDownLatch latch1 = new CountDownLatch(2);
+		final CountDownLatch latch2 = new CountDownLatch(102);
+		final List<String> connectionIds = new ArrayList<String>();
+		in.registerListener(message -> {
+			connectionIds.add((String) message.getHeaders().get(IpHeaders.CONNECTION_ID));
+			latch1.countDown();
+			latch2.countDown();
+			return false;
+		});
+		in.start();
+		TestingUtilities.waitListening(in, null);
+		int port = in.getPort();
+		TcpNetClientConnectionFactory out = new TcpNetClientConnectionFactory("localhost", port);
+		CachingClientConnectionFactory cache = new CachingClientConnectionFactory(out, 1);
+		cache.setSingleUse(false);
+		cache.setConnectionWaitTimeout(100);
+		cache.start();
+		TcpConnectionSupport connection1 = cache.getConnection();
+		connection1.send(new GenericMessage<String>("foo"));
+		connection1.close();
+		TcpConnectionSupport connection2 = cache.getConnection();
+		connection2.send(new GenericMessage<String>("foo"));
+		connection2.close();
+		assertTrue(latch1.await(10, TimeUnit.SECONDS));
+		assertSame(connectionIds.get(0), connectionIds.get(1));
+		for (int i = 0; i < 100; i++) {
+			TcpConnectionSupport connection = cache.getConnection();
+			connection.send(new GenericMessage<String>("foo"));
+			connection.close();
+		}
+		assertTrue(latch2.await(10, TimeUnit.SECONDS));
+		assertSame(connectionIds.get(0), connectionIds.get(101));
+		in.stop();
+		cache.stop();
+	}
+
+	@SuppressWarnings("unchecked")
+	@Test //INT-3722
+	public void testGatewayRelease() throws Exception {
+		TcpNetServerConnectionFactory in = new TcpNetServerConnectionFactory(0);
+		in.setApplicationEventPublisher(mock(ApplicationEventPublisher.class));
+		final TcpSendingMessageHandler handler = new TcpSendingMessageHandler();
+		handler.setConnectionFactory(in);
+		final AtomicInteger count = new AtomicInteger(2);
+		in.registerListener(message -> {
+			if (!(message instanceof ErrorMessage)) {
+				if (count.decrementAndGet() < 1) {
+					try {
+						Thread.sleep(1000);
+					}
+					catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+					}
+				}
+				handler.handleMessage(message);
+			}
+			return false;
+		});
+		handler.setBeanFactory(mock(BeanFactory.class));
+		handler.afterPropertiesSet();
+		handler.start();
+		TestingUtilities.waitListening(in, null);
+		int port = in.getPort();
+		TcpNetClientConnectionFactory out = new TcpNetClientConnectionFactory("localhost", port);
+		out.setApplicationEventPublisher(mock(ApplicationEventPublisher.class));
+		CachingClientConnectionFactory cache = new CachingClientConnectionFactory(out, 2);
+		final TcpOutboundGateway gate = new TcpOutboundGateway();
+		gate.setConnectionFactory(cache);
+		QueueChannel outputChannel = new QueueChannel();
+		gate.setOutputChannel(outputChannel);
+		gate.setBeanFactory(mock(BeanFactory.class));
+		gate.afterPropertiesSet();
+		Log logger = spy(TestUtils.getPropertyValue(gate, "logger", Log.class));
+		new DirectFieldAccessor(gate).setPropertyValue("logger", logger);
+		when(logger.isDebugEnabled()).thenReturn(true);
+		doAnswer(new Answer<Void>() {
+
+			private final CountDownLatch latch = new CountDownLatch(2);
+
+			@Override
+			public Void answer(InvocationOnMock invocation) throws Throwable {
+				invocation.callRealMethod();
+				String log = (String) invocation.getArguments()[0];
+				if (log.startsWith("Response")) {
+					Executors.newSingleThreadScheduledExecutor().execute(new Runnable() {
+
+						@Override
+						public void run() {
+							gate.handleMessage(new GenericMessage<String>("bar"));
+						}
+					});
+					// hold up the first thread until the second has added its pending reply
+					latch.await(10, TimeUnit.SECONDS);
+				}
+				else if (log.startsWith("Added")) {
+					latch.countDown();
+				}
+				return null;
+			}
+		}).when(logger).debug(anyString());
+		gate.start();
+		gate.handleMessage(new GenericMessage<String>("foo"));
+		Message<byte[]> result = (Message<byte[]>) outputChannel.receive(10000);
+		assertNotNull(result);
+		assertEquals("foo", new String(result.getPayload()));
+		result = (Message<byte[]>) outputChannel.receive(10000);
+		assertNotNull(result);
+		assertEquals("bar", new String(result.getPayload()));
+		handler.stop();
+		gate.stop();
+		verify(logger, never()).error(anyString());
+	}
+
+	@Test // INT-3728
+	public void testEarlyReceive() throws Exception {
+		final CountDownLatch latch = new CountDownLatch(1);
+		final AbstractClientConnectionFactory factory = new TcpNetClientConnectionFactory("", 0) {
+
+			@Override
+			protected Socket createSocket(String host, int port) throws IOException {
+				Socket mock = mock(Socket.class);
+				when(mock.getInputStream()).thenReturn(new ByteArrayInputStream("foo\r\n".getBytes()));
+				return mock;
+			}
+
+			@Override
+			public boolean isActive() {
+				return true;
+			}
+
+		};
+		factory.setApplicationEventPublisher(mock(ApplicationEventPublisher.class));
+		final CachingClientConnectionFactory cachingFactory = new CachingClientConnectionFactory(factory, 1);
+		final AtomicReference<Message<?>> received = new AtomicReference<Message<?>>();
+		cachingFactory.registerListener(message -> {
+			if (!(message instanceof ErrorMessage)) {
+				received.set(message);
+				latch.countDown();
+			}
+			return false;
+		});
+		cachingFactory.start();
+
+		cachingFactory.getConnection();
+		assertTrue(latch.await(10, TimeUnit.SECONDS));
+		assertNotNull(received.get());
+		assertNotNull(received.get().getHeaders().get(IpHeaders.ACTUAL_CONNECTION_ID));
+		cachingFactory.stop();
+	}
+
+	private TcpConnectionSupport makeMockConnection() {
 		TcpConnectionSupport connection = mock(TcpConnectionSupport.class);
 		when(connection.isOpen()).thenReturn(true);
 		return connection;

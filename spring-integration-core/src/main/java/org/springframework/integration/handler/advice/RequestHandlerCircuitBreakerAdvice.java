@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.handler.advice;
 
 import java.util.concurrent.ConcurrentHashMap;
@@ -72,14 +73,14 @@ public class RequestHandlerCircuitBreakerAdvice extends AbstractRequestHandlerAd
 		}
 	}
 
-	private class AdvisedMetadata {
+	private static class AdvisedMetadata {
 
 		private final AtomicInteger failures = new AtomicInteger();
 
 		private volatile long lastFailure;
 
 		private long getLastFailure() {
-			return lastFailure;
+			return this.lastFailure;
 		}
 
 		private void setLastFailure(long lastFailure) {
@@ -87,17 +88,21 @@ public class RequestHandlerCircuitBreakerAdvice extends AbstractRequestHandlerAd
 		}
 
 		private AtomicInteger getFailures() {
-			return failures;
+			return this.failures;
 		}
 	}
 
-	private class CircuitBreakerOpenException extends RuntimeException {
+	/**
+	 * An exception thrown when the circuit breaker is in an open state.
+	 */
+	public static final class CircuitBreakerOpenException extends RuntimeException {
 
 		private static final long serialVersionUID = 1L;
 
-		public CircuitBreakerOpenException(String message) {
+		private CircuitBreakerOpenException(String message) {
 			super(message);
 		}
+
 	}
 
 }

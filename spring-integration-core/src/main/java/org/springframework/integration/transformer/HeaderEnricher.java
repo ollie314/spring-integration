@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +18,12 @@ package org.springframework.integration.transformer;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Map.Entry;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
+import org.springframework.beans.factory.BeanFactoryAware;
 import org.springframework.beans.factory.BeanNameAware;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.integration.context.IntegrationObjectSupport;
@@ -39,6 +41,7 @@ import org.springframework.messaging.MessagingException;
  * @author Mark Fisher
  * @author David Turanski
  * @author Artem Bilan
+ * @author Gary Russell
  */
 public class HeaderEnricher extends IntegrationObjectSupport implements Transformer, BeanNameAware, InitializingBean {
 
@@ -126,16 +129,16 @@ public class HeaderEnricher extends IntegrationObjectSupport implements Transfor
 		}
 	}
 
-	@SuppressWarnings("rawtypes")
 	private void addHeadersFromMessageProcessor(Message<?> message, Map<String, Object> headerMap) {
 		if (this.messageProcessor != null) {
 			Object result = this.messageProcessor.processMessage(message);
 			if (result instanceof Map) {
-				Map resultMap = (Map) result;
-				for (Object key : resultMap.keySet()) {
+				Map<?, ?> resultMap = (Map<?, ?>) result;
+				for (Entry<?, ?> entry : resultMap.entrySet()) {
+					Object key = entry.getKey();
 					if (key instanceof String) {
 						if (this.defaultOverwrite || headerMap.get(key) == null) {
-							headerMap.put((String) key, resultMap.get(key));
+							headerMap.put((String) key, entry.getValue());
 						}
 					}
 					else if (logger.isDebugEnabled()) {
@@ -153,10 +156,18 @@ public class HeaderEnricher extends IntegrationObjectSupport implements Transfor
 	public void onInit() throws Exception {
 		boolean shouldOverwrite = this.defaultOverwrite;
 		for (HeaderValueMessageProcessor<?> processor : this.headersToAdd.values()) {
-			Boolean processerOverwrite = processor.isOverwrite();
-			if (processerOverwrite != null) {
-				shouldOverwrite |= processerOverwrite;
+			if (processor instanceof BeanFactoryAware && this.getBeanFactory() != null) {
+				((BeanFactoryAware) processor).setBeanFactory(this.getBeanFactory());
 			}
+			Boolean processorOverwrite = processor.isOverwrite();
+			if (processorOverwrite != null) {
+				shouldOverwrite |= processorOverwrite;
+			}
+		}
+		if (this.messageProcessor != null
+				&& this.messageProcessor instanceof BeanFactoryAware
+				&& this.getBeanFactory() != null) {
+			((BeanFactoryAware) this.messageProcessor).setBeanFactory(this.getBeanFactory());
 		}
 		if (!shouldOverwrite && !this.shouldSkipNulls) {
 			logger.warn(this.getComponentName()

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -46,7 +46,6 @@ import org.mockito.stubbing.Answer;
 
 import org.springframework.beans.DirectFieldAccessor;
 import org.springframework.beans.factory.BeanFactory;
-import org.springframework.context.ApplicationContext;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
 import org.springframework.expression.common.LiteralExpression;
 import org.springframework.integration.file.DefaultFileNameGenerator;
@@ -56,6 +55,7 @@ import org.springframework.integration.file.remote.session.CachingSessionFactory
 import org.springframework.integration.file.remote.session.Session;
 import org.springframework.integration.file.remote.session.SessionFactory;
 import org.springframework.integration.sftp.session.DefaultSftpSessionFactory;
+import org.springframework.integration.sftp.session.SftpSession;
 import org.springframework.integration.sftp.session.SftpTestSessionFactory;
 import org.springframework.integration.support.MessageBuilder;
 import org.springframework.integration.test.util.TestUtils;
@@ -108,7 +108,7 @@ public class SftpOutboundTests {
 	@Test
 	public void testHandleStringMessage() throws Exception {
 		File file = new File("remote-target-dir", "foo.txt");
-		if (file.exists()){
+		if (file.exists()) {
 			file.delete();
 		}
 		SessionFactory<LsEntry> sessionFactory = new TestSftpSessionFactory();
@@ -131,7 +131,7 @@ public class SftpOutboundTests {
 	@Test
 	public void testHandleBytesMessage() throws Exception {
 		File file = new File("remote-target-dir", "foo.txt");
-		if (file.exists()){
+		if (file.exists()) {
 			file.delete();
 		}
 		SessionFactory<LsEntry> sessionFactory = new TestSftpSessionFactory();
@@ -162,17 +162,20 @@ public class SftpOutboundTests {
 		File destFile = new File(targetDir, srcFile.getName());
 		destFile.deleteOnExit();
 
-		ApplicationContext context = new ClassPathXmlApplicationContext("SftpOutboundInsideChainTests-context.xml", getClass());
+		ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext(
+				"SftpOutboundInsideChainTests-context.xml", getClass());
 
 		MessageChannel channel = context.getBean("outboundChannelAdapterInsideChain", MessageChannel.class);
 
 		channel.send(new GenericMessage<File>(srcFile));
 		assertTrue("destination file was not created", destFile.exists());
+		context.close();
 	}
 
 	@Test //INT-2275
 	public void testFtpOutboundGatewayInsideChain() throws Exception {
-		ApplicationContext context = new ClassPathXmlApplicationContext("SftpOutboundInsideChainTests-context.xml", getClass());
+		ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext(
+				"SftpOutboundInsideChainTests-context.xml", getClass());
 
 		MessageChannel channel = context.getBean("outboundGatewayInsideChain", MessageChannel.class);
 
@@ -190,6 +193,7 @@ public class SftpOutboundTests {
 		for (FileInfo<?> remoteFile : remoteFiles) {
 			assertTrue(files.contains(remoteFile.getFilename()));
 		}
+		context.close();
 	}
 
 	@Test //INT-2954
@@ -375,7 +379,7 @@ public class SftpOutboundTests {
 	public static class TestSftpSessionFactory extends DefaultSftpSessionFactory {
 
 		@Override
-		public Session<LsEntry> getSession() {
+		public SftpSession getSession() {
 			try {
 				ChannelSftp channel = mock(ChannelSftp.class);
 
@@ -383,9 +387,9 @@ public class SftpOutboundTests {
 					@Override
 					public Object answer(InvocationOnMock invocation)
 							throws Throwable {
-						File file = new File((String)invocation.getArguments()[1]);
+						File file = new File((String) invocation.getArguments()[1]);
 						assertTrue(file.getName().endsWith(".writing"));
-						FileCopyUtils.copy((InputStream)invocation.getArguments()[0], new FileOutputStream(file));
+						FileCopyUtils.copy((InputStream) invocation.getArguments()[0], new FileOutputStream(file));
 						return null;
 					}
 
@@ -417,7 +421,8 @@ public class SftpOutboundTests {
 
 				when(jschSession.openChannel("sftp")).thenReturn(channel);
 				return SftpTestSessionFactory.createSftpSession(jschSession);
-			} catch (Exception e) {
+			}
+			catch (Exception e) {
 				throw new RuntimeException("Failed to create mock sftp session", e);
 			}
 		}

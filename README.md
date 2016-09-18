@@ -1,4 +1,4 @@
-Spring Integration
+Spring Integration <img src="https://build.spring.io/plugins/servlet/buildStatusImage/INT-B41">
 ==================
 
 # Checking out and Building
@@ -8,6 +8,8 @@ To check out the project and build from source, do the following:
     git clone git://github.com/spring-projects/spring-integration.git
     cd spring-integration
     ./gradlew build
+
+**NOTE:** While Spring Integration runs with Java SE 6 or higher, a Java 8 compiler is required to build the project.
 
 If you encounter out of memory errors during the build, increase available heap and permgen for Gradle:
 
@@ -51,4 +53,4 @@ To generate IDEA metadata (.iml and .ipr files), do the following:
 # Resources
 
 For more information, please visit the Spring Integration website at:
-[http://www.springsource.org/spring-integration](http://www.springsource.org/spring-integration)
+[http://projects.spring.io/spring-integration](http://projects.spring.io/spring-integration/)

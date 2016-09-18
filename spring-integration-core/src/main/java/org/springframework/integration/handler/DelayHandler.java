@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,8 +17,10 @@
 package org.springframework.integration.handler;
 
 import java.io.Serializable;
+import java.util.Collection;
 import java.util.Date;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.aopalliance.aop.Advice;
@@ -29,15 +31,13 @@ import org.springframework.context.event.ContextRefreshedEvent;
 import org.springframework.expression.EvaluationContext;
 import org.springframework.expression.EvaluationException;
 import org.springframework.expression.Expression;
-import org.springframework.expression.ExpressionParser;
-import org.springframework.expression.spel.SpelParserConfiguration;
-import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.integration.context.IntegrationObjectSupport;
 import org.springframework.integration.expression.ExpressionUtils;
 import org.springframework.integration.store.MessageGroup;
 import org.springframework.integration.store.MessageGroupStore;
 import org.springframework.integration.store.MessageStore;
 import org.springframework.integration.store.SimpleMessageStore;
+import org.springframework.integration.support.management.IntegrationManagedResource;
 import org.springframework.jmx.export.annotation.ManagedResource;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageHandler;
@@ -46,7 +46,6 @@ import org.springframework.messaging.MessagingException;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.util.Assert;
-import org.springframework.util.ClassUtils;
 import org.springframework.util.CollectionUtils;
 
 /**
@@ -75,14 +74,14 @@ import org.springframework.util.CollectionUtils;
  *
  * @author Mark Fisher
  * @author Artem Bilan
+ * @author Gary Russell
  * @since 1.0.3
  */
 
 @ManagedResource
+@IntegrationManagedResource
 public class DelayHandler extends AbstractReplyProducingMessageHandler implements DelayHandlerManagement,
 		ApplicationListener<ContextRefreshedEvent> {
-
-	private static final ExpressionParser expressionParser = new SpelExpressionParser(new SpelParserConfiguration(true, true));
 
 	private final String messageGroupId;
 
@@ -91,8 +90,6 @@ public class DelayHandler extends AbstractReplyProducingMessageHandler implement
 	private Expression delayExpression;
 
 	private volatile boolean ignoreExpressionFailures = true;
-
-	private volatile String delayHeaderName;
 
 	private volatile MessageGroupStore messageStore;
 
@@ -140,19 +137,6 @@ public class DelayHandler extends AbstractReplyProducingMessageHandler implement
 	 */
 	public void setDefaultDelay(long defaultDelay) {
 		this.defaultDelay = defaultDelay;
-	}
-
-	/**
-	 * Specify the name of the header that should be checked for a delay period
-	 * (in milliseconds) or a Date to delay until. If this property is set, any
-	 * such header value will take precedence over this handler's default delay.
-	 * @deprecated in favor of {@link #delayExpression}
-	 *
-	 * @param delayHeaderName The name of the header.
-	 */
-	@Deprecated
-	public void setDelayHeaderName(String delayHeaderName) {
-		this.delayHeaderName = delayHeaderName;
 	}
 
 	/**
@@ -219,12 +203,6 @@ public class DelayHandler extends AbstractReplyProducingMessageHandler implement
 		else {
 			Assert.isInstanceOf(MessageStore.class, this.messageStore);
 		}
-		if (this.delayHeaderName != null) {
-			logger.warn("'delayHeaderName' is deprecated in favor of 'delayExpression'");
-			if (this.delayExpression == null) {
-				this.delayExpression = expressionParser.parseExpression("headers['" + this.delayHeaderName + "']");
-			}
-		}
 		this.evaluationContext = ExpressionUtils.createStandardEvaluationContext(this.getBeanFactory());
 		this.releaseHandler = this.createReleaseMessageTask();
 	}
@@ -234,10 +212,10 @@ public class DelayHandler extends AbstractReplyProducingMessageHandler implement
 
 		if (!CollectionUtils.isEmpty(this.delayedAdviceChain)) {
 			ProxyFactory proxyFactory = new ProxyFactory(releaseHandler);
-			for (Advice advice : delayedAdviceChain) {
+			for (Advice advice : this.delayedAdviceChain) {
 				proxyFactory.addAdvice(advice);
 			}
-			return (MessageHandler) proxyFactory.getProxy(ClassUtils.getDefaultClassLoader());
+			return (MessageHandler) proxyFactory.getProxy(getApplicationContext().getClassLoader());
 		}
 		return releaseHandler;
 	}
@@ -273,18 +251,27 @@ public class DelayHandler extends AbstractReplyProducingMessageHandler implement
 	}
 
 	private long determineDelayForMessage(Message<?> message) {
+		DelayedMessageWrapper delayedMessageWrapper = null;
+		if (message.getPayload() instanceof DelayedMessageWrapper) {
+			delayedMessageWrapper = (DelayedMessageWrapper) message.getPayload();
+		}
+
 		long delay = this.defaultDelay;
 		if (this.delayExpression != null) {
 			Exception delayValueException = null;
 			Object delayValue = null;
 			try {
-				delayValue = this.delayExpression.getValue(this.evaluationContext, message);
+				delayValue = this.delayExpression.getValue(this.evaluationContext,
+						delayedMessageWrapper != null ? delayedMessageWrapper.getOriginal() : message);
 			}
 			catch (EvaluationException e) {
 				delayValueException = e;
 			}
 			if (delayValue instanceof Date) {
-				delay = ((Date) delayValue).getTime() - new Date().getTime();
+				long current = delayedMessageWrapper != null
+						? delayedMessageWrapper.getRequestDate()
+						: System.currentTimeMillis();
+				delay = ((Date) delayValue).getTime() - current;
 			}
 			else if (delayValue != null) {
 				try {
@@ -297,12 +284,14 @@ public class DelayHandler extends AbstractReplyProducingMessageHandler implement
 			if (delayValueException != null) {
 				if (this.ignoreExpressionFailures) {
 					if (logger.isDebugEnabled()) {
-						logger.debug("Failed to get delay value from 'delayExpression': " + delayValueException.getMessage() +
+						logger.debug("Failed to get delay value from 'delayExpression': " +
+								delayValueException.getMessage() +
 								". Will fall back to default delay: " + this.defaultDelay);
 					}
 				}
 				else {
-					throw new MessageHandlingException(message, "Error occurred during 'delay' value determination", delayValueException);
+					throw new MessageHandlingException(message, "Error occurred during 'delay' value determination",
+							delayValueException);
 				}
 
 			}
@@ -319,18 +308,60 @@ public class DelayHandler extends AbstractReplyProducingMessageHandler implement
 		}
 		else {
 			messageWrapper = new DelayedMessageWrapper(message, System.currentTimeMillis());
-			delayedMessage = this.getMessageBuilderFactory().withPayload(messageWrapper).copyHeaders(message.getHeaders()).build();
+			delayedMessage = getMessageBuilderFactory()
+					.withPayload(messageWrapper)
+					.copyHeaders(message.getHeaders())
+					.build();
 			this.messageStore.addMessageToGroup(this.messageGroupId, delayedMessage);
 		}
 
-		final Message<?> messageToSchedule = delayedMessage;
 
-		this.getTaskScheduler().schedule(new Runnable() {
-			@Override
-			public void run() {
-				releaseMessage(messageToSchedule);
+		Runnable releaseTask;
+
+		if (this.messageStore instanceof SimpleMessageStore) {
+			final Message<?> messageToSchedule = delayedMessage;
+
+			releaseTask = new Runnable() {
+
+				@Override
+				public void run() {
+					releaseMessage(messageToSchedule);
+				}
+
+			};
+		}
+		else {
+			final UUID messageId = delayedMessage.getHeaders().getId();
+
+			releaseTask = new Runnable() {
+
+				@Override
+				public void run() {
+					Message<?> messageToRelease = getMessageById(messageId);
+					if (messageToRelease != null) {
+						releaseMessage(messageToRelease);
+					}
+				}
+
+			};
+		}
+
+		getTaskScheduler().schedule(releaseTask, new Date(messageWrapper.getRequestDate() + delay));
+	}
+
+	private Message<?> getMessageById(UUID messageId) {
+		Message<?> theMessage = ((MessageStore) this.messageStore).getMessage(messageId);
+
+		if (theMessage == null) {
+			if (logger.isDebugEnabled()) {
+				logger.debug("No message in the Message Store for id: " + messageId +
+						". Likely another instance has already released it.");
 			}
-		}, new Date(messageWrapper.getRequestDate() + delay));
+			return null;
+		}
+		else {
+			return theMessage;
+		}
 	}
 
 	private void releaseMessage(Message<?> message) {
@@ -338,9 +369,10 @@ public class DelayHandler extends AbstractReplyProducingMessageHandler implement
 	}
 
 	private void doReleaseMessage(Message<?> message) {
-		if (this.messageStore instanceof SimpleMessageStore
-				|| ((MessageStore) this.messageStore).removeMessage(message.getHeaders().getId()) != null) {
-			this.messageStore.removeMessageFromGroup(this.messageGroupId, message);
+		if (removeDelayedMessageFromMessageStore(message)) {
+			if (!(this.messageStore instanceof SimpleMessageStore)) {
+				this.messageStore.removeMessagesFromGroup(this.messageGroupId, message);
+			}
 			this.handleMessageInternal(message);
 		}
 		else {
@@ -348,6 +380,24 @@ public class DelayHandler extends AbstractReplyProducingMessageHandler implement
 				logger.debug("No message in the Message Store to release: " + message +
 						". Likely another instance has already released it.");
 			}
+		}
+	}
+
+	private boolean removeDelayedMessageFromMessageStore(Message<?> message) {
+		if (this.messageStore instanceof SimpleMessageStore) {
+			synchronized (this.messageGroupId) {
+				Collection<Message<?>> messages = this.messageStore.getMessageGroup(this.messageGroupId).getMessages();
+				if (messages.contains(message)) {
+					this.messageStore.removeMessagesFromGroup(this.messageGroupId, message);
+					return true;
+				}
+				else {
+					return false;
+				}
+			}
+		}
+		else {
+			return ((MessageStore) this.messageStore).removeMessage(message.getHeaders().getId()) != null;
 		}
 	}
 
@@ -360,16 +410,19 @@ public class DelayHandler extends AbstractReplyProducingMessageHandler implement
 	 * Used for reading persisted Messages in the 'messageStore'
 	 * to reschedule them e.g. upon application restart.
 	 * The logic is based on iteration over {@code messageGroup.getMessages()}
-	 * and schedules task about 'delay' logic.
+	 * and schedules task for 'delay' logic.
 	 * This behavior is dictated by the avoidance of invocation thread overload.
 	 */
 	@Override
-	public void reschedulePersistedMessages() {
+	public synchronized void reschedulePersistedMessages() {
 		MessageGroup messageGroup = this.messageStore.getMessageGroup(this.messageGroupId);
 		for (final Message<?> message : messageGroup.getMessages()) {
-			this.getTaskScheduler().schedule(new Runnable() {
+			getTaskScheduler().schedule(new Runnable() {
+
 				@Override
 				public void run() {
+					// This is fine to keep the reference to the message,
+					// because the scheduled task is performed immediately.
 					long delay = determineDelayForMessage(message);
 					if (delay > 0) {
 						releaseMessageAfterDelay(message, delay);
@@ -378,6 +431,7 @@ public class DelayHandler extends AbstractReplyProducingMessageHandler implement
 						releaseMessage(message);
 					}
 				}
+
 			}, new Date());
 		}
 	}

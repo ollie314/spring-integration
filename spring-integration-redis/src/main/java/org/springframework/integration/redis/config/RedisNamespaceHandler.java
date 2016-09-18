@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.redis.config;
 
 import org.springframework.integration.config.xml.AbstractIntegrationNamespaceHandler;
@@ -34,5 +35,8 @@ public class RedisNamespaceHandler extends AbstractIntegrationNamespaceHandler {
 		registerBeanDefinitionParser("outbound-channel-adapter", new RedisOutboundChannelAdapterParser());
 		registerBeanDefinitionParser("queue-inbound-channel-adapter", new RedisQueueInboundChannelAdapterParser());
 		registerBeanDefinitionParser("queue-outbound-channel-adapter", new RedisQueueOutboundChannelAdapterParser());
+		registerBeanDefinitionParser("outbound-gateway", new RedisOutboundGatewayParser());
+		registerBeanDefinitionParser("queue-inbound-gateway", new RedisQueueInboundGatewayParser());
+		registerBeanDefinitionParser("queue-outbound-gateway", new RedisQueueOutboundGatewayParser());
 	}
 }

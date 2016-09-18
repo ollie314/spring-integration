@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,20 @@
 
 package org.springframework.integration.config.annotation;
 
+import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
+import java.util.Arrays;
+import java.util.List;
 
-import org.springframework.beans.factory.ListableBeanFactory;
+import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
+import org.springframework.context.annotation.Bean;
+import org.springframework.core.annotation.AnnotatedElementUtils;
 import org.springframework.integration.annotation.Filter;
-import org.springframework.messaging.MessageHandler;
+import org.springframework.integration.core.MessageSelector;
 import org.springframework.integration.filter.MessageFilter;
 import org.springframework.integration.filter.MethodInvokingSelector;
+import org.springframework.integration.util.MessagingAnnotationUtils;
+import org.springframework.messaging.MessageHandler;
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
 
@@ -31,26 +38,67 @@ import org.springframework.util.StringUtils;
  *
  * @author Mark Fisher
  * @author Gary Russell
+ * @author Artem Bilan
  * @since 2.0
  */
 public class FilterAnnotationPostProcessor extends AbstractMethodAnnotationPostProcessor<Filter> {
 
-	public FilterAnnotationPostProcessor(ListableBeanFactory beanFactory) {
+	public FilterAnnotationPostProcessor(ConfigurableListableBeanFactory beanFactory) {
 		super(beanFactory);
+		this.messageHandlerAttributes.addAll(Arrays.<String>asList("discardChannel", "throwExceptionOnRejection",
+				"adviceChain", "discardWithinAdvice"));
 	}
 
 
 	@Override
-	protected MessageHandler createHandler(Object bean, Method method, Filter annotation) {
-		Assert.isTrue(boolean.class.equals(method.getReturnType()) || Boolean.class.equals(method.getReturnType()),
-				"The Filter annotation may only be applied to methods with a boolean return type.");
-		MethodInvokingSelector selector = new MethodInvokingSelector(bean, method);
-		MessageFilter filter = new MessageFilter(selector);
-		String outputChannelName = annotation.outputChannel();
-		if (StringUtils.hasText(outputChannelName)) {
-			filter.setOutputChannel(this.channelResolver.resolveDestination(outputChannelName));
+	protected MessageHandler createHandler(Object bean, Method method, List<Annotation> annotations) {
+		MessageSelector selector;
+		if (AnnotatedElementUtils.isAnnotated(method, Bean.class.getName())) {
+			Object target = this.resolveTargetBeanFromMethodWithBeanAnnotation(method);
+			if (target instanceof MessageSelector) {
+				selector = (MessageSelector) target;
+			}
+			else if (this.extractTypeIfPossible(target, MessageFilter.class) != null) {
+				checkMessageHandlerAttributes(resolveTargetBeanName(method), annotations);
+				return (MessageHandler) target;
+			}
+			else {
+				selector = new MethodInvokingSelector(target);
+			}
 		}
-		filter.setDiscardWithinAdvice(annotation.discardWithinAdvice());
+		else {
+			Assert.isTrue(boolean.class.equals(method.getReturnType()) || Boolean.class.equals(method.getReturnType()),
+					"The Filter annotation may only be applied to methods with a boolean return type.");
+			selector = new MethodInvokingSelector(bean, method);
+		}
+
+		MessageFilter filter = new MessageFilter(selector);
+
+		String discardWithinAdvice = MessagingAnnotationUtils.resolveAttribute(annotations, "discardWithinAdvice",
+				String.class);
+		if (StringUtils.hasText(discardWithinAdvice)) {
+			discardWithinAdvice = this.beanFactory.resolveEmbeddedValue(discardWithinAdvice);
+			if (StringUtils.hasText(discardWithinAdvice)) {
+				filter.setDiscardWithinAdvice(Boolean.parseBoolean(discardWithinAdvice));
+			}
+		}
+
+
+		String throwExceptionOnRejection = MessagingAnnotationUtils.resolveAttribute(annotations,
+				"throwExceptionOnRejection", String.class);
+		if (StringUtils.hasText(throwExceptionOnRejection)) {
+			String throwExceptionOnRejectionValue = this.beanFactory.resolveEmbeddedValue(throwExceptionOnRejection);
+			if (StringUtils.hasText(throwExceptionOnRejectionValue)) {
+				filter.setThrowExceptionOnRejection(Boolean.parseBoolean(throwExceptionOnRejectionValue));
+			}
+		}
+
+		String discardChannelName = MessagingAnnotationUtils.resolveAttribute(annotations, "discardChannel", String.class);
+		if (StringUtils.hasText(discardChannelName)) {
+			filter.setDiscardChannelName(discardChannelName);
+		}
+
+		this.setOutputChannelIfPresent(annotations, filter);
 		return filter;
 	}
 

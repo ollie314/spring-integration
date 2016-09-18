@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -35,6 +36,8 @@ import org.springframework.expression.Expression;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.expression.spel.support.StandardEvaluationContext;
 import org.springframework.integration.channel.QueueChannel;
+import org.springframework.integration.mapping.support.JsonHeaders;
+import org.springframework.integration.support.DefaultMessageBuilderFactory;
 import org.springframework.integration.support.MessageBuilder;
 import org.springframework.integration.support.json.Jackson2JsonObjectMapper;
 import org.springframework.integration.support.json.JsonObjectMapperAdapter;
@@ -59,42 +62,57 @@ import com.fasterxml.jackson.databind.JsonNode;
 public class ObjectToJsonTransformerParserTests {
 
 	@Autowired
-	private volatile ApplicationContext context;
+	private ApplicationContext context;
 
 	@Autowired
-	private volatile MessageChannel defaultObjectMapperInput;
+	private MessageChannel defaultObjectMapperInput;
 
 	@Autowired
-	private volatile MessageChannel customJsonObjectMapperInput;
+	private MessageChannel customJsonObjectMapperInput;
 
 	@Autowired
-	private volatile MessageChannel jsonNodeInput;
+	private MessageChannel jsonNodeInput;
+
+	@Autowired
+	private MessageChannel boonJsonNodeInput;
+
+	@Autowired
+	private DefaultMessageBuilderFactory defaultMessageBuilderFactory;
 
 	@Test
-	public void testContentType(){
+	public void testContentType() {
 		ObjectToJsonTransformer transformer =
-				TestUtils.getPropertyValue(context.getBean("defaultTransformer"), "handler.transformer", ObjectToJsonTransformer.class);
+				TestUtils.getPropertyValue(context.getBean("defaultTransformer"), "handler.transformer",
+						ObjectToJsonTransformer.class);
 		assertEquals("application/json", TestUtils.getPropertyValue(transformer, "contentType"));
 
-		assertEquals(Jackson2JsonObjectMapper.class, TestUtils.getPropertyValue(transformer, "jsonObjectMapper").getClass());
+		assertEquals(Jackson2JsonObjectMapper.class,
+				TestUtils.getPropertyValue(transformer, "jsonObjectMapper").getClass());
 
 		Message<?> transformed = transformer.transform(MessageBuilder.withPayload("foo").build());
-		assertTrue(transformed.getHeaders().containsKey(MessageHeaders.CONTENT_TYPE));
-		assertEquals("application/json", transformed.getHeaders().get(MessageHeaders.CONTENT_TYPE));
+
+		// spring.integration.readOnly.headers=contentType, so no 'contentType'
+		assertFalse(transformed.getHeaders().containsKey(MessageHeaders.CONTENT_TYPE));
+
+		// Reset readOnlyHeaders to defaults. Therefore the 'contentType' should be presented in subsequent tests
+		this.defaultMessageBuilderFactory.setReadOnlyHeaders();
 
 		transformer =
-				TestUtils.getPropertyValue(context.getBean("emptyContentTypeTransformer"), "handler.transformer", ObjectToJsonTransformer.class);
+				TestUtils.getPropertyValue(context.getBean("emptyContentTypeTransformer"), "handler.transformer",
+						ObjectToJsonTransformer.class);
 		assertEquals("", TestUtils.getPropertyValue(transformer, "contentType"));
 
 		transformed = transformer.transform(MessageBuilder.withPayload("foo").build());
 		assertFalse(transformed.getHeaders().containsKey(MessageHeaders.CONTENT_TYPE));
 
-		transformed = transformer.transform(MessageBuilder.withPayload("foo").setHeader(MessageHeaders.CONTENT_TYPE, "foo").build());
+		transformed = transformer.transform(MessageBuilder.withPayload("foo").setHeader(MessageHeaders.CONTENT_TYPE,
+				"foo").build());
 		assertNotNull(transformed.getHeaders().get(MessageHeaders.CONTENT_TYPE));
 		assertEquals("foo", transformed.getHeaders().get(MessageHeaders.CONTENT_TYPE));
 
 		transformer =
-				TestUtils.getPropertyValue(context.getBean("overridenContentTypeTransformer"), "handler.transformer", ObjectToJsonTransformer.class);
+				TestUtils.getPropertyValue(context.getBean("overriddenContentTypeTransformer"), "handler.transformer",
+						ObjectToJsonTransformer.class);
 		assertEquals("text/xml", TestUtils.getPropertyValue(transformer, "contentType"));
 	}
 
@@ -160,9 +178,29 @@ public class ObjectToJsonTransformerParserTests {
 		assertThat(payload, Matchers.instanceOf(JsonNode.class));
 		StandardEvaluationContext evaluationContext = new StandardEvaluationContext();
 		evaluationContext.addPropertyAccessor(new JsonPropertyAccessor());
-		Expression expression = new SpelExpressionParser().parseExpression("firstName.toString() == 'John' and age.toString() == '42'");
+		Expression expression = new SpelExpressionParser()
+				.parseExpression("firstName.toString() == 'John' and age.toString() == '42'");
 
 		assertTrue(expression.getValue(evaluationContext, payload, Boolean.class));
+	}
+
+	@Test
+	public void testBoonNodeResultType() {
+		TestPerson person = new TestPerson();
+		person.setFirstName("John");
+		person.setLastName("Doe");
+		person.setAge(42);
+		QueueChannel replyChannel = new QueueChannel();
+		Message<TestPerson> message = MessageBuilder.withPayload(person).setReplyChannel(replyChannel).build();
+		this.boonJsonNodeInput.send(message);
+		Message<?> reply = replyChannel.receive(0);
+		assertNotNull(reply);
+		Object payload = reply.getPayload();
+		assertThat(payload, Matchers.instanceOf(Map.class));
+		assertEquals(TestPerson.class, reply.getHeaders().get(JsonHeaders.TYPE_ID));
+
+		Expression expression = new SpelExpressionParser().parseExpression("[firstName] == 'John' and [age] == 42");
+		assertTrue(expression.getValue(new StandardEvaluationContext(), payload, Boolean.class));
 	}
 
 	static class CustomJsonObjectMapper extends JsonObjectMapperAdapter<Object, Object> {
@@ -171,6 +209,7 @@ public class ObjectToJsonTransformerParserTests {
 		public String toJson(Object value) throws Exception {
 			return "{" + value.toString() + "}";
 		}
+
 	}
 
 }

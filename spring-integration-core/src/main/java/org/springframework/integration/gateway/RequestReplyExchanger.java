@@ -21,11 +21,12 @@ import org.springframework.messaging.Message;
 /**
  * Interface for a request/reply Message exchange. This will be used as a default
  * by {@link GatewayProxyFactoryBean} if no 'service-interface' property has been provided.
- * 
+ *
  * @author Oleg Zhurakousky
  * @author Mark Fisher
  * @since 2.0
  */
+@FunctionalInterface
 public interface RequestReplyExchanger {
 
 	Message<?> exchange(Message<?> request);

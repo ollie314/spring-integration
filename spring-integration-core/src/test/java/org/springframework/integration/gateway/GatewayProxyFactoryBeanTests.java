@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,8 +44,8 @@ import org.springframework.expression.Expression;
 import org.springframework.expression.common.LiteralExpression;
 import org.springframework.integration.channel.DirectChannel;
 import org.springframework.integration.channel.QueueChannel;
-import org.springframework.integration.context.IntegrationContextUtils;
 import org.springframework.integration.endpoint.EventDrivenConsumer;
+import org.springframework.integration.support.utils.IntegrationUtils;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.MessageHandler;
@@ -91,7 +91,7 @@ public class GatewayProxyFactoryBeanTests {
 		cs.addConverter(stringToByteConverter);
 		GatewayProxyFactoryBean proxyFactory = new GatewayProxyFactoryBean();
 		DefaultListableBeanFactory bf = new DefaultListableBeanFactory();
-		bf.registerSingleton(IntegrationContextUtils.INTEGRATION_CONVERSION_SERVICE_BEAN_NAME, cs);
+		bf.registerSingleton(IntegrationUtils.INTEGRATION_CONVERSION_SERVICE_BEAN_NAME, cs);
 
 		proxyFactory.setBeanFactory(bf);
 		proxyFactory.setDefaultRequestChannel(requestChannel);
@@ -129,11 +129,28 @@ public class GatewayProxyFactoryBeanTests {
 		proxyFactory.setDefaultRequestChannel(new DirectChannel());
 		proxyFactory.setDefaultReplyChannel(replyChannel);
 		proxyFactory.setBeanName("testGateway");
+		proxyFactory.setBeanFactory(mock(BeanFactory.class));
 		proxyFactory.afterPropertiesSet();
 		TestService service = (TestService) proxyFactory.getObject();
 		String result = service.solicitResponse();
 		assertNotNull(result);
 		assertEquals("foo", result);
+	}
+
+	@Test
+	public void testReceiveMessage() throws Exception {
+		QueueChannel replyChannel = new QueueChannel();
+		replyChannel.send(new GenericMessage<>("foo"));
+		GatewayProxyFactoryBean proxyFactory = new GatewayProxyFactoryBean();
+		proxyFactory.setServiceInterface(TestService.class);
+		proxyFactory.setDefaultReplyChannel(replyChannel);
+
+		proxyFactory.setBeanFactory(mock(BeanFactory.class));
+		proxyFactory.afterPropertiesSet();
+		TestService service = (TestService) proxyFactory.getObject();
+		Message<String> message = service.getMessage();
+		assertNotNull(message);
+		assertEquals("foo", message.getPayload());
 	}
 
 	@Test
@@ -165,6 +182,7 @@ public class GatewayProxyFactoryBeanTests {
 		TestService service = (TestService) context.getBean("proxy");
 		String result = service.requestReply("foo");
 		assertEquals("foo!!!", result);
+		context.close();
 	}
 
 	@Test
@@ -177,6 +195,7 @@ public class GatewayProxyFactoryBeanTests {
 		TestChannelInterceptor interceptor = (TestChannelInterceptor) context.getBean("interceptor");
 		assertEquals(1, interceptor.getSentCount());
 		assertEquals(1, interceptor.getReceivedCount());
+		context.close();
 	}
 
 	@Test
@@ -205,13 +224,14 @@ public class GatewayProxyFactoryBeanTests {
 				}
 			});
 		}
-		latch.await(10, TimeUnit.SECONDS);
+		latch.await(30, TimeUnit.SECONDS);
 		for (int i = 0; i < numRequests; i++) {
 			assertEquals("test-" + i + "!!!", results[i]);
 		}
 		TestChannelInterceptor interceptor = (TestChannelInterceptor) context.getBean("interceptor");
 		assertEquals(numRequests, interceptor.getSentCount());
 		assertEquals(numRequests, interceptor.getReceivedCount());
+		context.close();
 	}
 
 	@Test
@@ -338,7 +358,7 @@ public class GatewayProxyFactoryBeanTests {
 		gpfb.setDefaultRequestChannel(drc);
 		gpfb.setDefaultReplyTimeout(0L);
 		GatewayMethodMetadata meta = new GatewayMethodMetadata();
-		meta.setHeaderExpressions(Collections. <String, Expression> singletonMap("foo", new LiteralExpression("bar")));
+		meta.setHeaderExpressions(Collections.<String, Expression>singletonMap("foo", new LiteralExpression("bar")));
 		gpfb.setGlobalMethodMetadata(meta);
 		gpfb.afterPropertiesSet();
 		((TestEchoService) gpfb.getObject()).echo("foo");
@@ -389,7 +409,7 @@ public class GatewayProxyFactoryBeanTests {
 
 	@Test
 	public void autowiredGateway() {
-		new ClassPathXmlApplicationContext("gatewayAutowiring.xml", GatewayProxyFactoryBeanTests.class);
+		new ClassPathXmlApplicationContext("gatewayAutowiring.xml", GatewayProxyFactoryBeanTests.class).close();
 	}
 
 
@@ -398,13 +418,13 @@ public class GatewayProxyFactoryBeanTests {
 	}
 
 
-	static interface TestEchoService {
+	interface TestEchoService {
 
 		Message<?> echo(String s);
 	}
 
 
-	static interface TestExceptionThrowingInterface {
+	interface TestExceptionThrowingInterface {
 
 		String throwCheckedException(String s) throws TestException;
 	}

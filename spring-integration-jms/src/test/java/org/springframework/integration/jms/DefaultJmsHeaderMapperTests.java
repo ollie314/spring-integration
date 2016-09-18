@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,23 +16,35 @@
 
 package org.springframework.integration.jms;
 
+import static org.hamcrest.Matchers.instanceOf;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertThat;
 
 import java.util.Date;
 import java.util.Map;
 
 import javax.jms.Destination;
 import javax.jms.JMSException;
+import javax.jms.Session;
+import javax.jms.TextMessage;
 
 import org.junit.Test;
+import org.mockito.Mockito;
+import org.mockito.invocation.InvocationOnMock;
+import org.mockito.stubbing.Answer;
 
 import org.springframework.integration.IntegrationMessageHeaderAccessor;
 import org.springframework.integration.support.MessageBuilder;
+import org.springframework.jms.support.JmsHeaders;
+import org.springframework.jms.support.converter.MappingJackson2MessageConverter;
+import org.springframework.jms.support.converter.MessageType;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageHeaders;
+
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
 
 /**
  * @author Mark Fisher
@@ -42,7 +54,7 @@ public class DefaultJmsHeaderMapperTests {
 
 	@Test
 	public void testJmsReplyToMappedFromHeader() throws JMSException {
-		Destination replyTo = new Destination() {};
+		Destination replyTo = new Destination() { };
 		Message<String> message = MessageBuilder.withPayload("test")
 				.setHeader(JmsHeaders.REPLY_TO, replyTo).build();
 		DefaultJmsHeaderMapper mapper = new DefaultJmsHeaderMapper();
@@ -160,7 +172,7 @@ public class DefaultJmsHeaderMapperTests {
 
 	@Test
 	public void testUserDefinedPropertyWithUnsupportedType() throws JMSException {
-		Destination destination = new Destination() {};
+		Destination destination = new Destination() { };
 		Message<String> message = MessageBuilder.withPayload("test")
 				.setHeader("destination", destination)
 				.build();
@@ -173,7 +185,7 @@ public class DefaultJmsHeaderMapperTests {
 
 	@Test
 	public void testJmsReplyToMappedToHeader() throws JMSException {
-		Destination replyTo = new Destination() {};
+		Destination replyTo = new Destination() { };
 		javax.jms.Message jmsMessage = new StubTextMessage();
 		jmsMessage.setJMSReplyTo(replyTo);
 		DefaultJmsHeaderMapper mapper = new DefaultJmsHeaderMapper();
@@ -495,6 +507,43 @@ public class DefaultJmsHeaderMapperTests {
 		assertNull(headers.get(JmsHeaders.REDELIVERED));
 		assertNotNull(headers.get("foo"));
 		assertEquals("bar", headers.get("foo"));
+	}
+
+
+	@Test
+	public void testJsonHeaderMapping() throws JMSException {
+
+		MappingJackson2MessageConverter converter = new MappingJackson2MessageConverter();
+		converter.setTargetType(MessageType.TEXT);
+		converter.setTypeIdPropertyName("javatype");
+
+		Session session = Mockito.mock(Session.class);
+
+		Mockito.doAnswer(new Answer<TextMessage>() {
+
+			@Override
+			public TextMessage answer(InvocationOnMock invocation) throws Throwable {
+				return new StubTextMessage((String) invocation.getArguments()[0]);
+			}
+
+		}).when(session).createTextMessage(Mockito.anyString());
+
+		javax.jms.Message request = converter.toMessage(new Foo(), session);
+
+		DefaultJmsHeaderMapper mapper = new DefaultJmsHeaderMapper();
+		Map<String, Object> headers = mapper.toHeaders(request);
+
+		javax.jms.Message reply = converter.toMessage("foo", session);
+		mapper.fromHeaders(new MessageHeaders(headers), reply);
+
+		Object result = converter.fromMessage(reply);
+		assertThat(result, instanceOf(String.class));
+	}
+
+
+	@JsonTypeInfo(use = JsonTypeInfo.Id.CLASS, include = JsonTypeInfo.As.PROPERTY, property = "javatype")
+	private static class Foo {
+
 	}
 
 }

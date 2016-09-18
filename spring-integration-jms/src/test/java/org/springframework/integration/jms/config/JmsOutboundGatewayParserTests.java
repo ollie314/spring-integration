@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,13 @@
 
 package org.springframework.integration.jms.config;
 
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.equalTo;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.mockito.Mockito.mock;
@@ -38,10 +41,13 @@ import javax.jms.Session;
 
 import org.junit.Test;
 import org.mockito.Mockito;
+
 import org.springframework.beans.DirectFieldAccessor;
+import org.springframework.beans.NotReadablePropertyException;
 import org.springframework.beans.factory.parsing.BeanDefinitionParsingException;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
 import org.springframework.expression.Expression;
+import org.springframework.integration.core.MessagingTemplate;
 import org.springframework.integration.endpoint.EventDrivenConsumer;
 import org.springframework.integration.endpoint.PollingConsumer;
 import org.springframework.integration.handler.ExpressionEvaluatingMessageProcessor;
@@ -49,7 +55,6 @@ import org.springframework.integration.handler.advice.AbstractRequestHandlerAdvi
 import org.springframework.integration.history.MessageHistory;
 import org.springframework.integration.jms.JmsOutboundGateway;
 import org.springframework.integration.jms.StubMessageConverter;
-import org.springframework.messaging.support.GenericMessage;
 import org.springframework.integration.support.MessageBuilder;
 import org.springframework.integration.test.util.TestUtils;
 import org.springframework.jms.listener.DefaultMessageListenerContainer;
@@ -59,7 +64,7 @@ import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.MessageHandler;
 import org.springframework.messaging.MessagingException;
 import org.springframework.messaging.SubscribableChannel;
-import org.springframework.integration.core.MessagingTemplate;
+import org.springframework.messaging.support.GenericMessage;
 
 /**
  * @author Jonas Partner
@@ -72,50 +77,64 @@ public class JmsOutboundGatewayParserTests {
 	private static volatile int adviceCalled;
 
 	@Test
-	public void testWithDeliveryPersistentAttribute(){
+	public void testWithDeliveryPersistentAttribute() {
 		ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext(
 				"jmsOutboundGatewayWithDeliveryPersistent.xml", this.getClass());
 		EventDrivenConsumer endpoint = (EventDrivenConsumer) context.getBean("jmsGateway");
 		DirectFieldAccessor accessor = new DirectFieldAccessor(endpoint);
 		JmsOutboundGateway gateway = (JmsOutboundGateway) accessor.getPropertyValue("handler");
 		accessor = new DirectFieldAccessor(gateway);
-		int deliveryMode = (Integer)accessor.getPropertyValue("deliveryMode");
+		int deliveryMode = (Integer) accessor.getPropertyValue("deliveryMode");
 		assertEquals(DeliveryMode.PERSISTENT, deliveryMode);
+		assertTrue(TestUtils.getPropertyValue(gateway, "async", Boolean.class));
 		DefaultMessageListenerContainer container = TestUtils.getPropertyValue(gateway, "replyContainer",
 				DefaultMessageListenerContainer.class);
 		assertEquals(4, TestUtils.getPropertyValue(container, "concurrentConsumers"));
 		assertEquals(5, TestUtils.getPropertyValue(container, "maxConcurrentConsumers"));
 		assertEquals(10, TestUtils.getPropertyValue(container, "maxMessagesPerTask"));
 		assertEquals(2000L, TestUtils.getPropertyValue(container, "receiveTimeout"));
-		assertEquals(10000L, TestUtils.getPropertyValue(container, "recoveryInterval"));
+		Object recoveryInterval;
+		try {
+			recoveryInterval = TestUtils.getPropertyValue(container, "recoveryInterval");
+		}
+		catch (NotReadablePropertyException e) {
+			recoveryInterval = TestUtils.getPropertyValue(container, "backOff.interval");
+		}
+		assertEquals(10000L, recoveryInterval);
+
 		assertEquals(7, TestUtils.getPropertyValue(container, "idleConsumerLimit"));
 		assertEquals(2, TestUtils.getPropertyValue(container, "idleTaskExecutionLimit"));
 		assertEquals(3, TestUtils.getPropertyValue(container, "cacheLevel"));
 		assertTrue(container.isSessionTransacted());
 		assertSame(context.getBean("exec"), TestUtils.getPropertyValue(container, "taskExecutor"));
+		assertEquals(1234000L, TestUtils.getPropertyValue(gateway, "idleReplyContainerTimeout"));
+		context.close();
 	}
 
 	@Test
-	public void testAdvised(){
+	public void testAdvised() {
 		ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext(
 				"jmsOutboundGatewayWithDeliveryPersistent.xml", this.getClass());
 		EventDrivenConsumer endpoint = (EventDrivenConsumer) context.getBean("advised");
 		JmsOutboundGateway gateway = TestUtils.getPropertyValue(endpoint, "handler", JmsOutboundGateway.class);
+		assertFalse(TestUtils.getPropertyValue(gateway, "async", Boolean.class));
 		gateway.handleMessage(new GenericMessage<String>("foo"));
 		assertEquals(1, adviceCalled);
 		assertEquals(3, TestUtils.getPropertyValue(gateway, "replyContainer.sessionAcknowledgeMode"));
+		context.close();
 	}
 
 	@Test
-	public void testDefault(){
+	public void testDefault() {
 		ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext(
 				"jmsOutboundGatewayWithConverter.xml", this.getClass());
 		PollingConsumer endpoint = (PollingConsumer) context.getBean("jmsGateway");
 		DirectFieldAccessor accessor = new DirectFieldAccessor(endpoint);
 		JmsOutboundGateway gateway = (JmsOutboundGateway) accessor.getPropertyValue("handler");
 		accessor = new DirectFieldAccessor(gateway);
-		MessageConverter converter = (MessageConverter)accessor.getPropertyValue("messageConverter");
+		MessageConverter converter = (MessageConverter) accessor.getPropertyValue("messageConverter");
 		assertTrue("Wrong message converter", converter instanceof StubMessageConverter);
+		context.close();
 	}
 
 	@Test
@@ -128,6 +147,7 @@ public class JmsOutboundGatewayParserTests {
 		Object order = accessor.getPropertyValue("order");
 		assertEquals(99, order);
 		assertEquals(Boolean.TRUE, accessor.getPropertyValue("requiresReply"));
+		context.close();
 	}
 
 	@Test
@@ -139,6 +159,7 @@ public class JmsOutboundGatewayParserTests {
 		JmsOutboundGateway gateway = (JmsOutboundGateway) accessor.getPropertyValue("handler");
 		accessor = new DirectFieldAccessor(gateway);
 		assertSame(context.getBean("replyQueue"), accessor.getPropertyValue("replyDestination"));
+		context.close();
 	}
 
 	@Test
@@ -150,6 +171,7 @@ public class JmsOutboundGatewayParserTests {
 		JmsOutboundGateway gateway = (JmsOutboundGateway) accessor.getPropertyValue("handler");
 		accessor = new DirectFieldAccessor(gateway);
 		assertEquals("replyQueueName", accessor.getPropertyValue("replyDestinationName"));
+		context.close();
 	}
 
 	@Test
@@ -175,6 +197,7 @@ public class JmsOutboundGatewayParserTests {
 		when(session.createQueue("foo")).thenReturn(queue);
 		Destination replyQ = (Destination) method.invoke(gateway, message, session);
 		assertSame(queue, replyQ);
+		context.close();
 	}
 
 	@Test
@@ -190,13 +213,14 @@ public class JmsOutboundGatewayParserTests {
 				Expression.class);
 		assertEquals("@replyQueue", expression.getExpressionString());
 		assertSame(context.getBean("replyQueue"), processor.processMessage(null));
+		context.close();
 	}
 
 	@Test
 	public void gatewayWithDestAndDestExpression() {
 		try {
 			new ClassPathXmlApplicationContext(
-				"jmsOutboundGatewayReplyDestOptions-fail.xml", this.getClass());
+				"jmsOutboundGatewayReplyDestOptions-fail.xml", this.getClass()).close();
 			fail("Exception expected");
 		}
 		catch (BeanDefinitionParsingException e) {
@@ -213,15 +237,16 @@ public class JmsOutboundGatewayParserTests {
 		SampleGateway gateway = context.getBean("gateway", SampleGateway.class);
 		SubscribableChannel jmsInput = context.getBean("jmsInput", SubscribableChannel.class);
 		MessageHandler handler = new MessageHandler() {
+			@Override
 			public void handleMessage(Message<?> message) throws MessagingException {
 				MessageHistory history = MessageHistory.read(message);
 				assertNotNull(history);
 				Properties componentHistoryRecord = TestUtils.locateComponentInHistory(history, "inboundGateway", 0);
 				assertNotNull(componentHistoryRecord);
 				assertEquals("jms:inbound-gateway", componentHistoryRecord.get("type"));
-			    MessagingTemplate messagingTemplate = new MessagingTemplate();
-			    messagingTemplate.setDefaultDestination((MessageChannel)message.getHeaders().getReplyChannel());
-			    messagingTemplate.send(message);
+				MessagingTemplate messagingTemplate = new MessagingTemplate();
+				messagingTemplate.setDefaultDestination((MessageChannel) message.getHeaders().getReplyChannel());
+				messagingTemplate.send(message);
 			}
 		};
 		handler = spy(handler);
@@ -229,6 +254,13 @@ public class JmsOutboundGatewayParserTests {
 		String result = gateway.echo("hello");
 		verify(handler, times(1)).handleMessage(Mockito.any(Message.class));
 		assertEquals("hello", result);
+		JmsOutboundGateway gw1 = context.getBean("chain1$child.gateway.handler", JmsOutboundGateway.class);
+		MessageChannel out = TestUtils.getPropertyValue(gw1, "outputChannel", MessageChannel.class);
+		assertThat(out.getClass().getSimpleName(), equalTo("ReplyForwardingMessageChannel"));
+		JmsOutboundGateway gw2 = context.getBean("chain2$child.gateway.handler", JmsOutboundGateway.class);
+		out = TestUtils.getPropertyValue(gw2, "outputChannel", MessageChannel.class);
+		assertThat(out.getClass().getName(), containsString("MessageHandlerChain$"));
+		context.close();
 	}
 
 	@Test
@@ -240,6 +272,7 @@ public class JmsOutboundGatewayParserTests {
 				new DirectFieldAccessor(endpoint).getPropertyValue("handler"));
 		assertFalse((Boolean) accessor.getPropertyValue("requestPubSubDomain"));
 		assertFalse((Boolean) accessor.getPropertyValue("replyPubSubDomain"));
+		context.close();
 	}
 
 	@Test
@@ -251,17 +284,22 @@ public class JmsOutboundGatewayParserTests {
 				new DirectFieldAccessor(endpoint).getPropertyValue("handler"));
 		assertTrue((Boolean) accessor.getPropertyValue("requestPubSubDomain"));
 		assertTrue((Boolean) accessor.getPropertyValue("replyPubSubDomain"));
+		context.close();
 	}
 
 
-	public static interface SampleGateway{
-		public String echo(String value);
+	public interface SampleGateway {
+
+		String echo(String value);
+
 	}
 
-	public static class SampleService{
-		public String echo(String value){
+	public static class SampleService {
+
+		public String echo(String value) {
 			return value.toUpperCase();
 		}
+
 	}
 
 	public static class FooAdvice extends AbstractRequestHandlerAdvice {
@@ -273,4 +311,5 @@ public class JmsOutboundGatewayParserTests {
 		}
 
 	}
+
 }

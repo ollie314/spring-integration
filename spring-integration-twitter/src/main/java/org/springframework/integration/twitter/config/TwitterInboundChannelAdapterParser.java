@@ -1,17 +1,17 @@
 /*
- * Copyright 2002-2011 the original author or authors
+ * Copyright 2002-2016 the original author or authors.
  *
- *     Licensed under the Apache License, Version 2.0 (the "License");
- *     you may not use this file except in compliance with the License.
- *     You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
- *     Unless required by applicable law or agreed to in writing, software
- *     distributed under the License is distributed on an "AS IS" BASIS,
- *     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *     See the License for the specific language governing permissions and
- *     limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package org.springframework.integration.twitter.config;
@@ -27,13 +27,12 @@ import org.springframework.integration.twitter.inbound.DirectMessageReceivingMes
 import org.springframework.integration.twitter.inbound.MentionsReceivingMessageSource;
 import org.springframework.integration.twitter.inbound.SearchReceivingMessageSource;
 import org.springframework.integration.twitter.inbound.TimelineReceivingMessageSource;
-import org.springframework.social.twitter.api.impl.TwitterTemplate;
-import org.springframework.util.StringUtils;
 
 /**
  * Parser for inbound Twitter Channel Adapters.
  *
  * @author Oleg Zhurakousky
+ * @author Gary Russell
  * @since 2.0
  */
 public class TwitterInboundChannelAdapterParser extends AbstractPollingInboundChannelAdapterParser {
@@ -42,17 +41,11 @@ public class TwitterInboundChannelAdapterParser extends AbstractPollingInboundCh
 	protected BeanMetadataElement parseSource(Element element, ParserContext parserContext) {
 		Class<?> clazz = determineClass(element, parserContext);
 		BeanDefinitionBuilder builder = BeanDefinitionBuilder.rootBeanDefinition(clazz);
-		String templateBeanName = element.getAttribute("twitter-template");
-		if (StringUtils.hasText(templateBeanName)) {
-			builder.addConstructorArgReference(templateBeanName);
-		}
-		else {
-			BeanDefinitionBuilder templateBuilder = BeanDefinitionBuilder.genericBeanDefinition(TwitterTemplate.class);
-			builder.addConstructorArgValue(templateBuilder.getBeanDefinition());
-		}
+		builder.addConstructorArgReference(element.getAttribute("twitter-template"));
 		builder.addConstructorArgValue(element.getAttribute(ID_ATTRIBUTE));
 
 		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "query");
+		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "page-size");
 		IntegrationNamespaceUtils.setReferenceIfAttributeDefined(builder, element, "metadata-store");
 		return builder.getBeanDefinition();
 	}
@@ -70,7 +63,7 @@ public class TwitterInboundChannelAdapterParser extends AbstractPollingInboundCh
 		else if ("mentions-inbound-channel-adapter".equals(elementName)) {
 			clazz = MentionsReceivingMessageSource.class;
 		}
-		else if ("search-inbound-channel-adapter".equals(elementName)){
+		else if ("search-inbound-channel-adapter".equals(elementName)) {
 			clazz = SearchReceivingMessageSource.class;
 		}
 		else {

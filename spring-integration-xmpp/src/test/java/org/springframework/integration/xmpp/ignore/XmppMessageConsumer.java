@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2010 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,10 @@
 
 package org.springframework.integration.xmpp.ignore;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.jivesoftware.smack.packet.Message;
+
 import org.springframework.integration.annotation.ServiceActivator;
 import org.springframework.stereotype.Component;
 
@@ -25,24 +28,29 @@ import org.springframework.stereotype.Component;
  *
  * @author Josh Long
  * @author Mark Fisher
+ * @author Gary Russell
  * @since 2.0
  */
 @Component
 public class XmppMessageConsumer {
+
+	private final Log logger = LogFactory.getLog(getClass());
 
 	@ServiceActivator
 	public void consume(Object input) throws Throwable {
 		String text = null;
 		if (input instanceof Message) {
 			text = ((Message) input).getBody();
-		} else if (input instanceof String) {
+		}
+		else if (input instanceof String) {
 			text = (String) input;
-		} else {
+		}
+		else {
 			throw new IllegalArgumentException(
 					"expected either a Smack Message or a String, but received: " + input);
 		}
-		System.out.println("================================================================================");
-		System.out.println("message: " + text);
+		logger.info("================================================================================");
+		logger.info("message: " + text);
 	}
 
 }

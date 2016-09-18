@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2014 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.file.config;
 
 import java.io.File;
@@ -23,16 +24,17 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.ApplicationEventPublisherAware;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.core.task.TaskExecutor;
-import org.springframework.messaging.MessageChannel;
 import org.springframework.integration.file.tail.ApacheCommonsFileTailingMessageProducer;
 import org.springframework.integration.file.tail.FileTailingMessageProducerSupport;
 import org.springframework.integration.file.tail.OSDelegatingFileTailingMessageProducer;
+import org.springframework.messaging.MessageChannel;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
 
 /**
  * @author Gary Russell
+ * @author Artem Bilan
  * @since 3.0
  *
  */
@@ -60,6 +62,8 @@ public class FileTailInboundChannelAdapterFactoryBean extends AbstractFactoryBea
 	private volatile String beanName;
 
 	private volatile MessageChannel outputChannel;
+
+	private volatile MessageChannel errorChannel;
 
 	private volatile Boolean autoStartup;
 
@@ -110,6 +114,10 @@ public class FileTailInboundChannelAdapterFactoryBean extends AbstractFactoryBea
 		this.outputChannel = outputChannel;
 	}
 
+	public void setErrorChannel(MessageChannel errorChannel) {
+		this.errorChannel = errorChannel;
+	}
+
 	public void setAutoStartup(boolean autoStartup) {
 		this.autoStartup = autoStartup;
 	}
@@ -139,10 +147,7 @@ public class FileTailInboundChannelAdapterFactoryBean extends AbstractFactoryBea
 
 	@Override
 	public boolean isRunning() {
-		if (this.adapter != null) {
-			return this.adapter.isRunning();
-		}
-		return false;
+		return this.adapter != null && this.adapter.isRunning();
 	}
 
 	@Override
@@ -155,10 +160,7 @@ public class FileTailInboundChannelAdapterFactoryBean extends AbstractFactoryBea
 
 	@Override
 	public boolean isAutoStartup() {
-		if (this.adapter != null) {
-			return this.adapter.isAutoStartup();
-		}
-		return false;
+		return this.adapter != null && this.adapter.isAutoStartup();
 	}
 
 	@Override
@@ -206,7 +208,8 @@ public class FileTailInboundChannelAdapterFactoryBean extends AbstractFactoryBea
 		if (this.fileDelay != null) {
 			adapter.setTailAttemptsDelay(this.fileDelay);
 		}
-		adapter.setOutputChannel(outputChannel);
+		adapter.setOutputChannel(this.outputChannel);
+		adapter.setErrorChannel(this.errorChannel);
 		adapter.setBeanName(this.beanName);
 		if (this.autoStartup != null) {
 			adapter.setAutoStartup(this.autoStartup);
@@ -216,6 +219,9 @@ public class FileTailInboundChannelAdapterFactoryBean extends AbstractFactoryBea
 		}
 		if (this.applicationEventPublisher != null) {
 			adapter.setApplicationEventPublisher(this.applicationEventPublisher);
+		}
+		if (getBeanFactory() != null) {
+			adapter.setBeanFactory(getBeanFactory());
 		}
 		adapter.afterPropertiesSet();
 		this.adapter = adapter;

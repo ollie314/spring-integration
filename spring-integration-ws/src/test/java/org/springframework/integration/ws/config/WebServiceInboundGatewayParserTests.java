@@ -1,23 +1,32 @@
 /*
- *  Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
- *  Licensed under the Apache License, Version 2.0 (the "License");
- *  you may not use this file except in compliance with the License.
- *  You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
- *  Unless required by applicable law or agreed to in writing, software
- *  distributed under the License is distributed on an "AS IS" BASIS,
- *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  See the License for the specific language governing permissions and
- *  limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package org.springframework.integration.ws.config;
 
+import static org.hamcrest.CoreMatchers.is;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertThat;
+import static org.junit.Assert.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
 import java.util.Collections;
-import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 
@@ -30,15 +39,16 @@ import org.mockito.Mockito;
 import org.springframework.beans.DirectFieldAccessor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.messaging.Message;
-import org.springframework.messaging.MessageChannel;
-import org.springframework.messaging.MessageHeaders;
-import org.springframework.messaging.PollableChannel;
 import org.springframework.integration.history.MessageHistory;
+import org.springframework.integration.mapping.AbstractHeaderMapper;
 import org.springframework.integration.test.util.TestUtils;
 import org.springframework.integration.ws.MarshallingWebServiceInboundGateway;
 import org.springframework.integration.ws.SimpleWebServiceInboundGateway;
 import org.springframework.integration.ws.SoapHeaderMapper;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.MessageChannel;
+import org.springframework.messaging.MessageHeaders;
+import org.springframework.messaging.PollableChannel;
 import org.springframework.oxm.Unmarshaller;
 import org.springframework.oxm.support.AbstractMarshaller;
 import org.springframework.test.annotation.DirtiesContext;
@@ -49,25 +59,17 @@ import org.springframework.ws.context.DefaultMessageContext;
 import org.springframework.ws.context.MessageContext;
 import org.springframework.ws.soap.SoapMessage;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
-import static org.hamcrest.CoreMatchers.is;
-
-import static org.junit.Assert.assertThat;
-
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
-
 /**
  * @author Iwein Fuld
  * @author Oleg Zhurakousky
  * @author Mark Fisher
  * @author Gunnar Hillert
+ * @author Stephane Nicoll
+ * @author Artem Bilan
  */
 @RunWith(SpringJUnit4ClassRunner.class)
 @ContextConfiguration
-@DirtiesContext(classMode=ClassMode.AFTER_EACH_TEST_METHOD)
+@DirtiesContext(classMode = ClassMode.AFTER_EACH_TEST_METHOD)
 public class WebServiceInboundGatewayParserTests {
 
 	@Autowired
@@ -98,14 +100,10 @@ public class WebServiceInboundGatewayParserTests {
 
 	@Test
 	public void simpleGatewayProperties() throws Exception {
-		DirectFieldAccessor accessor = new DirectFieldAccessor(simpleGateway);
-		assertThat(
-				(MessageChannel) accessor.getPropertyValue("requestChannel"),
-				is(requestsVerySimple));
-
-		assertThat(
-				(MessageChannel) accessor.getPropertyValue("errorChannel"),
-				is(customErrorChannel));
+		assertSame(this.requestsVerySimple, TestUtils.getPropertyValue(this.simpleGateway, "requestChannel"));
+		assertSame(this.customErrorChannel, TestUtils.getPropertyValue(this.simpleGateway, "errorChannel"));
+		assertFalse(TestUtils.getPropertyValue(this.simpleGateway, "autoStartup", Boolean.class));
+		assertEquals(101, TestUtils.getPropertyValue(this.simpleGateway, "phase"));
 	}
 
 	//extractPayload = false
@@ -144,21 +142,23 @@ public class WebServiceInboundGatewayParserTests {
 		assertThat(
 				(MessageChannel) accessor.getPropertyValue("errorChannel"),
 				is(customErrorChannel));
-		@SuppressWarnings("unchecked")
-		List<String> requestHeaders = TestUtils.getPropertyValue(marshallingGateway, "headerMapper.requestHeaderNames", List.class);
-		@SuppressWarnings("unchecked")
-		List<String> replyHeaders = TestUtils.getPropertyValue(marshallingGateway, "headerMapper.replyHeaderNames", List.class);
-		assertEquals(1, requestHeaders.size());
-		assertEquals(1, replyHeaders.size());
-		assertTrue(requestHeaders.contains("testRequest"));
-		assertTrue(replyHeaders.contains("testReply"));
+
+		AbstractHeaderMapper.HeaderMatcher requestHeaderMatcher = TestUtils.getPropertyValue(marshallingGateway,
+				"headerMapper.requestHeaderMatcher", AbstractHeaderMapper.HeaderMatcher.class);
+		assertTrue(requestHeaderMatcher.matchHeader("testRequest"));
+		assertFalse(requestHeaderMatcher.matchHeader("testReply"));
+
+		AbstractHeaderMapper.HeaderMatcher replyHeaderMatcher = TestUtils.getPropertyValue(marshallingGateway,
+				"headerMapper.replyHeaderMatcher", AbstractHeaderMapper.HeaderMatcher.class);
+		assertFalse(replyHeaderMatcher.matchHeader("testRequest"));
+		assertTrue(replyHeaderMatcher.matchHeader("testReply"));
 	}
 
 	@Test
 	public void testMessageHistoryWithMarshallingGateway() throws Exception {
 		MessageContext context = new DefaultMessageContext(new StubMessageFactory());
 		Unmarshaller unmarshaller = mock(Unmarshaller.class);
-		when(unmarshaller.unmarshal((Source)Mockito.any())).thenReturn("hello");
+		when(unmarshaller.unmarshal((Source) Mockito.any())).thenReturn("hello");
 		marshallingGateway.setUnmarshaller(unmarshaller);
 		marshallingGateway.invoke(context);
 		Message<?> message = requestsMarshalling.receive(100);
@@ -177,7 +177,6 @@ public class WebServiceInboundGatewayParserTests {
 		MessageHistory history = MessageHistory.read(message);
 		assertNotNull(history);
 		Properties componentHistoryRecord = TestUtils.locateComponentInHistory(history, "extractsPayload", 0);
-		System.out.println(componentHistoryRecord);
 		assertNotNull(componentHistoryRecord);
 		assertEquals("ws:inbound-gateway", componentHistoryRecord.get("type"));
 	}
@@ -195,7 +194,8 @@ public class WebServiceInboundGatewayParserTests {
 		assertEquals(testHeaderMapper, headerMapper);
 	}
 
-	@Autowired @Qualifier("replyTimeoutGateway")
+	@Autowired
+	@Qualifier("replyTimeoutGateway")
 	private SimpleWebServiceInboundGateway replyTimeoutGateway;
 
 	@Test
@@ -209,17 +209,21 @@ public class WebServiceInboundGatewayParserTests {
 	@SuppressWarnings("unused")
 	private static class TestHeaderMapper implements SoapHeaderMapper {
 
+		@Override
 		public void fromHeadersToRequest(MessageHeaders headers,
-				SoapMessage target) {
+		                                 SoapMessage target) {
 		}
 
+		@Override
 		public void fromHeadersToReply(MessageHeaders headers, SoapMessage target) {
 		}
 
+		@Override
 		public Map<String, Object> toHeadersFromRequest(SoapMessage source) {
 			return Collections.emptyMap();
 		}
 
+		@Override
 		public Map<String, Object> toHeadersFromReply(SoapMessage source) {
 			return Collections.emptyMap();
 		}

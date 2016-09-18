@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2010 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,29 +20,30 @@ import java.util.Properties;
 
 import org.junit.Ignore;
 import org.junit.Test;
+
 import org.springframework.beans.factory.config.PropertiesFactoryBean;
 import org.springframework.core.io.ClassPathResource;
-import org.springframework.messaging.Message;
 import org.springframework.integration.support.MessageBuilder;
 import org.springframework.integration.twitter.core.TwitterHeaders;
+import org.springframework.messaging.Message;
 import org.springframework.social.twitter.api.impl.TwitterTemplate;
 
 /**
  * @author Oleg Zhurakousky
  * @author Mark Fisher
+ * @author Gary Russell
  */
 public class DirectMessageSendingMessageHandlerTests {
 
 	@Test @Ignore
-	public void validateSendDirectMessage() throws Exception{
+	public void validateSendDirectMessage() throws Exception {
 		PropertiesFactoryBean pf = new PropertiesFactoryBean();
 		pf.setLocation(new ClassPathResource("sample.properties"));
 		pf.afterPropertiesSet();
 		Properties prop =  pf.getObject();
-		System.out.println(prop);
-		TwitterTemplate template = new TwitterTemplate(prop.getProperty("spring_eip.oauth.consumerKey"), 
-										               prop.getProperty("spring_eip.oauth.consumerSecret"), 
-										               prop.getProperty("spring_eip.oauth.accessToken"), 
+		TwitterTemplate template = new TwitterTemplate(prop.getProperty("spring_eip.oauth.consumerKey"),
+										               prop.getProperty("spring_eip.oauth.consumerSecret"),
+										               prop.getProperty("spring_eip.oauth.accessToken"),
 										               prop.getProperty("spring_eip.oauth.accessTokenSecret"));
 		Message<?> message1 = MessageBuilder.withPayload("Polsihing SI Twitter migration")
 				.setHeader(TwitterHeaders.DM_TARGET_USER_ID, "z_oleg").build();
@@ -50,5 +51,5 @@ public class DirectMessageSendingMessageHandlerTests {
 		handler.afterPropertiesSet();
 		handler.handleMessage(message1);
 	}
-	
+
 }

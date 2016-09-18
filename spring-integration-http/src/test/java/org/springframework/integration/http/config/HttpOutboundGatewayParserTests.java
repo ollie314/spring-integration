@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,14 +19,18 @@ package org.springframework.integration.http.config;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.io.IOException;
+import java.nio.charset.Charset;
 import java.util.Map;
 
+import org.hamcrest.Matchers;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+
 import org.springframework.beans.BeansException;
 import org.springframework.beans.DirectFieldAccessor;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -40,13 +44,14 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.client.ClientHttpRequestFactory;
 import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
-import org.springframework.messaging.Message;
-import org.springframework.messaging.MessageChannel;
 import org.springframework.integration.endpoint.AbstractEndpoint;
+import org.springframework.integration.endpoint.PollingConsumer;
 import org.springframework.integration.handler.advice.AbstractRequestHandlerAdvice;
 import org.springframework.integration.http.outbound.HttpRequestExecutingMessageHandler;
-import org.springframework.messaging.support.GenericMessage;
 import org.springframework.integration.test.util.TestUtils;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.MessageChannel;
+import org.springframework.messaging.support.GenericMessage;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 import org.springframework.util.ObjectUtils;
@@ -56,6 +61,7 @@ import org.springframework.web.client.ResponseErrorHandler;
  * @author Mark Fisher
  * @author Gary Russell
  * @author Artem Bilan
+ * @author Biju Kunjummen
  */
 @RunWith(SpringJUnit4ClassRunner.class)
 @ContextConfiguration
@@ -72,6 +78,9 @@ public class HttpOutboundGatewayParserTests {
 
 	@Autowired @Qualifier("withAdvice")
 	private AbstractEndpoint withAdvice;
+
+	@Autowired @Qualifier("withPoller1")
+	private AbstractEndpoint withPoller1;
 
 	@Autowired
 	private ApplicationContext applicationContext;
@@ -95,7 +104,7 @@ public class HttpOutboundGatewayParserTests {
 		Expression uriExpression = (Expression) handlerAccessor.getPropertyValue("uriExpression");
 		assertEquals("http://localhost/test1", uriExpression.getValue());
 		assertEquals(HttpMethod.POST.name(), TestUtils.getPropertyValue(handler, "httpMethodExpression", Expression.class).getExpressionString());
-		assertEquals("UTF-8", handlerAccessor.getPropertyValue("charset"));
+		assertEquals(Charset.forName("UTF-8"), handlerAccessor.getPropertyValue("charset"));
 		assertEquals(true, handlerAccessor.getPropertyValue("extractPayload"));
 		assertEquals(false, handlerAccessor.getPropertyValue("transferCookies"));
 	}
@@ -125,7 +134,7 @@ public class HttpOutboundGatewayParserTests {
 		Expression uriExpression = (Expression) handlerAccessor.getPropertyValue("uriExpression");
 		assertEquals("http://localhost/test2", uriExpression.getValue());
 		assertEquals(HttpMethod.PUT.name(), TestUtils.getPropertyValue(handler, "httpMethodExpression", Expression.class).getExpressionString());
-		assertEquals("UTF-8", handlerAccessor.getPropertyValue("charset"));
+		assertEquals(Charset.forName("UTF-8"), handlerAccessor.getPropertyValue("charset"));
 		assertEquals(false, handlerAccessor.getPropertyValue("extractPayload"));
 		Object requestFactoryBean = this.applicationContext.getBean("testRequestFactory");
 		assertEquals(requestFactoryBean, requestFactory);
@@ -167,7 +176,7 @@ public class HttpOutboundGatewayParserTests {
 		assertNotNull(expression);
 		assertEquals("'http://localhost/test1'", expression.getExpressionString());
 		assertEquals(HttpMethod.POST.name(), TestUtils.getPropertyValue(handler, "httpMethodExpression", Expression.class).getExpressionString());
-		assertEquals("UTF-8", handlerAccessor.getPropertyValue("charset"));
+		assertEquals(Charset.forName("UTF-8"), handlerAccessor.getPropertyValue("charset"));
 		assertEquals(true, handlerAccessor.getPropertyValue("extractPayload"));
 		assertEquals(false, handlerAccessor.getPropertyValue("transferCookies"));
 
@@ -191,7 +200,8 @@ public class HttpOutboundGatewayParserTests {
 	@Test
 	public void testInt2718FailForGatewayRequestChannelAttribute() {
 		try {
-			new ClassPathXmlApplicationContext("HttpOutboundGatewayWithinChainTests-fail-context.xml", this.getClass());
+			new ClassPathXmlApplicationContext("HttpOutboundGatewayWithinChainTests-fail-context.xml", this.getClass())
+					.close();
 			fail("Expected BeanDefinitionParsingException");
 		}
 		catch (BeansException e) {
@@ -200,14 +210,21 @@ public class HttpOutboundGatewayParserTests {
 		}
 	}
 
+	@Test
+	public void withPoller() {
+		assertThat(this.withPoller1, Matchers.instanceOf(PollingConsumer.class));
+	}
+
 
 
 	public static class StubErrorHandler implements ResponseErrorHandler {
 
+		@Override
 		public boolean hasError(ClientHttpResponse response) throws IOException {
 			return false;
 		}
 
+		@Override
 		public void handleError(ClientHttpResponse response) throws IOException {
 		}
 	}

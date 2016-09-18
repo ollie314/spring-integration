@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,9 @@ import java.io.IOException;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.ApplicationEventPublisherAware;
 import org.springframework.core.serializer.Deserializer;
 import org.springframework.core.serializer.Serializer;
 
@@ -33,11 +36,14 @@ import org.springframework.core.serializer.Serializer;
  */
 public abstract class AbstractByteArraySerializer implements
 		Serializer<byte[]>,
-		Deserializer<byte[]> {
+		Deserializer<byte[]>,
+		ApplicationEventPublisherAware {
 
 	protected int maxMessageSize = 2048;
 
 	protected final Log logger = LogFactory.getLog(this.getClass());
+
+	private ApplicationEventPublisher applicationEventPublisher;
 
 	/**
 	 * The maximum supported message size for this serializer.
@@ -45,7 +51,7 @@ public abstract class AbstractByteArraySerializer implements
 	 * @return The max message size.
 	 */
 	public int getMaxMessageSize() {
-		return maxMessageSize;
+		return this.maxMessageSize;
 	}
 
 	/**
@@ -57,27 +63,26 @@ public abstract class AbstractByteArraySerializer implements
 		this.maxMessageSize = maxMessageSize;
 	}
 
+	@Override
+	public void setApplicationEventPublisher(ApplicationEventPublisher applicationEventPublisher) {
+		this.applicationEventPublisher = applicationEventPublisher;
+	}
+
 	protected void checkClosure(int bite) throws IOException {
 		if (bite < 0) {
-			logger.debug("Socket closed during message assembly");
+			this.logger.debug("Socket closed during message assembly");
 			throw new IOException("Socket closed during message assembly");
 		}
 	}
 
-	/**
-	 * Copy size bytes to a new buffer exactly size bytes long.
-	 * @param buffer The buffer containing the data.
-	 * @param size The number of bytes to copy.
-	 * @return The new buffer, or the buffer parameter if it is
-	 * already the correct size.
-	 */
-	protected byte[] copyToSizedArray(byte[] buffer, int size) {
-		if (size == buffer.length) {
-			return buffer;
+	protected void publishEvent(Exception cause, byte[] buffer, int offset) {
+		TcpDeserializationExceptionEvent event = new TcpDeserializationExceptionEvent(this, cause, buffer, offset);
+		if (this.applicationEventPublisher != null) {
+			this.applicationEventPublisher.publishEvent(event);
 		}
-		byte[] assembledData = new byte[size];
-		System.arraycopy(buffer, 0, assembledData, 0, size);
-		return assembledData;
+		else if (this.logger.isTraceEnabled()) {
+			this.logger.trace("No event publisher for " + event);
+		}
 	}
 
 }

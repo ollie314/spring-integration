@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,9 +13,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.mqtt.core;
 
-import org.eclipse.paho.client.mqttv3.MqttClient;
+import org.eclipse.paho.client.mqttv3.IMqttAsyncClient;
+import org.eclipse.paho.client.mqttv3.IMqttClient;
 import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
 import org.eclipse.paho.client.mqttv3.MqttException;
 
@@ -34,7 +36,18 @@ public interface MqttPahoClientFactory {
 	 * @return The client instance.
 	 * @throws MqttException Any.
 	 */
-	MqttClient getClientInstance(String url, String clientId) throws MqttException;
+	IMqttClient getClientInstance(String url, String clientId) throws MqttException;
+
+	/**
+	 * Retrieve an async client instance.
+	 *
+	 * @param url The URL.
+	 * @param clientId The client id.
+	 * @return The client instance.
+	 * @throws MqttException Any.
+	 * @since 4.1
+	 */
+	IMqttAsyncClient getAsyncClientInstance(String url, String clientId) throws MqttException;
 
 	/**
 	 * Retrieve the connection options.
@@ -42,4 +55,12 @@ public interface MqttPahoClientFactory {
 	 * @return The options.
 	 */
 	MqttConnectOptions getConnectionOptions();
+
+	/**
+	 * Get the consumer stop action.
+	 * @return the consumer stop action.
+	 * @since 4.3
+	 */
+	ConsumerStopAction getConsumerStopAction();
+
 }

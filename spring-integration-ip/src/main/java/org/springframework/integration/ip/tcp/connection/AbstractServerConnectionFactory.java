@@ -1,5 +1,5 @@
 /*
- * Copyright 2001-2014 the original author or authors.
+ * Copyright 2001-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,9 +18,15 @@ package org.springframework.integration.ip.tcp.connection;
 
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketAddress;
 import java.net.SocketException;
+import java.util.Date;
 
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.core.task.TaskRejectedException;
 import org.springframework.integration.context.OrderlyShutdownCapable;
+import org.springframework.scheduling.SchedulingAwareRunnable;
+import org.springframework.scheduling.TaskScheduler;
 import org.springframework.util.Assert;
 
 /**
@@ -31,8 +37,8 @@ import org.springframework.util.Assert;
  * @author Gary Russell
  * @since 2.0
  */
-public abstract class AbstractServerConnectionFactory
-		extends AbstractConnectionFactory implements Runnable, OrderlyShutdownCapable {
+public abstract class AbstractServerConnectionFactory extends AbstractConnectionFactory
+		implements TcpServerConnectionFactory, SchedulingAwareRunnable, OrderlyShutdownCapable {
 
 	private static final int DEFAULT_BACKLOG = 5;
 
@@ -55,12 +61,22 @@ public abstract class AbstractServerConnectionFactory
 	}
 
 	@Override
+	public boolean isLongLived() {
+		return true;
+	}
+
+	@Override
+	public SocketAddress getServerSocketAddress() {
+		return null;
+	}
+
+	@Override
 	public void start() {
 		synchronized (this.lifecycleMonitor) {
-			if (!this.isActive()) {
+			if (!isActive()) {
 				this.setActive(true);
 				this.shuttingDown = false;
-				this.getTaskExecutor().execute(this);
+				getTaskExecutor().execute(this);
 			}
 		}
 		super.start();
@@ -88,39 +104,40 @@ public abstract class AbstractServerConnectionFactory
 	 * @return true if the server is listening on the port.
 	 */
 	public boolean isListening() {
-		return listening;
+		return this.listening;
 	}
 
 	protected boolean isShuttingDown() {
-		return shuttingDown;
+		return this.shuttingDown;
 	}
 
 	/**
-	 * Transfers attributes such as (de)serializer, singleUse etc to a new connection.
-	 * For single use sockets, enforces a socket timeout (default 10 seconds).
+	 * Transfers attributes such as (de)serializer, mapper etc to a new connection.
+	 * For single use sockets, enforces a socket timeout (default 10 seconds) to prevent
+	 * DoS attacks.
 	 * @param connection The new connection.
 	 * @param socket The new socket.
 	 */
 	protected void initializeConnection(TcpConnectionSupport connection, Socket socket) {
-		TcpListener listener = this.getListener();
+		TcpListener listener = getListener();
 		if (listener != null) {
 			connection.registerListener(listener);
 		}
-		connection.registerSender(this.getSender());
-		connection.setMapper(this.getMapper());
-		connection.setDeserializer(this.getDeserializer());
-		connection.setSerializer(this.getSerializer());
-		connection.setSingleUse(this.isSingleUse());
+		connection.registerSender(getSender());
+		connection.setMapper(getMapper());
+		connection.setDeserializer(getDeserializer());
+		connection.setSerializer(getSerializer());
 		/*
 		 * If we are configured
 		 * for single use; need to enforce a timeout on the socket so we will close
 		 * if the client connects, but sends nothing. (Protect against DoS).
 		 * Behavior can be overridden by explicitly setting the timeout to zero.
 		 */
-		if (this.isSingleUse() && this.getSoTimeout() < 0) {
+		if (isSingleUse() && getSoTimeout() < 0) {
 			try {
 				socket.setSoTimeout(DEFAULT_REPLY_TIMEOUT);
-			} catch (SocketException e) {
+			}
+			catch (SocketException e) {
 				logger.error("Error setting default reply timeout", e);
 			}
 		}
@@ -128,7 +145,7 @@ public abstract class AbstractServerConnectionFactory
 	}
 
 	protected void postProcessServerSocket(ServerSocket serverSocket) {
-		this.getTcpSocketSupport().postProcessServerSocket(serverSocket);
+		getTcpSocketSupport().postProcessServerSocket(serverSocket);
 	}
 
 	/**
@@ -136,7 +153,7 @@ public abstract class AbstractServerConnectionFactory
 	 * @return the localAddress
 	 */
 	public String getLocalAddress() {
-		return localAddress;
+		return this.localAddress;
 	}
 
 	/**
@@ -154,7 +171,7 @@ public abstract class AbstractServerConnectionFactory
 	 * @return The backlog.
 	 */
 	public int getBacklog() {
-		return backlog;
+		return this.backlog;
 	}
 
 	/**
@@ -175,8 +192,33 @@ public abstract class AbstractServerConnectionFactory
 
 	@Override
 	public int afterShutdown() {
-		this.stop();
+		stop();
 		return 0;
+	}
+
+	protected void publishServerExceptionEvent(Exception e) {
+		if (getApplicationEventPublisher() != null) {
+			getApplicationEventPublisher().publishEvent(new TcpConnectionServerExceptionEvent(this, e));
+		}
+	}
+
+	protected void publishServerListeningEvent(int port) {
+		final ApplicationEventPublisher eventPublisher = getApplicationEventPublisher();
+		if (eventPublisher != null) {
+			final TcpConnectionServerListeningEvent event = new TcpConnectionServerListeningEvent(this, port);
+			TaskScheduler taskScheduler = this.getTaskScheduler();
+			if (taskScheduler != null) {
+				try {
+					taskScheduler.schedule((Runnable) () -> eventPublisher.publishEvent(event), new Date());
+				}
+				catch (TaskRejectedException e) {
+					eventPublisher.publishEvent(event);
+				}
+			}
+			else {
+				eventPublisher.publishEvent(event);
+			}
+		}
 	}
 
 }

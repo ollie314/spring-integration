@@ -1,14 +1,17 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
- * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
- * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
- * specific language governing permissions and limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package org.springframework.integration.groovy.config;
@@ -16,21 +19,24 @@ package org.springframework.integration.groovy.config;
 import java.util.HashMap;
 import java.util.Map;
 
-import groovy.lang.Binding;
-import groovy.lang.MissingPropertyException;
-import org.springframework.beans.factory.*;
+import org.springframework.beans.factory.BeanClassLoaderAware;
+import org.springframework.beans.factory.BeanCreationNotAllowedException;
+import org.springframework.beans.factory.BeanFactory;
+import org.springframework.beans.factory.NoSuchBeanDefinitionException;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.context.Lifecycle;
 import org.springframework.core.annotation.AnnotationUtils;
-import org.springframework.messaging.Message;
 import org.springframework.integration.config.AbstractSimpleMessageHandlerFactoryBean;
-import org.springframework.messaging.MessageHandler;
 import org.springframework.integration.groovy.GroovyCommandMessageProcessor;
 import org.springframework.integration.handler.ServiceActivatingHandler;
-import org.springframework.integration.scripting.ScriptVariableGenerator;
+import org.springframework.integration.support.management.IntegrationManagedResource;
 import org.springframework.jmx.export.annotation.ManagedResource;
+import org.springframework.messaging.MessageHandler;
 import org.springframework.scripting.groovy.GroovyObjectCustomizer;
 import org.springframework.util.CustomizableThreadCreator;
+
+import groovy.lang.Binding;
+import groovy.lang.MissingPropertyException;
 
 /**
  * FactoryBean for creating {@link MessageHandler} instances to handle a message as a Groovy Script.
@@ -40,9 +46,11 @@ import org.springframework.util.CustomizableThreadCreator;
  * @author Mark Fisher
  * @author Artem Bilan
  * @author Stefan Reuter
+ * @author Gary Russell
  * @since 2.0
  */
-public class GroovyControlBusFactoryBean extends AbstractSimpleMessageHandlerFactoryBean<MessageHandler> implements BeanClassLoaderAware {
+public class GroovyControlBusFactoryBean extends AbstractSimpleMessageHandlerFactoryBean<MessageHandler>
+		implements BeanClassLoaderAware {
 
 	private volatile Long sendTimeout;
 
@@ -66,18 +74,17 @@ public class GroovyControlBusFactoryBean extends AbstractSimpleMessageHandlerFac
 	@Override
 	protected MessageHandler createHandler() {
 		Binding binding = new ManagedBeansBinding(this.getBeanFactory());
-		GroovyCommandMessageProcessor processor = new GroovyCommandMessageProcessor(binding, new ScriptVariableGenerator() {
-			public Map<String, Object> generateScriptVariables(Message<?> message) {
-				Map<String, Object> variables = new HashMap<String, Object>();
-				variables.put("headers", message.getHeaders());
-				return variables;
-			}
+		GroovyCommandMessageProcessor processor = new GroovyCommandMessageProcessor(binding,
+				message -> {
+					Map<String, Object> variables = new HashMap<>();
+					variables.put("headers", message.getHeaders());
+					return variables;
 		});
 		if (this.customizer != null) {
 			processor.setCustomizer(this.customizer);
 		}
 		if (this.beanClassLoader != null) {
-			processor.setBeanClassLoader(beanClassLoader);
+			processor.setBeanClassLoader(this.beanClassLoader);
 		}
 		if (getBeanFactory() != null) {
 			processor.setBeanFactory(getBeanFactory());
@@ -99,11 +106,11 @@ public class GroovyControlBusFactoryBean extends AbstractSimpleMessageHandlerFac
 	 * In additionally beans should be 'managed' with specific properties which
 	 * are allowed in the Control Bus operations.
 	 */
-	private static class ManagedBeansBinding extends Binding {
+	private static final class ManagedBeansBinding extends Binding {
 
 		private final ConfigurableListableBeanFactory beanFactory;
 
-		public ManagedBeansBinding(BeanFactory beanFactory) {
+		private ManagedBeansBinding(BeanFactory beanFactory) {
 			this.beanFactory = (beanFactory instanceof ConfigurableListableBeanFactory)
 					? (ConfigurableListableBeanFactory) beanFactory : null;
 		}
@@ -131,10 +138,12 @@ public class GroovyControlBusFactoryBean extends AbstractSimpleMessageHandlerFac
 
 			if (bean instanceof Lifecycle ||
 					bean instanceof CustomizableThreadCreator ||
-					(AnnotationUtils.findAnnotation(bean.getClass(), ManagedResource.class) != null)) {
+					(AnnotationUtils.findAnnotation(bean.getClass(), ManagedResource.class) != null) ||
+					(AnnotationUtils.findAnnotation(bean.getClass(), IntegrationManagedResource.class) != null)) {
 				return bean;
 			}
-			throw new BeanCreationNotAllowedException(name, "Only beans with @ManagedResource or beans which implement " +
+			throw new BeanCreationNotAllowedException(name,
+					"Only beans with @ManagedResource or beans which implement " +
 					"org.springframework.context.Lifecycle or org.springframework.util.CustomizableThreadCreator " +
 					"are allowed to use as ControlBus components.");
 		}

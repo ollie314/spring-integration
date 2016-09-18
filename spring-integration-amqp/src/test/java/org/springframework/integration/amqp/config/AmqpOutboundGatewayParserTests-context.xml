@@ -15,8 +15,11 @@
 		exchange-name="si.test.exchange"
 		routing-key="si.test.binding"
 		amqp-template="amqpTemplate"
+		auto-startup="false"
 		order="5"
-		return-channel="returnChannel"/>
+		return-channel="returnChannel">
+		<int:poller fixed-delay="100"/>
+	</amqp:outbound-gateway>
 
 	<rabbit:template id="amqpTemplate" connection-factory="connectionFactory"/>
 
@@ -24,7 +27,9 @@
 		<constructor-arg value="org.springframework.amqp.rabbit.connection.ConnectionFactory"/>
 	</bean>
 
-	<int:channel id="toRabbit0"/>
+	<int:channel id="toRabbit0">
+		<int:queue/>
+	</int:channel>
 	<int:channel id="toRabbit1"/>
 	<int:channel id="toRabbit2"/>
 	<int:channel id="toRabbit3"/>
@@ -39,7 +44,9 @@
 		exchange-name="si.test.exchange"
 		routing-key="si.test.binding"
 		amqp-template="amqpTemplate"
+		lazy-connect="false"
 		order="5"
+		default-delivery-mode="NON_PERSISTENT"
 		requires-reply="false"
 		mapped-request-headers="foo*"
 		mapped-reply-headers="bar*"/>
@@ -77,5 +84,32 @@
 							   mapped-request-headers=""
 							   mapped-reply-headers=""/>
 	</int:chain>
+
+	<amqp:outbound-async-gateway id="asyncGateway" request-channel="toRabbit0"
+		reply-channel="fromRabbit"
+		reply-timeout="777"
+		requires-reply="false"
+		exchange-name="si.test.exchange"
+		routing-key="si.test.binding"
+		async-template="asyncTemplate"
+		auto-startup="false"
+		order="5"
+		return-channel="returnChannel">
+		<int:poller fixed-delay="100"/>
+	</amqp:outbound-async-gateway>
+
+	<bean id="asyncTemplate" class="org.springframework.amqp.rabbit.AsyncRabbitTemplate">
+		<constructor-arg>
+			<bean class="org.springframework.amqp.rabbit.core.RabbitTemplate">
+				<constructor-arg ref="connectionFactory" />
+			</bean>
+		</constructor-arg>
+		<constructor-arg>
+			<bean class="org.springframework.amqp.rabbit.listener.SimpleMessageListenerContainer">
+				<constructor-arg ref="connectionFactory" />
+				<property name="queueNames" value="replies" />
+			</bean>
+		</constructor-arg>
+	</bean>
 
 </beans>

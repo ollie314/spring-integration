@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.handler.advice;
 
 import org.springframework.messaging.Message;
@@ -49,9 +50,12 @@ public class RequestHandlerRetryAdvice extends AbstractRequestHandlerAdvice
 	// Stateless unless a state generator is provided
 	private volatile RetryStateGenerator retryStateGenerator =
 			new RetryStateGenerator() {
+
+				@Override
 				public RetryState determineRetryState(Message<?> message) {
 					return null;
 				}
+
 			};
 
 	public void setRetryTemplate(RetryTemplate retryTemplate) {
@@ -75,42 +79,48 @@ public class RequestHandlerRetryAdvice extends AbstractRequestHandlerAdvice
 	}
 
 	@Override
-	protected Object doInvoke(final ExecutionCallback callback, Object target, final Message<?> message) throws Exception {
+	protected Object doInvoke(final ExecutionCallback callback, Object target, final Message<?> message)
+			throws Exception {
 		RetryState retryState = null;
 		retryState = this.retryStateGenerator.determineRetryState(message);
 		messageHolder.set(message);
 
 		try {
-			return retryTemplate.execute(new RetryCallback<Object>() {
+			return this.retryTemplate.execute(new RetryCallback<Object, Exception>() {
+
+				@Override
 				public Object doWithRetry(RetryContext context) throws Exception {
 					return callback.cloneAndExecute();
 				}
+
 			}, this.recoveryCallback, retryState);
 		}
 		catch (MessagingException e) {
 			if (e.getFailedMessage() == null) {
-				throw new MessagingException(message, e);
+				throw new MessagingException(message, "Failed to invoke handler", e);
 			}
 			throw e;
 		}
 		catch (Exception e) {
-			throw new MessagingException(message, "Failed to invoke handler",
-					unwrapExceptionIfNecessary(e));
+			throw new MessagingException(message, "Failed to invoke handler", unwrapExceptionIfNecessary(e));
 		}
 		finally {
 			messageHolder.remove();
 		}
 	}
 
-	public <T> boolean open(RetryContext context, RetryCallback<T> callback) {
+	@Override
+	public <T, E extends Throwable> boolean open(RetryContext context, RetryCallback<T, E> callback) {
 		context.setAttribute("message", messageHolder.get());
 		return true;
 	}
 
-	public <T> void close(RetryContext context, RetryCallback<T> callback, Throwable throwable) {
+	@Override
+	public <T, E extends Throwable> void close(RetryContext context, RetryCallback<T, E> callback, Throwable throwable) {
 	}
 
-	public <T> void onError(RetryContext context, RetryCallback<T> callback, Throwable throwable) {
+	@Override
+	public <T, E extends Throwable> void onError(RetryContext context, RetryCallback<T, E> callback, Throwable throwable) {
 	}
 
 }

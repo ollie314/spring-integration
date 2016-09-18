@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,10 +22,16 @@ import static org.junit.Assert.assertNull;
 
 import javax.sql.DataSource;
 
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.messaging.Message;
 import org.springframework.integration.jdbc.store.JdbcChannelMessageStore;
 import org.springframework.integration.support.MessageBuilder;
+import org.springframework.messaging.Message;
+import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionStatus;
@@ -35,8 +41,12 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * @author Gunnar Hillert
+ * @author Gary Russell
  */
-public class AbstractJdbcChannelMessageStoreTests {
+
+@RunWith(SpringJUnit4ClassRunner.class)
+@DirtiesContext // close at the end after class
+public abstract class AbstractJdbcChannelMessageStoreTests {
 
 	protected static final String TEST_MESSAGE_GROUP = "AbstractJdbcChannelMessageStoreTests";
 
@@ -51,6 +61,7 @@ public class AbstractJdbcChannelMessageStoreTests {
 	@Autowired
 	protected ChannelMessageStoreQueryProvider queryProvider;
 
+	@Before
 	public void init() throws Exception {
 		messageStore = new JdbcChannelMessageStore(dataSource);
 		messageStore.setRegion("AbstractJdbcChannelMessageStoreTests");
@@ -59,11 +70,13 @@ public class AbstractJdbcChannelMessageStoreTests {
 		messageStore.removeMessageGroup("AbstractJdbcChannelMessageStoreTests");
 	}
 
+	@Test
 	public void testGetNonExistentMessageFromGroup() throws Exception {
 		Message<?> result = messageStore.pollMessageFromGroup(TEST_MESSAGE_GROUP);
 		assertNull(result);
 	}
 
+	@Test
 	public void testAddAndGet() throws Exception {
 		final Message<String> message = MessageBuilder.withPayload("Cartman and Kenny")
 				.setHeader("homeTown", "Southpark")

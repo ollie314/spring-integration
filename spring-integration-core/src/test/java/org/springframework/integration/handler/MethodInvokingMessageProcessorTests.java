@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,10 +22,13 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.fail;
+import static org.mockito.Mockito.mock;
 
 import java.lang.reflect.Method;
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Properties;
 
 import org.apache.commons.logging.Log;
@@ -37,16 +40,18 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
 
+import org.springframework.beans.factory.BeanFactory;
 import org.springframework.expression.spel.SpelEvaluationException;
-import org.springframework.messaging.Message;
-import org.springframework.messaging.MessageHandlingException;
-import org.springframework.integration.annotation.Header;
 import org.springframework.integration.annotation.ServiceActivator;
 import org.springframework.integration.gateway.GatewayProxyFactoryBean;
 import org.springframework.integration.gateway.RequestReplyExchanger;
-import org.springframework.messaging.support.GenericMessage;
 import org.springframework.integration.support.MessageBuilder;
 import org.springframework.integration.util.MessagingMethodInvokerHelper;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.MessageHandlingException;
+import org.springframework.messaging.handler.annotation.Header;
+import org.springframework.messaging.support.GenericMessage;
+
 
 /**
  * @author Mark Fisher
@@ -55,8 +60,9 @@ import org.springframework.integration.util.MessagingMethodInvokerHelper;
  * @author Dave Syer
  * @author Gary Russell
  * @author Gunnar Hillert
+ * @author Artem Bilan
  */
-@SuppressWarnings({ "rawtypes", "unchecked" })
+@SuppressWarnings({"rawtypes", "unchecked"})
 public class MethodInvokingMessageProcessorTests {
 
 	private static final Log logger = LogFactory.getLog(MethodInvokingMessageProcessorTests.class);
@@ -280,8 +286,7 @@ public class MethodInvokingMessageProcessorTests {
 
 	@Test
 	public void testProcessMessageBadExpression() throws Exception {
-		// TODO: should this be MessageHandlingException or NumberFormatException?
-		expected.expect(new ExceptionCauseMatcher(Exception.class));
+		expected.expect(MessageHandlingException.class);
 		AnnotatedTestService service = new AnnotatedTestService();
 		Method method = service.getClass().getMethod("integerMethod", Integer.class);
 		MethodInvokingMessageProcessor processor = new MethodInvokingMessageProcessor(service, method);
@@ -349,6 +354,7 @@ public class MethodInvokingMessageProcessorTests {
 	@Test
 	public void gatewayTest() throws Exception {
 		GatewayProxyFactoryBean gwFactoryBean = new GatewayProxyFactoryBean();
+		gwFactoryBean.setBeanFactory(mock(BeanFactory.class));
 		gwFactoryBean.afterPropertiesSet();
 		Object target = gwFactoryBean.getObject();
 		// just instantiate a helper with a simple target; we're going to invoke getTargetClass with reflection
@@ -365,14 +371,17 @@ public class MethodInvokingMessageProcessorTests {
 
 		class Foo {
 
+			@SuppressWarnings("unused")
 			public String handleMessage(Message<Number> message) {
 				return "" + (message.getPayload().intValue() * 2);
 			}
 
+			@SuppressWarnings("unused")
 			public String objectMethod(Integer foo) {
 				return foo.toString();
 			}
 
+			@SuppressWarnings("unused")
 			public String voidMethod() {
 				return "foo";
 			}
@@ -390,10 +399,12 @@ public class MethodInvokingMessageProcessorTests {
 
 		class Foo {
 
+			@SuppressWarnings("unused")
 			public String getFoo() {
 				return "foo";
 			}
 
+			@SuppressWarnings("unused")
 			public String getBar() {
 				return "foo";
 			}
@@ -414,14 +425,17 @@ public class MethodInvokingMessageProcessorTests {
 
 		class Foo {
 
+			@SuppressWarnings("unused")
 			public String m1(Message<String> message) {
 				return message.getPayload();
 			}
 
+			@SuppressWarnings("unused")
 			public Integer m2(Message<Integer> message) {
 				return message.getPayload();
 			}
 
+			@SuppressWarnings("unused")
 			public Object m3(Message<?> message) {
 				return message.getPayload();
 			}
@@ -441,14 +455,17 @@ public class MethodInvokingMessageProcessorTests {
 
 		class Foo {
 
+			@SuppressWarnings("unused")
 			public String m1(String payload) {
 				return payload;
 			}
 
+			@SuppressWarnings("unused")
 			public Integer m2(Integer payload) {
 				return payload;
 			}
 
+			@SuppressWarnings("unused")
 			public Object m3(Object payload) {
 				return payload;
 			}
@@ -468,15 +485,18 @@ public class MethodInvokingMessageProcessorTests {
 
 		class Foo {
 
+			@SuppressWarnings("unused")
 			public Object m1(Message<String> message) {
 				fail("This method must not be invoked");
 				return message;
 			}
 
+			@SuppressWarnings("unused")
 			public Object m2(String payload) {
 				return payload;
 			}
 
+			@SuppressWarnings("unused")
 			public Object m3() {
 				return "FOO";
 			}
@@ -489,12 +509,53 @@ public class MethodInvokingMessageProcessorTests {
 		assertEquals("FOO", helper.process(new GenericMessage<Object>(targetObject)));
 	}
 
+	@Test
+	public void testIneligible() {
+		IneligibleMethodBean bean = new IneligibleMethodBean();
+		MethodInvokingMessageProcessor processor = new MethodInvokingMessageProcessor(bean, "foo");
+		processor.processMessage(MessageBuilder.withPayload("true").build());
+		assertNotNull(bean.lastArg);
+		assertEquals(String.class, bean.lastArg.getClass());
+		assertEquals("true", bean.lastArg);
+	}
+
+	@Test
+	public void testOptionalArgs() throws Exception {
+		class Foo {
+
+			private final Map<String, Object> arguments = new LinkedHashMap<String, Object>();
+
+			@SuppressWarnings("unused")
+			public void optionalHeaders(Optional<String> foo, @Header(value = "foo", required = false) String foo1,
+					@Header(value = "foo") Optional<String> foo2) {
+				this.arguments.put("foo", (foo.isPresent() ? foo.get() : null));
+				this.arguments.put("foo1", foo1);
+				this.arguments.put("foo2", (foo2.isPresent() ? foo2.get() : null));
+			}
+
+		}
+
+		Foo targetObject = new Foo();
+
+		MessagingMethodInvokerHelper helper = new MessagingMethodInvokerHelper(targetObject, (String) null, false);
+
+		helper.process(new GenericMessage<>(Optional.empty()));
+		assertNull(targetObject.arguments.get("foo"));
+		assertNull(targetObject.arguments.get("foo1"));
+		assertNull(targetObject.arguments.get("foo2"));
+
+		helper.process(MessageBuilder.withPayload("foo").setHeader("foo", "FOO").build());
+		assertEquals("foo", targetObject.arguments.get("foo"));
+		assertEquals("FOO", targetObject.arguments.get("foo1"));
+		assertEquals("FOO", targetObject.arguments.get("foo2"));
+	}
+
 	private static class ExceptionCauseMatcher extends TypeSafeMatcher<Exception> {
 		private Throwable cause;
 
 		private final Class<? extends Exception> type;
 
-		public ExceptionCauseMatcher(Class<? extends Exception> type) {
+		ExceptionCauseMatcher(Class<? extends Exception> type) {
 			this.type = type;
 		}
 
@@ -506,6 +567,7 @@ public class MethodInvokingMessageProcessorTests {
 			return type.isAssignableFrom(cause.getClass());
 		}
 
+		@Override
 		public void describeTo(Description description) {
 			description.appendText("cause to be ").appendValue(type).appendText("but was ").appendValue(cause);
 		}
@@ -661,6 +723,22 @@ public class MethodInvokingMessageProcessorTests {
 		public String foo(String s) {
 			this.lastArg = s;
 			return s;
+		}
+
+	}
+
+	private static class IneligibleMethodBean {
+
+		private volatile Object lastArg = null;
+
+		@SuppressWarnings("unused")
+		public void foo(String s) {
+			this.lastArg = s;
+		}
+
+		@SuppressWarnings("unused")
+		public void foo(String s, int i) {
+			throw new RuntimeException("expected ineligible");
 		}
 
 	}

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.ftp;
 
 import static org.junit.Assert.assertEquals;
@@ -30,8 +31,8 @@ import org.junit.Test;
 
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.BeanCreationException;
+import org.springframework.beans.factory.BeanInitializationException;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
-import org.springframework.messaging.MessagingException;
 
 /**
  * @author Oleg Zhurakousky
@@ -41,28 +42,28 @@ import org.springframework.messaging.MessagingException;
  */
 public class FtpParserInboundTests {
 	@Before
-	public void prepare(){
+	public void prepare() {
 		new File("target/foo").delete();
 	}
 
 	@Test
-	public void testLocalFilesAutoCreationTrue() throws Exception{
+	public void testLocalFilesAutoCreationTrue() throws Exception {
 		assertTrue(!new File("target/foo").exists());
-		new ClassPathXmlApplicationContext("FtpParserInboundTests-context.xml", this.getClass());
+		new ClassPathXmlApplicationContext("FtpParserInboundTests-context.xml", this.getClass()).close();
 		assertTrue(new File("target/foo").exists());
 		assertTrue(!new File("target/bar").exists());
 	}
 	@Test
-	public void testLocalFilesAutoCreationFalse() throws Exception{
+	public void testLocalFilesAutoCreationFalse() throws Exception {
 		assertTrue(!new File("target/bar").exists());
 		try {
-			new ClassPathXmlApplicationContext("FtpParserInboundTests-fail-context.xml", this.getClass());
+			new ClassPathXmlApplicationContext("FtpParserInboundTests-fail-context.xml", this.getClass()).close();
 			fail("BeansException expected.");
 		}
 		catch (BeansException e) {
 			assertThat(e, Matchers.instanceOf(BeanCreationException.class));
 			Throwable cause = e.getCause();
-			assertThat(cause, Matchers.instanceOf(MessagingException.class));
+			assertThat(cause, Matchers.instanceOf(BeanInitializationException.class));
 			cause = cause.getCause();
 			assertThat(cause, Matchers.instanceOf(FileNotFoundException.class));
 			assertEquals("bar", cause.getMessage());
@@ -70,7 +71,7 @@ public class FtpParserInboundTests {
 	}
 
 	@After
-	public void cleanUp() throws Exception{
+	public void cleanUp() throws Exception {
 		new File("target/foo").delete();
 	}
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,7 +27,7 @@ import org.springframework.context.ApplicationEventPublisherAware;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.core.serializer.Deserializer;
 import org.springframework.core.serializer.Serializer;
-import org.springframework.integration.context.IntegrationContextUtils;
+import org.springframework.integration.ip.tcp.connection.AbstractClientConnectionFactory;
 import org.springframework.integration.ip.tcp.connection.AbstractConnectionFactory;
 import org.springframework.integration.ip.tcp.connection.AbstractServerConnectionFactory;
 import org.springframework.integration.ip.tcp.connection.DefaultTcpNetSSLSocketFactorySupport;
@@ -108,6 +108,8 @@ public class TcpConnectionFactoryFactoryBean extends AbstractFactoryBean<Abstrac
 
 	private volatile boolean applySequence;
 
+	private volatile Long readDelay;
+
 	private volatile TcpSSLContextSupport sslContextSupport;
 
 	private volatile TcpSocketSupport socketSupport = new DefaultTcpSocketSupport();
@@ -120,6 +122,14 @@ public class TcpConnectionFactoryFactoryBean extends AbstractFactoryBean<Abstrac
 
 	private volatile BeanFactory beanFactory;
 
+
+	public TcpConnectionFactoryFactoryBean() {
+	}
+
+	public TcpConnectionFactoryFactoryBean(String type) {
+		setType(type);
+	}
+
 	@Override
 	public final void setBeanFactory(BeanFactory beanFactory) {
 		this.beanFactory = beanFactory;
@@ -127,24 +137,28 @@ public class TcpConnectionFactoryFactoryBean extends AbstractFactoryBean<Abstrac
 
 	@Override
 	public Class<?> getObjectType() {
-		return this.connectionFactory != null ? this.connectionFactory.getClass()
-											  : AbstractConnectionFactory.class;
+		return this.connectionFactory != null ? this.connectionFactory.getClass() :
+			this.type == null ? AbstractConnectionFactory.class :
+				isServer() ? AbstractServerConnectionFactory.class :
+					isClient() ? AbstractClientConnectionFactory.class :
+						AbstractConnectionFactory.class;
 	}
 
 	@Override
 	protected AbstractConnectionFactory createInstance() throws Exception {
 		if (!this.mapperSet) {
-			mapper.setMessageBuilderFactory(IntegrationContextUtils.getMessageBuilderFactory(this.beanFactory));
+			this.mapper.setBeanFactory(this.beanFactory);
 		}
 		if (this.usingNio) {
-			if ("server".equals(this.type)) {
+			if (isServer()) {
 				TcpNioServerConnectionFactory connectionFactory = new TcpNioServerConnectionFactory(this.port);
 				this.setCommonAttributes(connectionFactory);
 				this.setServerAttributes(connectionFactory);
 				connectionFactory.setUsingDirectBuffers(this.usingDirectBuffers);
 				connectionFactory.setTcpNioConnectionSupport(this.obtainNioConnectionSupport());
 				this.connectionFactory = connectionFactory;
-			} else {
+			}
+			else {
 				TcpNioClientConnectionFactory connectionFactory = new TcpNioClientConnectionFactory(
 						this.host, this.port);
 				this.setCommonAttributes(connectionFactory);
@@ -154,13 +168,14 @@ public class TcpConnectionFactoryFactoryBean extends AbstractFactoryBean<Abstrac
 			}
 		}
 		else {
-			if ("server".equals(this.type)) {
+			if (isServer()) {
 				TcpNetServerConnectionFactory connectionFactory = new TcpNetServerConnectionFactory(this.port);
 				this.setCommonAttributes(connectionFactory);
 				this.setServerAttributes(connectionFactory);
 				connectionFactory.setTcpSocketFactorySupport(this.obtainSocketFactorySupport());
 				this.connectionFactory = connectionFactory;
-			} else {
+			}
+			else {
 				TcpNetClientConnectionFactory connectionFactory = new TcpNetClientConnectionFactory(
 						this.host, this.port);
 				this.setCommonAttributes(connectionFactory);
@@ -190,6 +205,9 @@ public class TcpConnectionFactoryFactoryBean extends AbstractFactoryBean<Abstrac
 		factory.setBeanName(this.beanName);
 		factory.setTcpSocketSupport(this.socketSupport);
 		factory.setApplicationEventPublisher(this.applicationEventPublisher);
+		if (this.readDelay != null) {
+			factory.setReadDelay(this.readDelay);
+		}
 	}
 
 	private void setServerAttributes(AbstractServerConnectionFactory factory) {
@@ -254,8 +272,9 @@ public class TcpConnectionFactoryFactoryBean extends AbstractFactoryBean<Abstrac
 	/**
 	 * @param type the type to set
 	 */
-	public void setType(String type) {
+	public final void setType(String type) {
 		this.type = type;
+		Assert.isTrue(isServer() || isClient(), "type must be 'server' or 'client'");
 	}
 
 	/**
@@ -471,6 +490,10 @@ public class TcpConnectionFactoryFactoryBean extends AbstractFactoryBean<Abstrac
 		this.applySequence = applySequence;
 	}
 
+	public void setReadDelay(long readDelay) {
+		this.readDelay = readDelay;
+	}
+
 	public void setSslContextSupport(TcpSSLContextSupport sslContextSupport) {
 		Assert.notNull(sslContextSupport, "TcpSSLConstextSupport may not be null");
 		this.sslContextSupport = sslContextSupport;
@@ -499,6 +522,14 @@ public class TcpConnectionFactoryFactoryBean extends AbstractFactoryBean<Abstrac
 	@Override
 	public void setApplicationEventPublisher(ApplicationEventPublisher applicationEventPublisher) {
 		this.applicationEventPublisher = applicationEventPublisher;
+	}
+
+	private boolean isClient() {
+		return "client".equals(this.type);
+	}
+
+	private boolean isServer() {
+		return "server".equals(this.type);
 	}
 
 }

@@ -1,21 +1,26 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
- * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
- * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
- * specific language governing permissions and limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package org.springframework.integration.jdbc;
+
 import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -46,6 +51,7 @@ import org.springframework.jmx.export.annotation.ManagedResource;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageHeaders;
 import org.springframework.util.Assert;
+import org.springframework.util.ClassUtils;
 
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
@@ -67,6 +73,9 @@ import com.google.common.cache.LoadingCache;
 @ManagedResource
 public class StoredProcExecutor implements BeanFactoryAware, InitializingBean {
 
+	private static final boolean guavaPresent = ClassUtils.isPresent("com.google.common.cache.LoadingCache",
+			StoredProcExecutor.class.getClassLoader());
+
 	private volatile EvaluationContext evaluationContext;
 
 	private volatile BeanFactory beanFactory = null;
@@ -74,9 +83,13 @@ public class StoredProcExecutor implements BeanFactoryAware, InitializingBean {
 	private volatile int jdbcCallOperationsCacheSize = 10;
 
 	/**
-	 * Uses the {@link SimpleJdbcCall} implementation for executing Stored Procedures.
+	 * For {@code optional} Google Guava library in the CLASSPATH
 	 */
-	private volatile LoadingCache<String, SimpleJdbcCallOperations> jdbcCallOperationsCache = null;
+	private volatile GuavaCacheWrapper guavaCacheWrapper;
+
+	private final Object jdbcCallOperationsMapMonitor = new Object();
+
+	private volatile Map<String, SimpleJdbcCallOperations> jdbcCallOperationsMap;
 
 	private volatile Expression storedProcedureNameExpression;
 
@@ -129,10 +142,12 @@ public class StoredProcExecutor implements BeanFactoryAware, InitializingBean {
 	 * Custom Stored Procedure parameters that may contain static values
 	 * or Strings representing an {@link Expression}.
 	 */
-	private volatile List<ProcedureParameter>procedureParameters;
+	private volatile List<ProcedureParameter> procedureParameters;
 
 	private volatile boolean isFunction = false;
+
 	private volatile boolean returnValueRequired = false;
+
 	private volatile Map<String, RowMapper<?>> returningResultSetRowMappers = new HashMap<String, RowMapper<?>>(0);
 
 	private final DataSource dataSource;
@@ -150,7 +165,6 @@ public class StoredProcExecutor implements BeanFactoryAware, InitializingBean {
 
 		Assert.notNull(dataSource, "dataSource must not be null.");
 		this.dataSource = dataSource;
-
 	}
 
 	/**
@@ -167,15 +181,15 @@ public class StoredProcExecutor implements BeanFactoryAware, InitializingBean {
 				+ "Stored Procedure Name or a Stored Procedure Name Expression.");
 		}
 
-		if (this.procedureParameters != null ) {
+		if (this.procedureParameters != null) {
 
 			if (this.sqlParameterSourceFactory == null) {
 				ExpressionEvaluatingSqlParameterSourceFactory expressionSourceFactory =
 											  new ExpressionEvaluatingSqlParameterSourceFactory();
 
 				expressionSourceFactory.setBeanFactory(this.beanFactory);
-				expressionSourceFactory.setStaticParameters(ProcedureParameter.convertStaticParameters(procedureParameters));
-				expressionSourceFactory.setParameterExpressions(ProcedureParameter.convertExpressions(procedureParameters));
+				expressionSourceFactory.setStaticParameters(ProcedureParameter.convertStaticParameters(this.procedureParameters));
+				expressionSourceFactory.setParameterExpressions(ProcedureParameter.convertExpressions(this.procedureParameters));
 
 				this.sqlParameterSourceFactory = expressionSourceFactory;
 
@@ -208,24 +222,25 @@ public class StoredProcExecutor implements BeanFactoryAware, InitializingBean {
 
 		}
 
-		jdbcCallOperationsCache = CacheBuilder.newBuilder()
-				.maximumSize(jdbcCallOperationsCacheSize)
-				.recordStats()
-				.build(new CacheLoader<String, SimpleJdbcCallOperations>() {
-					@Override
-					public SimpleJdbcCall load(String storedProcedureName) {
-						return createSimpleJdbcCall(storedProcedureName);
-					}
-				});
+		if (guavaPresent) {
+			this.guavaCacheWrapper = new GuavaCacheWrapper(this, this.jdbcCallOperationsCacheSize);
+		}
+		else {
+			this.jdbcCallOperationsMap =
+					new LinkedHashMap<String, SimpleJdbcCallOperations>(this.jdbcCallOperationsCacheSize + 1, 0.75f,
+							true) {
 
-		if (this.storedProcedureNameExpression instanceof LiteralExpression) {
-			String storedProcedureName = this.storedProcedureNameExpression.getValue(String.class);
-			final SimpleJdbcCall simpleJdbcCall = createSimpleJdbcCall(storedProcedureName);
-			this.jdbcCallOperationsCache.put(storedProcedureName, simpleJdbcCall);
+						private static final long serialVersionUID = 3801124242820219131L;
+
+						@Override
+						protected boolean removeEldestEntry(Entry<String, SimpleJdbcCallOperations> eldest) {
+							return size() > StoredProcExecutor.this.jdbcCallOperationsCacheSize;
+						}
+
+					};
 		}
 
-		this.evaluationContext = ExpressionUtils.createStandardEvaluationContext(beanFactory);
-
+		this.evaluationContext = ExpressionUtils.createStandardEvaluationContext(this.beanFactory);
 	}
 
 	private SimpleJdbcCall createSimpleJdbcCall(String storedProcedureName) {
@@ -282,12 +297,12 @@ public class StoredProcExecutor implements BeanFactoryAware, InitializingBean {
 	public Map<String, Object> executeStoredProcedure(Message<?> message) {
 
 		Assert.notNull(message, "The message parameter must not be null.");
-		Assert.notNull(usePayloadAsParameterSource, "Property usePayloadAsParameterSource "
+		Assert.notNull(this.usePayloadAsParameterSource, "Property usePayloadAsParameterSource "
 												  + "was Null. Did you call afterPropertiesSet()?");
 
 		final Object input;
 
-		if (usePayloadAsParameterSource) {
+		if (this.usePayloadAsParameterSource) {
 			input = message.getPayload();
 		}
 		else {
@@ -312,31 +327,40 @@ public class StoredProcExecutor implements BeanFactoryAware, InitializingBean {
 	 * Execute the Stored Procedure using the passed in {@link Message} as a source
 	 * for parameters.
 	 *
-	 * @param message The message is used to extract parameters for the stored procedure.
+	 * @param input The message is used to extract parameters for the stored procedure.
 	 * @return A map containing the return values from the Stored Procedure call if any.
 	 */
 	private Map<String, Object> executeStoredProcedureInternal(Object input, String storedProcedureName) {
 
-		Assert.notNull(sqlParameterSourceFactory, "Property sqlParameterSourceFactory "
+		Assert.notNull(this.sqlParameterSourceFactory, "Property sqlParameterSourceFactory "
 												+ "was Null. Did you call afterPropertiesSet()?");
 
-		SimpleJdbcCallOperations localSimpleJdbcCall = this.jdbcCallOperationsCache.getUnchecked(storedProcedureName);
+		SimpleJdbcCallOperations localSimpleJdbcCall = obtainSimpleJdbcCall(storedProcedureName);
 
 		SqlParameterSource storedProcedureParameterSource =
-			sqlParameterSourceFactory.createParameterSource(input);
+				this.sqlParameterSourceFactory.createParameterSource(input);
 
-		return StoredProcExecutor.executeStoredProcedure(localSimpleJdbcCall,
-														 storedProcedureParameterSource);
+		return localSimpleJdbcCall.execute(storedProcedureParameterSource);
 
 	}
 
-	private static Map<String, Object> executeStoredProcedure(SimpleJdbcCallOperations simpleJdbcCallOperations,
-															 SqlParameterSource storedProcedureParameterSource) {
-
-		Map<String, Object> resultMap = simpleJdbcCallOperations.execute(storedProcedureParameterSource);
-
-		return resultMap;
-
+	private SimpleJdbcCallOperations obtainSimpleJdbcCall(String storedProcedureName) {
+		if (guavaPresent) {
+			return this.guavaCacheWrapper.jdbcCallOperationsCache.getUnchecked(storedProcedureName);
+		}
+		else {
+			SimpleJdbcCallOperations operations = this.jdbcCallOperationsMap.get(storedProcedureName);
+			if (operations == null) {
+				synchronized (this.jdbcCallOperationsMapMonitor) {
+					operations = this.jdbcCallOperationsMap.get(storedProcedureName);
+					if (operations == null) {
+						operations = createSimpleJdbcCall(storedProcedureName);
+						this.jdbcCallOperationsMap.put(storedProcedureName, operations);
+					}
+				}
+			}
+			return operations;
+		}
 	}
 
 	//~~~~~Setters for Properties~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -408,18 +432,20 @@ public class StoredProcExecutor implements BeanFactoryAware, InitializingBean {
 	/**
 	 * @return the name of the Stored Procedure or Function if set. Null otherwise.
 	 * */
-	@ManagedAttribute(defaultValue="Null if not Set.")
+	@ManagedAttribute(defaultValue = "Null if not Set.")
 	public String getStoredProcedureName() {
 		return this.storedProcedureNameExpression instanceof LiteralExpression ?
-				storedProcedureNameExpression.getValue(String.class) : null;
+				this.storedProcedureNameExpression.getValue(String.class) : null;
 	}
 
 	/**
 	 * @return the Stored Procedure Name Expression as a String if set. Null otherwise.
 	 * */
-	@ManagedAttribute(defaultValue="Null if not Set.")
+	@ManagedAttribute(defaultValue = "Null if not Set.")
 	public String getStoredProcedureNameExpressionAsString() {
-		return this.storedProcedureNameExpression != null ? this.storedProcedureNameExpression.getExpressionString() : null;
+		return this.storedProcedureNameExpression != null
+				? this.storedProcedureNameExpression.getExpressionString()
+				: null;
 	}
 
 	/**
@@ -556,19 +582,25 @@ public class StoredProcExecutor implements BeanFactoryAware, InitializingBean {
 	}
 
 	/**
-	 * Allows for the retrieval of metrics ({@link CacheStats}}) for the
-	 * {@link StoredProcExecutor#jdbcCallOperationsCache}, which is used to store
+	 * Allows for the retrieval of metrics ({@link CacheStats}) for the
+	 * {@link GuavaCacheWrapper#jdbcCallOperationsCache}, which is used to store
 	 * instances of {@link SimpleJdbcCallOperations}.
 	 *
-	 * @return Cache statistics for {@link StoredProcExecutor#jdbcCallOperationsCache}
+	 * @return {@link CacheStats} object for {@link GuavaCacheWrapper#jdbcCallOperationsCache}.
+	 * Since Google Guava is an optional dependency for Spring Integration this method can't
+	 * return Guava {@link CacheStats} type directly because of some reflection manipulation
+	 * by the Spring bean definition phase.
 	 */
-	public CacheStats getJdbcCallOperationsCacheStatistics() {
-		return this.jdbcCallOperationsCache.stats();
+	public Object getJdbcCallOperationsCacheStatistics() {
+		if (!guavaPresent) {
+			throw new UnsupportedOperationException("The Google Guava library isn't present in the classpath.");
+		}
+		return this.guavaCacheWrapper.jdbcCallOperationsCache.stats();
 	}
 
 	/**
-	 * Allows for the retrieval of metrics ({@link CacheStats}}) for the
-	 * {@link StoredProcExecutor#jdbcCallOperationsCache}.
+	 * Allows for the retrieval of metrics ({@link CacheStats}) for the
+	 * {@link GuavaCacheWrapper#jdbcCallOperationsCache}.
 	 *
 	 * Provides the properties of {@link CacheStats} as a {@link Map}. This allows
 	 * for exposing the those properties easily via JMX.
@@ -579,7 +611,10 @@ public class StoredProcExecutor implements BeanFactoryAware, InitializingBean {
 	 */
 	@ManagedMetric
 	public Map<String, Object> getJdbcCallOperationsCacheStatisticsAsMap() {
-		final CacheStats cacheStats = this.getJdbcCallOperationsCacheStatistics();
+		if (!guavaPresent) {
+			throw new UnsupportedOperationException("The Google Guava library isn't present in the classpath.");
+		}
+		final CacheStats cacheStats = (CacheStats) getJdbcCallOperationsCacheStatistics();
 		final Map<String, Object> cacheStatistics  = new HashMap<String, Object>(11);
 		cacheStatistics.put("averageLoadPenalty", cacheStats.averageLoadPenalty());
 		cacheStatistics.put("evictionCount", cacheStats.evictionCount());
@@ -598,7 +633,7 @@ public class StoredProcExecutor implements BeanFactoryAware, InitializingBean {
 	/**
 	 * Defines the maximum number of {@link SimpleJdbcCallOperations}
 	 * ({@link SimpleJdbcCall}) instances to be held by
-	 * {@link StoredProcExecutor#jdbcCallOperationsCache}.
+	 * {@link GuavaCacheWrapper#jdbcCallOperationsCache}.
 	 *
 	 * A value of zero will disable the cache. The default is 10.
 	 *
@@ -619,8 +654,35 @@ public class StoredProcExecutor implements BeanFactoryAware, InitializingBean {
 	 */
 	@Override
 	public void setBeanFactory(BeanFactory beanFactory) {
-		Assert.notNull(returningResultSetRowMappers, "returningResultSetRowMappers must not be null.");
 		this.beanFactory = beanFactory;
 	}
 
+	/**
+	 * The lazy-load workaround class to avoid {@link NoClassDefFoundError}
+	 * for {@link CacheLoader} class, when Google Guava isn't present in the CLASSPATH.
+	 *
+	 * @since 4.2
+	 */
+	private static final class GuavaCacheWrapper {
+
+		private final LoadingCache<String, SimpleJdbcCallOperations> jdbcCallOperationsCache;
+
+		private GuavaCacheWrapper(final StoredProcExecutor executor, int size) {
+			this.jdbcCallOperationsCache = CacheBuilder.newBuilder()
+					.maximumSize(size)
+					.recordStats()
+					.build(new CacheLoader<String, SimpleJdbcCallOperations>() {
+
+						@Override
+						public SimpleJdbcCallOperations load(String key) throws Exception {
+							return executor.createSimpleJdbcCall(key);
+						}
+
+					});
+		}
+
+	}
+
 }
+
+

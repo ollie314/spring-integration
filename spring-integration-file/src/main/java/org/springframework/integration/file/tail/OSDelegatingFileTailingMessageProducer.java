@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.file.tail;
 
 import java.io.BufferedReader;
@@ -21,6 +22,7 @@ import java.io.InputStreamReader;
 import java.util.Date;
 
 import org.springframework.messaging.MessagingException;
+import org.springframework.scheduling.SchedulingAwareRunnable;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.util.Assert;
@@ -31,11 +33,12 @@ import org.springframework.util.Assert;
  * Default options are "-F -n 0" (follow file name, no existing records).
  *
  * @author Gary Russell
+ * @author Gavin Gray
  * @since 3.0
  *
  */
 public class OSDelegatingFileTailingMessageProducer extends FileTailingMessageProducerSupport
-		implements Runnable {
+		implements SchedulingAwareRunnable {
 
 	private volatile Process process;
 
@@ -56,22 +59,31 @@ public class OSDelegatingFileTailingMessageProducer extends FileTailingMessagePr
 		}
 	}
 
+	public String getCommand() {
+		return this.command;
+	}
+
 	@Override
 	public String getComponentType() {
 		return super.getComponentType() + " (native)";
 	}
 
 	@Override
+	public boolean isLongLived() {
+		return true;
+	}
+
+	@Override
 	protected void onInit() {
 		Assert.notNull(getFile(), "File cannot be null");
 		super.onInit();
-		this.command = "tail " + this.options + " " + this.getFile().getAbsolutePath();
 	}
 
 	@Override
 	protected void doStart() {
 		super.doStart();
 		destroyProcess();
+		this.command = "tail " + this.options + " " + this.getFile().getAbsolutePath();
 		this.getTaskExecutor().execute(new Runnable() {
 
 			@Override
@@ -256,6 +268,5 @@ public class OSDelegatingFileTailingMessageProducer extends FileTailingMessagePr
 			this.destroyProcess();
 		}
 	}
-
 
 }

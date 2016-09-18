@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,7 +48,7 @@ public class ImapIdleChannelAdapterParser extends AbstractChannelAdapterParser {
 		IntegrationNamespaceUtils.setReferenceIfAttributeDefined(builder, element, "error-channel", "errorChannel");
 
 		Element txElement = DomUtils.getChildElementByTagName(element, "transactional");
-		if (txElement != null){
+		if (txElement != null) {
 			IntegrationNamespaceUtils.setReferenceIfAttributeDefined(builder, txElement,
 					"synchronization-factory", "transactionSynchronizationFactory");
 		}
@@ -62,6 +62,7 @@ public class ImapIdleChannelAdapterParser extends AbstractChannelAdapterParser {
 	private BeanDefinition parseImapMailReceiver(Element element, ParserContext parserContext) {
 		BeanDefinitionBuilder receiverBuilder = BeanDefinitionBuilder.genericBeanDefinition(ImapMailReceiver.class);
 		IntegrationNamespaceUtils.setReferenceIfAttributeDefined(receiverBuilder, element, "search-term-strategy");
+		IntegrationNamespaceUtils.setValueIfAttributeDefined(receiverBuilder, element, "user-flag");
 		Object source = parserContext.extractSource(element);
 		String uri = element.getAttribute("store-uri");
 		if (StringUtils.hasText(uri)) {
@@ -77,23 +78,27 @@ public class ImapIdleChannelAdapterParser extends AbstractChannelAdapterParser {
 		}
 		else {
 			IntegrationNamespaceUtils.setReferenceIfAttributeDefined(receiverBuilder, element, "java-mail-properties");
-			IntegrationNamespaceUtils.setReferenceIfAttributeDefined(receiverBuilder, element, "authenticator", "javaMailAuthenticator");
+			IntegrationNamespaceUtils.setReferenceIfAttributeDefined(receiverBuilder, element, "authenticator",
+					"javaMailAuthenticator");
 		}
 		IntegrationNamespaceUtils.setValueIfAttributeDefined(receiverBuilder, element, "max-fetch-size");
 		receiverBuilder.addPropertyValue("shouldDeleteMessages", element.getAttribute("should-delete-messages"));
 		String markAsRead = element.getAttribute("should-mark-messages-as-read");
-		if (StringUtils.hasText(markAsRead)){
+		if (StringUtils.hasText(markAsRead)) {
 			receiverBuilder.addPropertyValue("shouldMarkMessagesAsRead", markAsRead);
 		}
 
 		String selectorExpression = element.getAttribute("mail-filter-expression");
 
 		RootBeanDefinition expressionDef = null;
-		if (StringUtils.hasText(selectorExpression)){
+		if (StringUtils.hasText(selectorExpression)) {
 			expressionDef = new RootBeanDefinition("org.springframework.integration.config.ExpressionFactoryBean");
 			expressionDef.getConstructorArgumentValues().addGenericArgumentValue(selectorExpression);
 			receiverBuilder.addPropertyValue("selectorExpression", expressionDef);
 		}
+		IntegrationNamespaceUtils.setReferenceIfAttributeDefined(receiverBuilder, element, "header-mapper");
+		IntegrationNamespaceUtils.setValueIfAttributeDefined(receiverBuilder, element, "embedded-parts-as-bytes");
+		IntegrationNamespaceUtils.setValueIfAttributeDefined(receiverBuilder, element, "simple-content");
 
 		return receiverBuilder.getBeanDefinition();
 	}

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2011 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,29 +26,30 @@ import org.springframework.messaging.Message;
 import org.springframework.util.Assert;
 
 /**
- * Immutable Value Object holding metadata about a MessageGroup.
- * 
+ * Value Object holding metadata about a MessageGroup in the MessageGroupStore.
+ *
  * @author Oleg Zhurakousky
+ * @author Gary Russell
+ * @author Artem Bilan
  * @since 2.1
  */
-public class MessageGroupMetadata implements Serializable{
+public class MessageGroupMetadata implements Serializable {
 
 	private static final long serialVersionUID = 1L;
-	
+
 	private final Object groupId;
-	
+
 	private final List<UUID> messageIds = new LinkedList<UUID>();
 
-	private final boolean complete;
-
 	private final long timestamp;
-	
+
+	private volatile boolean complete;
+
 	private volatile long lastModified;
 
-	private final int lastReleasedMessageSequenceNumber;
+	private volatile int lastReleasedMessageSequenceNumber;
 
 	public MessageGroupMetadata(MessageGroup messageGroup) {
-		
 		Assert.notNull(messageGroup, "'messageGroup' must not be null");
 		this.groupId = messageGroup.getGroupId();
 		for (Message<?> message : messageGroup.getMessages()) {
@@ -60,40 +61,47 @@ public class MessageGroupMetadata implements Serializable{
 		this.lastModified = messageGroup.getLastModified();
 	}
 
-	public void remove(UUID messageId){
+	public void remove(UUID messageId) {
 		this.messageIds.remove(messageId);
 	}
-	
-	public void setLastModified(long lastModified) {
+
+	boolean add(UUID messageId) {
+		return !this.messageIds.contains(messageId) && this.messageIds.add(messageId);
+	}
+
+	void setLastModified(long lastModified) {
 		this.lastModified = lastModified;
 	}
 
 	public Object getGroupId() {
 		return this.groupId;
 	}
-	
-	public Iterator<UUID> messageIdIterator(){
+
+	public Iterator<UUID> messageIdIterator() {
 		return this.messageIds.iterator();
 	}
-	
-	public int size(){
+
+	public int size() {
 		return this.messageIds.size();
 	}
-	
-	public UUID firstId(){
-		if (this.messageIds.size() > 0){
-			return this.messageIds.iterator().next();
+
+	public UUID firstId() {
+		if (this.messageIds.size() > 0) {
+			return this.messageIds.get(0);
 		}
-		
 		return null;
+	}
+
+	void complete() {
+		this.complete = true;
 	}
 
 	public boolean isComplete() {
 		return this.complete;
 	}
-	
+
 	public long getLastModified() {
-		return lastModified;
+		return this.lastModified;
 	}
 
 	public long getTimestamp() {
@@ -103,4 +111,9 @@ public class MessageGroupMetadata implements Serializable{
 	public int getLastReleasedMessageSequenceNumber() {
 		return this.lastReleasedMessageSequenceNumber;
 	}
+
+	void setLastReleasedMessageSequenceNumber(int lastReleasedMessageSequenceNumber) {
+		this.lastReleasedMessageSequenceNumber = lastReleasedMessageSequenceNumber;
+	}
+
 }

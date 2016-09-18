@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2007 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.xml.config;
 
 import java.io.ByteArrayInputStream;
@@ -26,37 +27,39 @@ import org.springframework.core.io.Resource;
 public class TestXmlApplicationContext extends AbstractXmlApplicationContext {
 
 	private final Resource[] resources;
-	
-	public TestXmlApplicationContext(String ... xmlStrings){
+
+	public TestXmlApplicationContext(String ... xmlStrings) {
 		resources = new Resource[xmlStrings.length];
-		for (int i = 0 ; i < xmlStrings.length; i++) {
+		for (int i = 0; i < xmlStrings.length; i++) {
 			resources[i] = new TestResource(xmlStrings[i]);
 		}
 		refresh();
 	}
-	
+
 	@Override
 	protected Resource[] getConfigResources() {
 		return resources;
 	}
 
-	private static class TestResource extends AbstractResource{
+	private static class TestResource extends AbstractResource {
 
 		String xmlString;
-		
-		TestResource(String xmlString){
+
+		TestResource(String xmlString) {
 			this.xmlString = xmlString;
 		}
-		
 
+
+		@Override
 		public String getDescription() {
 			return "test";
 		}
 
+		@Override
 		public InputStream getInputStream() throws IOException {
-		return new ByteArrayInputStream(xmlString.getBytes("UTF-8")); 
+		return new ByteArrayInputStream(xmlString.getBytes("UTF-8"));
 		}
-		
-	} 
-	
+
+	}
+
 }

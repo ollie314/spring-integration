@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,15 +43,17 @@ import org.springframework.context.event.SimpleApplicationEventMulticaster;
 import org.springframework.context.support.AbstractApplicationContext;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
 import org.springframework.context.support.GenericApplicationContext;
-import org.springframework.messaging.Message;
-import org.springframework.messaging.MessageHandlingException;
+import org.springframework.core.ResolvableType;
+import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.integration.channel.DirectChannel;
 import org.springframework.integration.channel.QueueChannel;
-import org.springframework.messaging.PollableChannel;
 import org.springframework.integration.event.core.MessagingEvent;
 import org.springframework.integration.handler.AbstractReplyProducingMessageHandler;
-import org.springframework.messaging.support.GenericMessage;
 import org.springframework.integration.test.util.TestUtils;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.MessageHandlingException;
+import org.springframework.messaging.PollableChannel;
+import org.springframework.messaging.support.GenericMessage;
 
 /**
  * @author Mark Fisher
@@ -59,6 +61,8 @@ import org.springframework.integration.test.util.TestUtils;
  * @author Artem Bilan
  */
 public class ApplicationEventListeningMessageProducerTests {
+
+	private static final SpelExpressionParser PARSER = new SpelExpressionParser();
 
 	@Test
 	public void anyApplicationEventSentByDefault() {
@@ -68,9 +72,9 @@ public class ApplicationEventListeningMessageProducerTests {
 		adapter.start();
 		Message<?> message1 = channel.receive(0);
 		assertNull(message1);
-		assertTrue(adapter.supportsEventType(TestApplicationEvent1.class));
+		assertTrue(adapter.supportsEventType(ResolvableType.forClass(TestApplicationEvent1.class)));
 		adapter.onApplicationEvent(new TestApplicationEvent1());
-		assertTrue(adapter.supportsEventType(TestApplicationEvent2.class));
+		assertTrue(adapter.supportsEventType(ResolvableType.forClass(TestApplicationEvent2.class)));
 		adapter.onApplicationEvent(new TestApplicationEvent2());
 		Message<?> message2 = channel.receive(20);
 		assertNotNull(message2);
@@ -81,7 +85,6 @@ public class ApplicationEventListeningMessageProducerTests {
 	}
 
 	@Test
-	@SuppressWarnings("unchecked")
 	public void onlyConfiguredEventTypesAreSent() {
 		QueueChannel channel = new QueueChannel();
 		ApplicationEventListeningMessageProducer adapter = new ApplicationEventListeningMessageProducer();
@@ -90,25 +93,25 @@ public class ApplicationEventListeningMessageProducerTests {
 		adapter.start();
 		Message<?> message1 = channel.receive(0);
 		assertNull(message1);
-		assertTrue(adapter.supportsEventType(TestApplicationEvent1.class));
+		assertTrue(adapter.supportsEventType(ResolvableType.forClass(TestApplicationEvent1.class)));
 		adapter.onApplicationEvent(new TestApplicationEvent1());
-		assertFalse(adapter.supportsEventType(TestApplicationEvent2.class));
+		assertFalse(adapter.supportsEventType(ResolvableType.forClass(TestApplicationEvent2.class)));
 		Message<?> message2 = channel.receive(20);
 		assertNotNull(message2);
 		assertEquals("event1", ((ApplicationEvent) message2.getPayload()).getSource());
 		assertNull(channel.receive(0));
 
 		adapter.setEventTypes((Class<? extends ApplicationEvent>) null);
-		assertTrue(adapter.supportsEventType(TestApplicationEvent1.class));
-		assertTrue(adapter.supportsEventType(TestApplicationEvent2.class));
+		assertTrue(adapter.supportsEventType(ResolvableType.forClass(TestApplicationEvent1.class)));
+		assertTrue(adapter.supportsEventType(ResolvableType.forClass(TestApplicationEvent2.class)));
 
 		adapter.setEventTypes(null, TestApplicationEvent2.class, null);
-		assertFalse(adapter.supportsEventType(TestApplicationEvent1.class));
-		assertTrue(adapter.supportsEventType(TestApplicationEvent2.class));
+		assertFalse(adapter.supportsEventType(ResolvableType.forClass(TestApplicationEvent1.class)));
+		assertTrue(adapter.supportsEventType(ResolvableType.forClass(TestApplicationEvent2.class)));
 
 		adapter.setEventTypes(null, null);
-		assertTrue(adapter.supportsEventType(TestApplicationEvent1.class));
-		assertTrue(adapter.supportsEventType(TestApplicationEvent2.class));
+		assertTrue(adapter.supportsEventType(ResolvableType.forClass(TestApplicationEvent1.class)));
+		assertTrue(adapter.supportsEventType(ResolvableType.forClass(TestApplicationEvent2.class)));
 	}
 
 	@Test
@@ -137,7 +140,7 @@ public class ApplicationEventListeningMessageProducerTests {
 	public void payloadExpressionEvaluatedAgainstApplicationEvent() {
 		QueueChannel channel = new QueueChannel();
 		ApplicationEventListeningMessageProducer adapter = new ApplicationEventListeningMessageProducer();
-		adapter.setPayloadExpression("'received: ' + source");
+		adapter.setPayloadExpression(PARSER.parseExpression("'received: ' + source"));
 		adapter.setOutputChannel(channel);
 
 		GenericApplicationContext ctx = TestUtils.createTestApplicationContext();
@@ -224,7 +227,8 @@ public class ApplicationEventListeningMessageProducerTests {
 		ConfigurableListableBeanFactory beanFactory = ctx.getBeanFactory();
 
 		QueueChannel channel = new QueueChannel();
-		ApplicationEventListeningMessageProducer listenerMessageProducer = new ApplicationEventListeningMessageProducer();
+		ApplicationEventListeningMessageProducer listenerMessageProducer =
+				new ApplicationEventListeningMessageProducer();
 		listenerMessageProducer.setOutputChannel(channel);
 		listenerMessageProducer.setEventTypes(TestApplicationEvent2.class);
 		beanFactory.registerSingleton("testListenerMessageProducer", listenerMessageProducer);
@@ -235,7 +239,8 @@ public class ApplicationEventListeningMessageProducerTests {
 		ctx.refresh();
 
 		ApplicationEventMulticaster multicaster =
-				ctx.getBean(AbstractApplicationContext.APPLICATION_EVENT_MULTICASTER_BEAN_NAME, ApplicationEventMulticaster.class);
+				ctx.getBean(AbstractApplicationContext.APPLICATION_EVENT_MULTICASTER_BEAN_NAME,
+						ApplicationEventMulticaster.class);
 		Map<?, ?> retrieverCache = TestUtils.getPropertyValue(multicaster, "retrieverCache", Map.class);
 
 		ctx.publishEvent(new TestApplicationEvent1());
@@ -245,10 +250,11 @@ public class ApplicationEventListeningMessageProducerTests {
 		 *  event if not supported.
 		 */
 		assertEquals(2, retrieverCache.size());
-		for (Object key : retrieverCache.keySet()) {
-			Class<? extends ApplicationEvent> event = TestUtils.getPropertyValue(key, "eventType", Class.class);
+		for (Map.Entry<?, ?> entry : retrieverCache.entrySet()) {
+			Class<? extends ApplicationEvent> event = TestUtils.getPropertyValue(entry.getKey(), "eventType.resolved",
+					Class.class);
 			assertThat(event, Matchers.is(Matchers.isOneOf(ContextRefreshedEvent.class, TestApplicationEvent1.class)));
-			Set<?> listeners = TestUtils.getPropertyValue(retrieverCache.get(key), "applicationListenerBeans", Set.class);
+			Set<?> listeners = TestUtils.getPropertyValue(entry.getValue(), "applicationListenerBeans", Set.class);
 			assertEquals(1, listeners.size());
 			assertEquals("testListener", listeners.iterator().next());
 		}
@@ -256,19 +262,21 @@ public class ApplicationEventListeningMessageProducerTests {
 		TestApplicationEvent2 event2 = new TestApplicationEvent2();
 		ctx.publishEvent(event2);
 		assertEquals(3, retrieverCache.size());
-		for (Object key : retrieverCache.keySet()) {
-			Class<?> event = TestUtils.getPropertyValue(key, "eventType", Class.class);
+		for (Map.Entry<?, ?> entry : retrieverCache.entrySet()) {
+			Class<?> event = TestUtils.getPropertyValue(entry.getKey(), "eventType.resolved", Class.class);
 			if (TestApplicationEvent2.class.isAssignableFrom(event)) {
-				Set<?> listeners = TestUtils.getPropertyValue(retrieverCache.get(key), "applicationListenerBeans", Set.class);
+				Set<?> listeners = TestUtils.getPropertyValue(entry.getValue(), "applicationListenerBeans", Set.class);
 				assertEquals(2, listeners.size());
 				for (Object listener : listeners) {
-					assertThat((String) listener, Matchers.is(Matchers.isOneOf("testListenerMessageProducer", "testListener")));
+					assertThat((String) listener,
+							Matchers.is(Matchers.isOneOf("testListenerMessageProducer", "testListener")));
 				}
 				break;
 			}
 		}
 
-		ctx.publishEvent(new ApplicationEvent("Some event") {});
+		ctx.publishEvent(new ApplicationEvent("Some event") {
+		});
 
 		assertEquals(4, listenerCounter.get());
 
@@ -276,31 +284,58 @@ public class ApplicationEventListeningMessageProducerTests {
 		assertNotNull(receive);
 		assertSame(event2, receive.getPayload());
 		assertNull(channel.receive(1));
+		ctx.close();
+	}
+
+	@Test
+	public void testPayloadEvents() {
+		GenericApplicationContext ctx = TestUtils.createTestApplicationContext();
+		ConfigurableListableBeanFactory beanFactory = ctx.getBeanFactory();
+
+		QueueChannel channel = new QueueChannel();
+		ApplicationEventListeningMessageProducer listenerMessageProducer =
+				new ApplicationEventListeningMessageProducer();
+		listenerMessageProducer.setOutputChannel(channel);
+		listenerMessageProducer.setEventTypes(String.class);
+		beanFactory.registerSingleton("testListenerMessageProducer", listenerMessageProducer);
+
+		ctx.refresh();
+
+		ctx.publishEvent("foo");
+
+		Message<?> receive = channel.receive(10000);
+		assertNotNull(receive);
+		assertEquals("foo", receive.getPayload());
+
+		ctx.close();
 	}
 
 
 	@SuppressWarnings("serial")
 	private static class TestApplicationEvent1 extends ApplicationEvent {
 
-		public TestApplicationEvent1() {
+		TestApplicationEvent1() {
 			super("event1");
 		}
+
 	}
 
 	@SuppressWarnings("serial")
 	private static class TestApplicationEvent2 extends ApplicationEvent {
 
-		public TestApplicationEvent2() {
+		TestApplicationEvent2() {
 			super("event2");
 		}
+
 	}
 
 	@SuppressWarnings("serial")
 	private static class TestMessagingEvent extends ApplicationEvent {
 
-		public TestMessagingEvent(Message<?> message) {
+		TestMessagingEvent(Message<?> message) {
 			super(message);
 		}
+
 	}
 
 	private static class TestApplicationListener implements ApplicationListener<ApplicationEvent> {
@@ -311,9 +346,11 @@ public class ApplicationEventListeningMessageProducerTests {
 			this.counter = counter;
 		}
 
+		@Override
 		public void onApplicationEvent(ApplicationEvent event) {
 			this.counter.incrementAndGet();
 		}
+
 	}
 
 }

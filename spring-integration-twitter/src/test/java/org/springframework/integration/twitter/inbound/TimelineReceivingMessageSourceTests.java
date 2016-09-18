@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2010 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,8 +18,11 @@ package org.springframework.integration.twitter.inbound;
 
 import java.util.Properties;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.junit.Ignore;
 import org.junit.Test;
+
 import org.springframework.beans.factory.config.PropertiesFactoryBean;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.messaging.Message;
@@ -29,18 +32,19 @@ import org.springframework.social.twitter.api.impl.TwitterTemplate;
 
 /**
  * @author Oleg Zhurakousky
+ * @author Gary Russell
  */
 public class TimelineReceivingMessageSourceTests {
 
+	private final Log logger = LogFactory.getLog(getClass());
 
 	@SuppressWarnings("unchecked")
 	@Test @Ignore
-	public void demoReceiveTimeline() throws Exception{
+	public void demoReceiveTimeline() throws Exception {
 		PropertiesFactoryBean pf = new PropertiesFactoryBean();
 		pf.setLocation(new ClassPathResource("sample.properties"));
 		pf.afterPropertiesSet();
 		Properties prop =  pf.getObject();
-		System.out.println(prop);
 		TwitterTemplate template = new TwitterTemplate(prop.getProperty("z_oleg.oauth.consumerKey"),
 										               prop.getProperty("z_oleg.oauth.consumerSecret"),
 										               prop.getProperty("z_oleg.oauth.accessToken"),
@@ -49,10 +53,11 @@ public class TimelineReceivingMessageSourceTests {
 		tSource.afterPropertiesSet();
 		for (int i = 0; i < 50; i++) {
 			Message<Tweet> message = (Message<Tweet>) tSource.receive();
-			if (message != null){
+			if (message != null) {
 				Tweet tweet = message.getPayload();
-				System.out.println(tweet.getFromUser() + " - " + tweet.getText() + " - " + tweet.getCreatedAt());
+				logger.info(tweet.getFromUser() + " - " + tweet.getText() + " - " + tweet.getCreatedAt());
 			}
 		}
 	}
+
 }

@@ -1,11 +1,11 @@
 /*
- * Copyright 2013 the original author or authors.
+ * Copyright 2013-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *       http://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -17,6 +17,7 @@
 package org.springframework.integration.sftp.outbound;
 
 import static org.hamcrest.Matchers.anyOf;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.not;
 import static org.junit.Assert.assertEquals;
@@ -25,8 +26,8 @@ import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -39,51 +40,42 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import org.hamcrest.Matchers;
-import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
 import org.springframework.beans.DirectFieldAccessor;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Bean;
 import org.springframework.integration.channel.DirectChannel;
+import org.springframework.integration.file.FileHeaders;
+import org.springframework.integration.file.remote.MessageSessionCallback;
+import org.springframework.integration.file.remote.SessionCallback;
 import org.springframework.integration.file.remote.session.Session;
 import org.springframework.integration.file.remote.session.SessionFactory;
-import org.springframework.integration.sftp.session.SftpFileInfo;
+import org.springframework.integration.sftp.SftpTestSupport;
+import org.springframework.integration.sftp.session.SftpRemoteFileTemplate;
+import org.springframework.integration.support.MessageBuilder;
 import org.springframework.integration.test.util.TestUtils;
 import org.springframework.messaging.Message;
+import org.springframework.messaging.MessagingException;
 import org.springframework.messaging.PollableChannel;
 import org.springframework.messaging.support.GenericMessage;
-import org.springframework.test.annotation.IfProfileValue;
-import org.springframework.test.annotation.ProfileValueUtils;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 import org.springframework.util.FileCopyUtils;
 
+import com.jcraft.jsch.ChannelSftp;
 import com.jcraft.jsch.ChannelSftp.LsEntry;
-import com.jcraft.jsch.SftpATTRS;
 
 /**
- * Run with -Dspring-profiles-active=realSSH to run with a real SSH server.
- *
- * Assumes ftptest account on localhost with the following directory tree in the user's root...
- *
- * <pre class="code">
- *  $ tree sftpSource/
- *  sftpSource/
- *  ├── sftpSource1.txt - contains 'source1'
- *  ├── sftpSource2.txt - contains 'source2'
- *  └── subSftpSource
- *      └── subSftpSource1.txt - contains 'subSource1'
- * </pre>
- *
  * @author Artem Bilan
  * @author Gary Russell
  * @since 3.0
  */
 @ContextConfiguration
 @RunWith(SpringJUnit4ClassRunner.class)
-public class SftpServerOutboundTests {
+public class SftpServerOutboundTests extends SftpTestSupport {
 
 	@Autowired
 	private PollableChannel output;
@@ -113,83 +105,36 @@ public class SftpServerOutboundTests {
 	private DirectChannel inboundMPutRecursiveFiltered;
 
 	@Autowired
-	private SessionFactory<SftpFileInfo> sessionFactory;
+	private SessionFactory<LsEntry> sessionFactory;
+
+	@Autowired
+	private DirectChannel appending;
+
+	@Autowired
+	private DirectChannel ignoring;
+
+	@Autowired
+	private DirectChannel failing;
+
+	@Autowired
+	private DirectChannel inboundGetStream;
+
+	@Autowired
+	private DirectChannel inboundCallback;
+
+	@Autowired
+	private Config config;
 
 	@Before
-	public void setup() throws Exception {
-		purge();
-		setUpMocksIfNeeded();
-	}
-
-	@SuppressWarnings({ "rawtypes", "unchecked" })
-	private void setUpMocksIfNeeded() throws IOException {
-		String profile = ProfileValueUtils.retrieveProfileValueSource(this.getClass()).get("spring.profiles.active");
-		boolean usingMocks = profile == null || ! profile.startsWith("realSSH");
-		if (usingMocks) {
-			Session session = mock(Session.class);
-			when(sessionFactory.getSession()).thenReturn(session);
-			LsEntry entry1 = mock(LsEntry.class);
-			SftpATTRS attrs1 = mock(SftpATTRS.class);
-			when(entry1.getAttrs()).thenReturn(attrs1);
-			when(entry1.getFilename()).thenReturn("sftpSource1.txt");
-			LsEntry entry2 = mock(LsEntry.class);
-			SftpATTRS attrs2 = mock(SftpATTRS.class);
-			when(entry2.getAttrs()).thenReturn(attrs2);
-			when(entry2.getFilename()).thenReturn("sftpSource2.txt");
-			LsEntry entry3 = mock(LsEntry.class);
-			when(entry3.getFilename()).thenReturn("subSftpSource");
-			SftpATTRS attrs3 = mock(SftpATTRS.class);
-			when(entry3.getAttrs()).thenReturn(attrs3);
-			when(attrs3.isDir()).thenReturn(true);
-			LsEntry entry4 = mock(LsEntry.class);
-			SftpATTRS attrs4 = mock(SftpATTRS.class);
-			when(entry4.getAttrs()).thenReturn(attrs4);
-			// recursion uses a DFA to update the filename to include the subdirectory
-			new DirectFieldAccessor(entry4).setPropertyValue("filename", "subSftpSource1.txt");
-			when(entry4.getFilename()).thenCallRealMethod();
-			when(session.list("sftpSource/sftpSource1.txt")).thenReturn(new LsEntry[] {
-					entry1
-			});
-			when(session.list("sftpSource/")).thenReturn(new LsEntry[] {
-					entry1, entry2, entry3
-			});
-			when(session.list("sftpSource/subSftpSource/")).thenReturn(new LsEntry[] {
-					entry4
-			});
-			when(session.list("sftpSource/subSftpSource/subSftpSource1.txt")).thenReturn(new LsEntry[] {
-					entry4
-			});
-		}
-	}
-
-	@After
-	public void purge() {
-		File local = new File("/tmp/sftpOutboundTests/");
-		purge(local);
-		local.delete();
-	}
-
-	private void purge(File local) {
-		File[] files = local.listFiles();
-		if (files != null) {
-			for (File file : files) {
-				if (file.isDirectory()) {
-					this.purge(file);
-				}
-				file.delete();
-			}
-		}
+	public void setup() {
+		this.config.targetLocalDirectoryName = getTargetLocalDirectoryName();
 	}
 
 	@Test
 	public void testInt2866LocalDirectoryExpressionGET() {
-		Session<?> session = null;
-		boolean sharedSession = "realSSHSharedSession".equals(System.getProperty("spring.profiles.active"));
-		if (sharedSession) {
-			session = this.sessionFactory.getSession();
-		}
+		Session<?> session = this.sessionFactory.getSession();
 		String dir = "sftpSource/";
-		this.inboundGet.send(new GenericMessage<Object>(dir + "sftpSource1.txt"));
+		this.inboundGet.send(new GenericMessage<Object>(dir + " sftpSource1.txt"));
 		Message<?> result = this.output.receive(1000);
 		assertNotNull(result);
 		File localFile = (File) result.getPayload();
@@ -203,17 +148,15 @@ public class SftpServerOutboundTests {
 		localFile = (File) result.getPayload();
 		assertThat(localFile.getPath().replaceAll(java.util.regex.Matcher.quoteReplacement(File.separator), "/"),
 				Matchers.containsString(dir.toUpperCase()));
-		if (sharedSession) {
-			Session<?> session2 = this.sessionFactory.getSession();
-			assertSame(TestUtils.getPropertyValue(session, "targetSession.jschSession"),
-					TestUtils.getPropertyValue(session2, "targetSession.jschSession"));
-		}
+		Session<?> session2 = this.sessionFactory.getSession();
+		assertSame(TestUtils.getPropertyValue(session, "targetSession.jschSession"),
+				TestUtils.getPropertyValue(session2, "targetSession.jschSession"));
 	}
 
 	@Test
 	public void testInt2866InvalidLocalDirectoryExpression() {
 		try {
-			this.invalidDirExpression.send(new GenericMessage<Object>("sftpSource/sftpSource1.txt"));
+			this.invalidDirExpression.send(new GenericMessage<Object>("sftpSource/ sftpSource1.txt"));
 			fail("Exception expected.");
 		}
 		catch (Exception e) {
@@ -234,6 +177,8 @@ public class SftpServerOutboundTests {
 		assertNotNull(result);
 		List<File> localFiles = (List<File>) result.getPayload();
 
+		assertThat(localFiles.size(), Matchers.greaterThan(0));
+
 		for (File file : localFiles) {
 			assertThat(file.getPath().replaceAll(java.util.regex.Matcher.quoteReplacement(File.separator), "/"),
 					Matchers.containsString(dir));
@@ -244,6 +189,8 @@ public class SftpServerOutboundTests {
 		result = this.output.receive(1000);
 		assertNotNull(result);
 		localFiles = (List<File>) result.getPayload();
+
+		assertThat(localFiles.size(), Matchers.greaterThan(0));
 
 		for (File file : localFiles) {
 			assertThat(file.getPath().replaceAll(java.util.regex.Matcher.quoteReplacement(File.separator), "/"),
@@ -294,11 +241,10 @@ public class SftpServerOutboundTests {
 	 * Only runs with a real server (see class javadocs).
 	 */
 	@Test
-	@IfProfileValue(name="spring.profiles.active", value="realSSH")
 	public void testInt3100RawGET() throws Exception {
 		Session<?> session = this.sessionFactory.getSession();
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
-		FileCopyUtils.copy(session.readRaw("sftpSource/sftpSource1.txt"), baos);
+		FileCopyUtils.copy(session.readRaw("sftpSource/ sftpSource1.txt"), baos);
 		assertTrue(session.finalizeRaw());
 		assertEquals("source1", new String(baos.toByteArray()));
 
@@ -311,7 +257,6 @@ public class SftpServerOutboundTests {
 	}
 
 	@Test
-	@IfProfileValue(name="spring.profiles.active", value="realSSHSharedSession")
 	public void testInt3047ConcurrentSharedSession() throws Exception {
 		final Session<?> session1 = this.sessionFactory.getSession();
 		final Session<?> session2 = this.sessionFactory.getSession();
@@ -371,12 +316,19 @@ public class SftpServerOutboundTests {
 	}
 
 	@Test
-	@IfProfileValue(name="spring.profiles.active", value="realSSH")
-	public void testInt3088MPutNotRecursive() {
+	public void testInt3088MPutNotRecursive() throws Exception {
+		Session<?> session = sessionFactory.getSession();
+		session.close();
+		session = TestUtils.getPropertyValue(session, "targetSession", Session.class);
+		ChannelSftp channel = spy(TestUtils.getPropertyValue(session, "channel", ChannelSftp.class));
+		new DirectFieldAccessor(session).setPropertyValue("channel", channel);
+
 		String dir = "sftpSource/";
 		this.inboundMGetRecursive.send(new GenericMessage<Object>(dir + "*"));
-		while (output.receive(0) != null) { }
-		this.inboundMPut.send(new GenericMessage<File>(new File("/tmp/sftpOutboundTests/sftpSource")));
+		while (output.receive(0) != null) {
+			// drain
+		}
+		this.inboundMPut.send(new GenericMessage<File>(getSourceLocalDirectory()));
 		@SuppressWarnings("unchecked")
 		Message<List<String>> out = (Message<List<String>>) this.output.receive(1000);
 		assertNotNull(out);
@@ -385,19 +337,22 @@ public class SftpServerOutboundTests {
 				not(equalTo(out.getPayload().get(1))));
 		assertThat(
 				out.getPayload().get(0),
-				anyOf(equalTo("sftpTarget/slocalTarget1.txt"), equalTo("sftpTarget/slocalTarget2.txt")));
+				anyOf(equalTo("sftpTarget/localSource1.txt"), equalTo("sftpTarget/localSource2.txt")));
 		assertThat(
 				out.getPayload().get(1),
-				anyOf(equalTo("sftpTarget/slocalTarget1.txt"), equalTo("sftpTarget/slocalTarget2.txt")));
+				anyOf(equalTo("sftpTarget/localSource1.txt"), equalTo("sftpTarget/localSource2.txt")));
+		verify(channel).chmod(384, "sftpTarget/localSource1.txt"); // 384 = 600 octal
+		verify(channel).chmod(384, "sftpTarget/localSource2.txt");
 	}
 
 	@Test
-	@IfProfileValue(name="spring.profiles.active", value="realSSH")
 	public void testInt3088MPutRecursive() {
 		String dir = "sftpSource/";
 		this.inboundMGetRecursive.send(new GenericMessage<Object>(dir + "*"));
-		while (output.receive(0) != null) { }
-		this.inboundMPutRecursive.send(new GenericMessage<File>(new File("/tmp/sftpOutboundTests/sftpSource")));
+		while (output.receive(0) != null) {
+			// drain
+		}
+		this.inboundMPutRecursive.send(new GenericMessage<File>(getSourceLocalDirectory()));
 		@SuppressWarnings("unchecked")
 		Message<List<String>> out = (Message<List<String>>) this.output.receive(1000);
 		assertNotNull(out);
@@ -406,25 +361,26 @@ public class SftpServerOutboundTests {
 				not(equalTo(out.getPayload().get(1))));
 		assertThat(
 				out.getPayload().get(0),
-				anyOf(equalTo("sftpTarget/slocalTarget1.txt"), equalTo("sftpTarget/slocalTarget2.txt"),
-						equalTo("sftpTarget/subSftpSource/subSlocalTarget1.txt")));
+				anyOf(equalTo("sftpTarget/localSource1.txt"), equalTo("sftpTarget/localSource2.txt"),
+						equalTo("sftpTarget/subLocalSource/subLocalSource1.txt")));
 		assertThat(
 				out.getPayload().get(1),
-				anyOf(equalTo("sftpTarget/slocalTarget1.txt"), equalTo("sftpTarget/slocalTarget2.txt"),
-						equalTo("sftpTarget/subSftpSource/subSlocalTarget1.txt")));
+				anyOf(equalTo("sftpTarget/localSource1.txt"), equalTo("sftpTarget/localSource2.txt"),
+						equalTo("sftpTarget/subLocalSource/subLocalSource1.txt")));
 		assertThat(
 				out.getPayload().get(2),
-				anyOf(equalTo("sftpTarget/slocalTarget1.txt"), equalTo("sftpTarget/slocalTarget2.txt"),
-						equalTo("sftpTarget/subSftpSource/subSlocalTarget1.txt")));
+				anyOf(equalTo("sftpTarget/localSource1.txt"), equalTo("sftpTarget/localSource2.txt"),
+						equalTo("sftpTarget/subLocalSource/subLocalSource1.txt")));
 	}
 
 	@Test
-	@IfProfileValue(name="spring.profiles.active", value="realSSH")
 	public void testInt3088MPutRecursiveFiltered() {
 		String dir = "sftpSource/";
 		this.inboundMGetRecursive.send(new GenericMessage<Object>(dir + "*"));
-		while (output.receive(0) != null) { }
-		this.inboundMPutRecursiveFiltered.send(new GenericMessage<File>(new File("/tmp/sftpOutboundTests/sftpSource")));
+		while (output.receive(0) != null) {
+			// drain
+		}
+		this.inboundMPutRecursiveFiltered.send(new GenericMessage<File>(getSourceLocalDirectory()));
 		@SuppressWarnings("unchecked")
 		Message<List<String>> out = (Message<List<String>>) this.output.receive(1000);
 		assertNotNull(out);
@@ -433,12 +389,96 @@ public class SftpServerOutboundTests {
 				not(equalTo(out.getPayload().get(1))));
 		assertThat(
 				out.getPayload().get(0),
-				anyOf(equalTo("sftpTarget/slocalTarget1.txt"), equalTo("sftpTarget/slocalTarget2.txt"),
-						equalTo("sftpTarget/subSftpSource/subSlocalTarget1.txt")));
+				anyOf(equalTo("sftpTarget/localSource1.txt"), equalTo("sftpTarget/localSource2.txt"),
+						equalTo("sftpTarget/subLocalSource/subLocalSource1.txt")));
 		assertThat(
 				out.getPayload().get(1),
-				anyOf(equalTo("sftpTarget/slocalTarget1.txt"), equalTo("sftpTarget/slocalTarget2.txt"),
-						equalTo("sftpTarget/subSftpSource/subSlocalTarget1.txt")));
+				anyOf(equalTo("sftpTarget/localSource1.txt"), equalTo("sftpTarget/localSource2.txt"),
+						equalTo("sftpTarget/subLocalSource/subLocalSource1.txt")));
+	}
+
+	@Test
+	public void testInt3412FileMode() {
+		Message<String> m = MessageBuilder.withPayload("foo")
+				.setHeader(FileHeaders.FILENAME, "appending.txt")
+				.build();
+		appending.send(m);
+		appending.send(m);
+
+		SftpRemoteFileTemplate template = new SftpRemoteFileTemplate(sessionFactory);
+		assertLength6(template);
+
+		ignoring.send(m);
+		assertLength6(template);
+		try {
+			failing.send(m);
+			fail("Expected exception");
+		}
+		catch (MessagingException e) {
+			assertThat(e.getCause().getCause().getMessage(), containsString("The destination file already exists"));
+		}
+
+	}
+
+	@Test
+	public void testStream() {
+		Session<?> session = spy(this.sessionFactory.getSession());
+		session.close();
+
+		String dir = "sftpSource/";
+		this.inboundGetStream.send(new GenericMessage<Object>(dir + " sftpSource1.txt"));
+		Message<?> result = this.output.receive(1000);
+		assertNotNull(result);
+		assertEquals("source1", result.getPayload());
+		assertEquals("sftpSource/", result.getHeaders().get(FileHeaders.REMOTE_DIRECTORY));
+		assertEquals(" sftpSource1.txt", result.getHeaders().get(FileHeaders.REMOTE_FILE));
+		verify(session).close();
+	}
+
+	@Test
+	public void testMessageSessionCallback() {
+		this.inboundCallback.send(new GenericMessage<String>("foo"));
+		Message<?> receive = this.output.receive(10000);
+		assertNotNull(receive);
+		assertEquals("FOO", receive.getPayload());
+	}
+
+	private void assertLength6(SftpRemoteFileTemplate template) {
+		LsEntry[] files = template.execute(new SessionCallback<LsEntry, LsEntry[]>() {
+
+			@Override
+			public LsEntry[] doInSession(Session<LsEntry> session) throws IOException {
+				return session.list("sftpTarget/appending.txt");
+			}
+		});
+		assertEquals(1, files.length);
+		assertEquals(6, files[0].getAttrs().getSize());
+	}
+
+	@SuppressWarnings("unused")
+	private static final class TestMessageSessionCallback
+			implements MessageSessionCallback<LsEntry, Object> {
+
+		@Override
+		public Object doInSession(Session<ChannelSftp.LsEntry> session, Message<?> requestMessage) throws IOException {
+			return ((String) requestMessage.getPayload()).toUpperCase();
+		}
+
+	}
+
+	public static class Config {
+
+		private volatile String targetLocalDirectoryName;
+
+		@Bean
+		public SessionFactory<LsEntry> sftpSessionFactory() {
+			return SftpServerOutboundTests.sessionFactory();
+		}
+
+		public String getTargetLocalDirectoryName() {
+			return this.targetLocalDirectoryName;
+		}
+
 	}
 
 }

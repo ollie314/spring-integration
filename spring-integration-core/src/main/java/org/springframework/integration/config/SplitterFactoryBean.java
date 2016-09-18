@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package org.springframework.integration.config;
 
 import org.springframework.expression.Expression;
+import org.springframework.integration.handler.AbstractMessageProducingHandler;
 import org.springframework.integration.handler.AbstractReplyProducingMessageHandler;
 import org.springframework.integration.splitter.AbstractMessageSplitter;
 import org.springframework.integration.splitter.DefaultMessageSplitter;
@@ -32,6 +33,7 @@ import org.springframework.util.StringUtils;
  * @author Mark Fisher
  * @author Iwein Fuld
  * @author Gary Russell
+ * @author David Liu
  */
 public class SplitterFactoryBean extends AbstractStandardMessageHandlerFactoryBean {
 
@@ -49,7 +51,7 @@ public class SplitterFactoryBean extends AbstractStandardMessageHandlerFactoryBe
 	}
 
 	public boolean isRequiresReply() {
-		return requiresReply;
+		return this.requiresReply;
 	}
 
 	public void setRequiresReply(boolean requiresReply) {
@@ -65,7 +67,7 @@ public class SplitterFactoryBean extends AbstractStandardMessageHandlerFactoryBe
 	}
 
 	@Override
-	MessageHandler createMethodInvokingHandler(Object targetObject, String targetMethodName) {
+	protected MessageHandler createMethodInvokingHandler(Object targetObject, String targetMethodName) {
 		Assert.notNull(targetObject, "targetObject must not be null");
 		AbstractMessageSplitter splitter = this.extractTypeIfPossible(targetObject, AbstractMessageSplitter.class);
 		if (splitter == null) {
@@ -84,40 +86,46 @@ public class SplitterFactoryBean extends AbstractStandardMessageHandlerFactoryBe
 		return splitter;
 	}
 
-	private AbstractMessageSplitter createMethodInvokingSplitter(Object targetObject, String targetMethodName) {
+	protected AbstractMessageSplitter createMethodInvokingSplitter(Object targetObject, String targetMethodName) {
 		return (StringUtils.hasText(targetMethodName))
 				? new MethodInvokingSplitter(targetObject, targetMethodName)
 				: new MethodInvokingSplitter(targetObject);
 	}
 
 	@Override
-	MessageHandler createExpressionEvaluatingHandler(Expression expression) {
+	protected MessageHandler createExpressionEvaluatingHandler(Expression expression) {
 		return this.configureSplitter(new ExpressionEvaluatingSplitter(expression));
 	}
 
 	@Override
-	MessageHandler createDefaultHandler() {
+	protected MessageHandler createDefaultHandler() {
 		return this.configureSplitter(new DefaultMessageSplitter());
 	}
 
-	private AbstractMessageSplitter configureSplitter(AbstractMessageSplitter splitter) {
+	protected AbstractMessageSplitter configureSplitter(AbstractMessageSplitter splitter) {
 		this.postProcessReplyProducer(splitter);
 		return splitter;
 	}
 
 	@Override
-	protected boolean canBeUsedDirect(AbstractReplyProducingMessageHandler handler) {
+	protected boolean canBeUsedDirect(AbstractMessageProducingHandler handler) {
 		return handler instanceof AbstractMessageSplitter
 				|| (this.applySequence == null && this.delimiters == null);
 	}
 
 	@Override
-	protected void postProcessReplyProducer(AbstractReplyProducingMessageHandler handler) {
+	protected void postProcessReplyProducer(AbstractMessageProducingHandler handler) {
 		if (this.sendTimeout != null) {
-			handler.setSendTimeout(sendTimeout);
+			handler.setSendTimeout(this.sendTimeout);
 		}
 		if (this.requiresReply != null) {
-			handler.setRequiresReply(requiresReply);
+			if (handler instanceof AbstractReplyProducingMessageHandler) {
+				((AbstractReplyProducingMessageHandler) handler).setRequiresReply(this.requiresReply);
+			}
+			else if (this.requiresReply && logger.isDebugEnabled()) {
+			      logger.debug("requires-reply can only be set to AbstractReplyProducingMessageHandler or its subclass, "
+			                     + handler.getComponentName() + " doesn't support it.");
+			 }
 		}
 		if (!(handler instanceof AbstractMessageSplitter)) {
 			Assert.isNull(this.applySequence, "Cannot set applySequence if the referenced bean is "
@@ -133,10 +141,14 @@ public class SplitterFactoryBean extends AbstractStandardMessageHandlerFactoryBe
 				((DefaultMessageSplitter) splitter).setDelimiters(this.delimiters);
 			}
 			if (this.applySequence != null) {
-				splitter.setApplySequence(applySequence);
+				splitter.setApplySequence(this.applySequence);
 			}
 		}
 	}
 
+	@Override
+	protected Class<? extends MessageHandler> getPreCreationHandlerType() {
+		return AbstractMessageSplitter.class;
+	}
 
 }

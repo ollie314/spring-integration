@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,7 +28,7 @@ import java.io.OutputStream;
  * @author Gary Russell
  * @since 2.2
  */
-public class ByteArraySingleTerminatorSerializer extends AbstractByteArraySerializer {
+public class ByteArraySingleTerminatorSerializer extends AbstractPooledBufferByteArraySerializer {
 
 	private final byte terminator;
 
@@ -37,37 +37,48 @@ public class ByteArraySingleTerminatorSerializer extends AbstractByteArraySerial
 	}
 
 	/**
-	 * Reads the data in the inputstream to a byte[]. Data must be terminated
+	 * Reads the data in the inputStream to a byte[]. Data must be terminated
 	 * by a single byte. Throws a {@link SoftEndOfStreamException} if the stream
 	 * is closed immediately after the terminator (i.e. no data is in the process of
 	 * being read).
 	 */
 	@Override
-	public byte[] deserialize(InputStream inputStream) throws IOException {
-		byte[] buffer = new byte[this.maxMessageSize];
+	protected byte[] doDeserialize(InputStream inputStream, byte[] buffer) throws IOException {
 		int n = 0;
 		int bite;
 		if (logger.isDebugEnabled()) {
 			logger.debug("Available to read:" + inputStream.available());
 		}
-		while (true) {
-			bite = inputStream.read();
-			if (bite < 0 && n == 0) {
-				throw new SoftEndOfStreamException("Stream closed between payloads");
+		try {
+			while (true) {
+				bite = inputStream.read();
+				if (bite < 0 && n == 0) {
+					throw new SoftEndOfStreamException("Stream closed between payloads");
+				}
+				checkClosure(bite);
+				if (bite == this.terminator) {
+					break;
+				}
+				buffer[n++] = (byte) bite;
+				if (n >= this.maxMessageSize) {
+					throw new IOException("Terminator '0x" + Integer.toHexString(this.terminator & 0xff)
+							+ "' not found before max message length: "
+							+ this.maxMessageSize);
+				}
 			}
-			checkClosure(bite);
-			if (bite == terminator) {
-				break;
-			}
-			buffer[n++] = (byte) bite;
-			if (n >= this.maxMessageSize) {
-				throw new IOException("LF not found before max message length: "
-						+ this.maxMessageSize);
-			}
-		};
-		byte[] assembledData = new byte[n];
-		System.arraycopy(buffer, 0, assembledData, 0, n);
-		return assembledData;
+			return copyToSizedArray(buffer, n);
+		}
+		catch (SoftEndOfStreamException e) {
+			throw e;
+		}
+		catch (IOException e) {
+			publishEvent(e, buffer, n);
+			throw e;
+		}
+		catch (RuntimeException e) {
+			publishEvent(e, buffer, n);
+			throw e;
+		}
 	}
 
 	/**
@@ -76,8 +87,7 @@ public class ByteArraySingleTerminatorSerializer extends AbstractByteArraySerial
 	@Override
 	public void serialize(byte[] bytes, OutputStream outputStream) throws IOException {
 		outputStream.write(bytes);
-		outputStream.write(terminator);
-		outputStream.flush();
+		outputStream.write(this.terminator);
 	}
 
 }

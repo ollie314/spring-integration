@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,11 +13,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.json;
 
 import org.springframework.integration.support.AbstractIntegrationMessageBuilder;
-import org.springframework.integration.support.json.JacksonJsonObjectMapperProvider;
 import org.springframework.integration.support.json.JsonObjectMapper;
+import org.springframework.integration.support.json.JsonObjectMapperProvider;
 import org.springframework.integration.transformer.AbstractTransformer;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageHeaders;
@@ -26,11 +27,25 @@ import org.springframework.util.LinkedCaseInsensitiveMap;
 import org.springframework.util.StringUtils;
 
 /**
- * Transformer implementation that converts a payload instance into a JSON string representation.
- * By default this transformer uses {@linkplain JacksonJsonObjectMapperProvider} factory
- * to get an instance of a Jackson or Jackson 2 JSON-processor {@linkplain JsonObjectMapper} implementation
- * depending on the jackson-databind or jackson-mapper-asl libs on the classpath.
- * Any other {@linkplain JsonObjectMapper} implementation can be provided.
+ * Transformer implementation that converts a payload instance into a JSON string
+ * representation. By default this transformer uses
+ * {@linkplain org.springframework.integration.support.json.JsonObjectMapperProvider}
+ * factory to get an instance of a Jackson or Jackson 2 JSON-processor
+ * {@linkplain JsonObjectMapper} implementation depending on the jackson-databind or
+ * jackson-mapper-asl libs on the classpath. Any other {@linkplain JsonObjectMapper}
+ * implementation can be provided.
+ * <p>Since version 3.0, adds headers to represent the object types that were mapped
+ * from (including one level of container and Map content types). These headers
+ * are compatible with the Spring AMQP Json type mapper such that messages mapped
+ * or converted by either technology are compatible. One difference, however, is the
+ * Spring AMQP converter, when converting to JSON, sets the header types to the class
+ * name. This transformer sets the header types to the class itself.
+ * <p>The compatibility is achieved because, when mapping the Spring Integration
+ * message in the outbound endpoint (via the {@code DefaultAmqpHeaderMapper}), the
+ * classes are converted to String at that time.
+ * <p>Note: the first element of container/map types are used to determine the
+ * container/map content types. If the first element is null, the type is set to
+ * {@link Object}.
  *
  * @author Mark Fisher
  * @author James Carr
@@ -41,7 +56,7 @@ import org.springframework.util.StringUtils;
  */
 public class ObjectToJsonTransformer extends AbstractTransformer {
 
-	public static enum ResultType {
+	public enum ResultType {
 		STRING, NODE
 	}
 
@@ -56,7 +71,7 @@ public class ObjectToJsonTransformer extends AbstractTransformer {
 	private volatile boolean contentTypeExplicitlySet = false;
 
 	public ObjectToJsonTransformer() {
-		this(JacksonJsonObjectMapperProvider.newInstance());
+		this(JsonObjectMapperProvider.newInstance());
 	}
 
 	public ObjectToJsonTransformer(JsonObjectMapper<?, ?> jsonObjectMapper) {
@@ -64,7 +79,7 @@ public class ObjectToJsonTransformer extends AbstractTransformer {
 	}
 
 	public ObjectToJsonTransformer(ResultType resultType) {
-		this(JacksonJsonObjectMapperProvider.newInstance(), resultType);
+		this(JsonObjectMapperProvider.newInstance(), resultType);
 	}
 
 	public ObjectToJsonTransformer(JsonObjectMapper<?, ?> jsonObjectMapper, ResultType resultType) {
@@ -84,6 +99,11 @@ public class ObjectToJsonTransformer extends AbstractTransformer {
 		Assert.notNull(contentType, "'contentType' must not be null");
 		this.contentTypeExplicitlySet = true;
 		this.contentType = contentType.trim();
+	}
+
+	@Override
+	public String getComponentType() {
+		return "object-to-json-transformer";
 	}
 
 	@Override
@@ -108,7 +128,7 @@ public class ObjectToJsonTransformer extends AbstractTransformer {
 			headers.put(MessageHeaders.CONTENT_TYPE, this.contentType);
 		}
 
-		this.jsonObjectMapper.populateJavaTypes(headers, message.getPayload().getClass());
+		this.jsonObjectMapper.populateJavaTypes(headers, message.getPayload());
 
 		messageBuilder.copyHeaders(headers);
 		return messageBuilder.build();

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.ftp.session;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.fail;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
 import java.lang.reflect.Field;
 import java.util.Random;
@@ -22,29 +29,49 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import org.junit.Assert;
 import org.apache.commons.net.ftp.FTPClient;
+import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
 import org.mockito.Mockito;
-import org.springframework.messaging.MessagingException;
+
 import org.springframework.integration.file.remote.session.CachingSessionFactory;
 import org.springframework.integration.file.remote.session.Session;
 import org.springframework.integration.file.remote.session.SessionFactory;
 import org.springframework.integration.test.util.TestUtils;
-
-import static org.junit.Assert.fail;
-
-import static org.junit.Assert.assertEquals;
+import org.springframework.messaging.MessagingException;
 
 /**
  * @author Oleg Zhurakousky
  * @author Gunnar Hillert
+ * @author Gary Russell
  *
  */
-@SuppressWarnings({"rawtypes","unchecked"})
+@SuppressWarnings({"rawtypes", "unchecked"})
 public class SessionFactoryTests {
 
+
+	@Test
+	public void testTimeouts() throws Exception {
+		final FTPClient client = mock(FTPClient.class);
+		DefaultFtpSessionFactory sessionFactory = new DefaultFtpSessionFactory() {
+
+			@Override
+			protected FTPClient createClientInstance() {
+				return client;
+			}
+		};
+		sessionFactory.setUsername("foo");
+		sessionFactory.setConnectTimeout(123);
+		sessionFactory.setDefaultTimeout(456);
+		sessionFactory.setDataTimeout(789);
+		doReturn(200).when(client).getReplyCode();
+		doReturn(true).when(client).login("foo", null);
+		sessionFactory.getSession();
+		verify(client).setConnectTimeout(123);
+		verify(client).setDefaultTimeout(456);
+		verify(client).setDataTimeout(789);
+	}
 
 	@Test
 	public void testWithControlEncoding() {
@@ -63,13 +90,13 @@ public class SessionFactoryTests {
 				TestUtils.getPropertyValue(sessionFactory, "controlEncoding"));
 	}
 
-	@Test(expected=IllegalArgumentException.class)
+	@Test(expected = IllegalArgumentException.class)
 	public void testEmptyControlEncoding() {
 		DefaultFtpSessionFactory sessionFactory = new DefaultFtpSessionFactory();
 		sessionFactory.setControlEncoding("");
 	}
 
-	@Test(expected=IllegalArgumentException.class)
+	@Test(expected = IllegalArgumentException.class)
 	public void testNullControlEncoding() {
 		DefaultFtpSessionFactory sessionFactory = new DefaultFtpSessionFactory();
 		sessionFactory.setControlEncoding(null);
@@ -77,19 +104,20 @@ public class SessionFactoryTests {
 
 
 	@Test
-	public void testClientModes() throws Exception{
+	public void testClientModes() throws Exception {
 		DefaultFtpSessionFactory sessionFactory = new DefaultFtpSessionFactory();
 		Field[] fields = FTPClient.class.getDeclaredFields();
 		for (Field field : fields) {
-			if (field.getName().endsWith("MODE")){
+			if (field.getName().endsWith("MODE")) {
 				try {
 					int clientMode = field.getInt(null);
 					sessionFactory.setClientMode(clientMode);
 					if (!(clientMode == FTPClient.ACTIVE_LOCAL_DATA_CONNECTION_MODE ||
-						clientMode == FTPClient.PASSIVE_LOCAL_DATA_CONNECTION_MODE)){
+						clientMode == FTPClient.PASSIVE_LOCAL_DATA_CONNECTION_MODE)) {
 						fail();
 					}
-				} catch (IllegalArgumentException e) {
+				}
+				catch (IllegalArgumentException e) {
 					// success
 				} catch (Throwable e) {
 					fail();
@@ -100,7 +128,7 @@ public class SessionFactoryTests {
 
 
 	@Test
-	public void testStaleConnection() throws Exception{
+	public void testStaleConnection() throws Exception {
 		SessionFactory sessionFactory = Mockito.mock(SessionFactory.class);
 		Session sessionA = Mockito.mock(Session.class);
 		Session sessionB = Mockito.mock(Session.class);
@@ -120,7 +148,7 @@ public class SessionFactoryTests {
 	}
 
 	@Test
-	public void testSameSessionFromThePool() throws Exception{
+	public void testSameSessionFromThePool() throws Exception {
 		SessionFactory sessionFactory = Mockito.mock(SessionFactory.class);
 		Session session = Mockito.mock(Session.class);
 		Mockito.when(sessionFactory.getSession()).thenReturn(session);
@@ -135,8 +163,8 @@ public class SessionFactoryTests {
 		Mockito.verify(sessionFactory, Mockito.times(2)).getSession();
 	}
 
-	@Test (expected=MessagingException.class) // timeout expire
-	public void testSessionWaitExpire() throws Exception{
+	@Test (expected = MessagingException.class) // timeout expire
+	public void testSessionWaitExpire() throws Exception {
 		SessionFactory sessionFactory = Mockito.mock(SessionFactory.class);
 		Session session = Mockito.mock(Session.class);
 		Mockito.when(sessionFactory.getSession()).thenReturn(session);
@@ -152,7 +180,7 @@ public class SessionFactoryTests {
 
 	@Test
 	@Ignore
-	public void testConnectionLimit() throws Exception{
+	public void testConnectionLimit() throws Exception {
 		ExecutorService executor = Executors.newCachedThreadPool();
 		DefaultFtpSessionFactory sessionFactory = new DefaultFtpSessionFactory();
 		sessionFactory.setHost("192.168.28.143");
@@ -164,12 +192,14 @@ public class SessionFactoryTests {
 		final AtomicInteger failures = new AtomicInteger();
 		for (int i = 0; i < 30; i++) {
 			executor.execute(new Runnable() {
+				@Override
 				public void run() {
 					try {
 						Session session = factory.getSession();
 						Thread.sleep(random.nextInt(5000));
 						session.close();
-					} catch (Exception e) {
+					}
+					catch (Exception e) {
 						e.printStackTrace();
 						failures.incrementAndGet();
 					}

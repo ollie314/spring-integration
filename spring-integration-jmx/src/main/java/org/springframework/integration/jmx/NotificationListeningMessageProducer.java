@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.management.InstanceNotFoundException;
 import javax.management.ListenerNotFoundException;
@@ -35,6 +36,8 @@ import javax.management.ObjectName;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
+import org.springframework.context.ApplicationListener;
+import org.springframework.context.event.ContextRefreshedEvent;
 import org.springframework.integration.endpoint.MessageProducerSupport;
 import org.springframework.integration.support.AbstractIntegrationMessageBuilder;
 import org.springframework.messaging.Message;
@@ -47,11 +50,15 @@ import org.springframework.util.ObjectUtils;
  *
  * @author Mark Fisher
  * @author Gary Russell
+ * @author Artem Bilan
  * @since 2.0
  */
-public class NotificationListeningMessageProducer extends MessageProducerSupport implements NotificationListener {
+public class NotificationListeningMessageProducer extends MessageProducerSupport
+		implements NotificationListener, ApplicationListener<ContextRefreshedEvent> {
 
 	private final Log logger = LogFactory.getLog(this.getClass());
+
+	private final AtomicBoolean listenerRegisteredOnStartup = new AtomicBoolean();
 
 	private volatile MBeanServerConnection server;
 
@@ -112,8 +119,8 @@ public class NotificationListeningMessageProducer extends MessageProducerSupport
 	 */
 	@Override
 	public void handleNotification(Notification notification, Object handback) {
-		if (logger.isInfoEnabled()) {
-			logger.info("received notification: " + notification + ", and handback: " + handback);
+		if (this.logger.isInfoEnabled()) {
+			this.logger.info("received notification: " + notification + ", and handback: " + handback);
 		}
 		AbstractIntegrationMessageBuilder<?> builder = this.getMessageBuilderFactory().withPayload(notification);
 		if (handback != null) {
@@ -129,17 +136,32 @@ public class NotificationListeningMessageProducer extends MessageProducerSupport
 	}
 
 	/**
+	 * The {@link NotificationListener} might not be registered on {@link #start()}
+	 * because the {@code MBeanExporter} might not been started yet.
+	 * @param event the ContextRefreshedEvent event
+	 */
+	@Override
+	public void onApplicationEvent(ContextRefreshedEvent event) {
+		if (!this.listenerRegisteredOnStartup.getAndSet(true) && isAutoStartup()) {
+			 doStart();
+		}
+	}
+
+	/**
 	 * Registers the notification listener with the specified ObjectNames.
 	 */
 	@Override
 	protected void doStart() {
-		logger.debug("Registering to receive notifications");
+		if (!this.listenerRegisteredOnStartup.get()) {
+			return;
+		}
+		this.logger.debug("Registering to receive notifications");
 		try {
 			Assert.notNull(this.server, "MBeanServer is required.");
 			Assert.notNull(this.objectNames, "An ObjectName is required.");
 			Collection<ObjectName> objectNames = this.retrieveMBeanNames();
 			if (objectNames.size() < 1) {
-				logger.error("No MBeans found matching ObjectName pattern(s): " +
+				this.logger.error("No MBeans found matching ObjectName pattern(s): " +
 							Arrays.asList(this.objectNames));
 			}
 			for (ObjectName objectName : objectNames) {
@@ -159,7 +181,7 @@ public class NotificationListeningMessageProducer extends MessageProducerSupport
 	 */
 	@Override
 	protected void doStop() {
-		logger.debug("Unregistering notifications");
+		this.logger.debug("Unregistering notifications");
 		if (this.server != null && this.objectNames != null) {
 			Collection<ObjectName> objectNames = this.retrieveMBeanNames();
 			for (ObjectName objectName : objectNames) {
@@ -167,13 +189,13 @@ public class NotificationListeningMessageProducer extends MessageProducerSupport
 					this.server.removeNotificationListener(objectName, this, this.filter, this.handback);
 				}
 				catch (InstanceNotFoundException e) {
-					logger.error("Failed to find MBean instance.", e);
+					this.logger.error("Failed to find MBean instance.", e);
 				}
 				catch (ListenerNotFoundException e) {
-					logger.error("Failed to find NotificationListener.", e);
+					this.logger.error("Failed to find NotificationListener.", e);
 				}
 				catch (IOException e) {
-					logger.error("IOException on MBeanServerConnection.", e);
+					this.logger.error("IOException on MBeanServerConnection.", e);
 				}
 			}
 		}
@@ -189,16 +211,17 @@ public class NotificationListeningMessageProducer extends MessageProducerSupport
 			catch (IOException e) {
 				throw new IllegalStateException("IOException on MBeanServerConnection.", e);
 			}
-			if (mBeanInfos.size() == 0 && logger.isDebugEnabled()) {
-				logger.debug("No MBeans found matching pattern:" + pattern);
+			if (mBeanInfos.size() == 0 && this.logger.isDebugEnabled()) {
+				this.logger.debug("No MBeans found matching pattern:" + pattern);
 			}
 			for (ObjectInstance instance : mBeanInfos) {
-				if (logger.isDebugEnabled()) {
-					logger.debug("Found MBean:" + instance.getObjectName().toString());
+				if (this.logger.isDebugEnabled()) {
+					this.logger.debug("Found MBean:" + instance.getObjectName().toString());
 				}
 				objectNames.add(instance.getObjectName());
 			}
 		}
 		return objectNames;
 	}
+
 }

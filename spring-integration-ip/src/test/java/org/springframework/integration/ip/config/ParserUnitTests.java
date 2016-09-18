@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,10 +23,11 @@ import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
-import static org.mockito.Mockito.mock;
 
 import java.util.Iterator;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -40,8 +41,7 @@ import org.springframework.core.io.UrlResource;
 import org.springframework.core.serializer.Deserializer;
 import org.springframework.core.serializer.Serializer;
 import org.springframework.core.task.TaskExecutor;
-import org.springframework.integration.channel.DirectChannel;
-import org.springframework.integration.channel.QueueChannel;
+import org.springframework.integration.core.MessagingTemplate;
 import org.springframework.integration.endpoint.AbstractEndpoint;
 import org.springframework.integration.endpoint.EventDrivenConsumer;
 import org.springframework.integration.handler.advice.AbstractRequestHandlerAdvice;
@@ -54,8 +54,6 @@ import org.springframework.integration.ip.tcp.connection.DefaultTcpNetSSLSocketF
 import org.springframework.integration.ip.tcp.connection.DefaultTcpNioSSLConnectionSupport;
 import org.springframework.integration.ip.tcp.connection.DefaultTcpSSLContextSupport;
 import org.springframework.integration.ip.tcp.connection.TcpConnectionEvent;
-import org.springframework.integration.ip.tcp.connection.TcpConnectionEventListeningMessageProducer;
-import org.springframework.integration.ip.tcp.connection.TcpConnectionOpenEvent;
 import org.springframework.integration.ip.tcp.connection.TcpConnectionSupport;
 import org.springframework.integration.ip.tcp.connection.TcpMessageMapper;
 import org.springframework.integration.ip.tcp.connection.TcpNetClientConnectionFactory;
@@ -70,85 +68,87 @@ import org.springframework.integration.ip.udp.MulticastReceivingChannelAdapter;
 import org.springframework.integration.ip.udp.MulticastSendingMessageHandler;
 import org.springframework.integration.ip.udp.UnicastReceivingChannelAdapter;
 import org.springframework.integration.ip.udp.UnicastSendingMessageHandler;
-import org.springframework.messaging.support.GenericMessage;
 import org.springframework.integration.test.util.TestUtils;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.MessageHandler;
-import org.springframework.integration.core.MessagingTemplate;
+import org.springframework.messaging.support.GenericMessage;
 import org.springframework.scheduling.TaskScheduler;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 
 /**
  * @author Gary Russell
  * @author Oleg Zhurakousky
+ * @author Artem Bilan
  * @since 2.0
  */
 @ContextConfiguration
 @RunWith(SpringJUnit4ClassRunner.class)
+@DirtiesContext
 public class ParserUnitTests {
 
 	@Autowired
 	ApplicationContext ctx;
 
 	@Autowired
-	@Qualifier(value="testInUdp")
+	@Qualifier(value = "testInUdp")
 	UnicastReceivingChannelAdapter udpIn;
 
 	@Autowired
-	@Qualifier(value="testInUdpMulticast")
+	@Qualifier(value = "testInUdpMulticast")
 	MulticastReceivingChannelAdapter udpInMulticast;
 
 	@Autowired
-	@Qualifier(value="testInTcp")
+	@Qualifier(value = "testInTcp")
 	TcpReceivingChannelAdapter tcpIn;
 
 	@Autowired
-	@Qualifier(value="testOutUdp.handler")
+	@Qualifier(value = "testOutUdp.handler")
 	UnicastSendingMessageHandler udpOut;
 
 	@Autowired
-	@Qualifier(value="testOutUdpiMulticast.handler")
+	@Qualifier(value = "testOutUdpiMulticast.handler")
 	MulticastSendingMessageHandler udpOutMulticast;
 
 	@Autowired
-	@Qualifier(value="testOutTcpNio")
+	@Qualifier(value = "testOutTcpNio")
 	AbstractEndpoint tcpOutEndpoint;
 
 	@Autowired
-	@Qualifier(value="testOutTcpNio.handler")
+	@Qualifier(value = "testOutTcpNio.handler")
 	TcpSendingMessageHandler tcpOut;
 
 	@Autowired
 	EventDrivenConsumer testOutTcpNio;
 
 	@Autowired
-	@Qualifier(value="inGateway1")
+	@Qualifier(value = "inGateway1")
 	TcpInboundGateway tcpInboundGateway1;
 
 	@Autowired
-	@Qualifier(value="inGateway2")
+	@Qualifier(value = "inGateway2")
 	TcpInboundGateway tcpInboundGateway2;
 
 	@Autowired
-	@Qualifier(value="outGateway.handler")
+	@Qualifier(value = "outGateway.handler")
 	TcpOutboundGateway tcpOutboundGateway;
 
 	@Autowired
-	@Qualifier(value="outAdviceGateway.handler")
+	@Qualifier(value = "outAdviceGateway.handler")
 	TcpOutboundGateway outAdviceGateway;
 
 	// verify we can still inject by generated name
 	@Autowired
-	@Qualifier(value="org.springframework.integration.ip.tcp.TcpOutboundGateway#0")
+	@Qualifier(value = "org.springframework.integration.ip.tcp.TcpOutboundGateway#0")
 	TcpOutboundGateway tcpOutboundGatewayByGeneratedName;
 
 	@Autowired
 	EventDrivenConsumer outGateway;
 
 	@Autowired
-	@Qualifier(value="externalTE")
+	@Qualifier(value = "externalTE")
 	TaskExecutor taskExecutor;
 
 	@Autowired
@@ -197,11 +197,11 @@ public class ParserUnitTests {
 	AbstractConnectionFactory cfS3;
 
 	@Autowired
-	@Qualifier(value="tcpNewOut1.handler")
+	@Qualifier(value = "tcpNewOut1.handler")
 	TcpSendingMessageHandler tcpNewOut1;
 
 	@Autowired
-	@Qualifier(value="tcpNewOut2.handler")
+	@Qualifier(value = "tcpNewOut2.handler")
 	TcpSendingMessageHandler tcpNewOut2;
 
 	@Autowired
@@ -214,19 +214,19 @@ public class ParserUnitTests {
 	private MessageChannel errorChannel;
 
 	@Autowired
-	private DirectChannel udpChannel;
+	private MessageChannel udpChannel;
 
 	@Autowired
-	private DirectChannel udpAdviceChannel;
+	private MessageChannel udpAdviceChannel;
 
 	@Autowired
-	private DirectChannel tcpAdviceChannel;
+	private MessageChannel tcpAdviceChannel;
 
 	@Autowired
-	private DirectChannel tcpAdviceGateChannel;
+	private MessageChannel tcpAdviceGateChannel;
 
 	@Autowired
-	private DirectChannel tcpChannel;
+	private MessageChannel tcpChannel;
 
 	@Autowired
 	TcpReceivingChannelAdapter tcpInClientMode;
@@ -238,7 +238,7 @@ public class ParserUnitTests {
 	TaskScheduler sched;
 
 	@Autowired
-	@Qualifier(value="tcpOutClientMode.handler")
+	@Qualifier(value = "tcpOutClientMode.handler")
 	TcpSendingMessageHandler tcpOutClientMode;
 
 	@Autowired
@@ -268,13 +268,7 @@ public class ParserUnitTests {
 	@Autowired
 	TcpMessageMapper mapper;
 
-	@Autowired
-	TcpConnectionEventListeningMessageProducer eventAdapter;
-
-	@Autowired
-	QueueChannel eventChannel;
-
-	private static volatile int adviceCalled;
+	private static CountDownLatch adviceCalled = new CountDownLatch(1);
 
 	@Test
 	public void testInUdp() {
@@ -285,14 +279,14 @@ public class ParserUnitTests {
 		assertEquals(30, dfa.getPropertyValue("soReceiveBufferSize"));
 		assertEquals(31, dfa.getPropertyValue("soSendBufferSize"));
 		assertEquals(32, dfa.getPropertyValue("soTimeout"));
-		assertEquals("testInUdp",udpIn.getComponentName());
+		assertEquals("testInUdp", udpIn.getComponentName());
 		assertEquals("ip:udp-inbound-channel-adapter", udpIn.getComponentType());
 		assertEquals("127.0.0.1", dfa.getPropertyValue("localAddress"));
 		assertSame(taskExecutor, dfa.getPropertyValue("taskExecutor"));
 		assertEquals(errorChannel, dfa.getPropertyValue("errorChannel"));
 		DatagramPacketMessageMapper mapper = (DatagramPacketMessageMapper) dfa.getPropertyValue("mapper");
 		DirectFieldAccessor mapperAccessor = new DirectFieldAccessor(mapper);
-		assertFalse((Boolean)mapperAccessor.getPropertyValue("lookupHost"));
+		assertFalse((Boolean) mapperAccessor.getPropertyValue("lookupHost"));
 		assertFalse(TestUtils.getPropertyValue(udpIn, "autoStartup", Boolean.class));
 		assertEquals(1234, dfa.getPropertyValue("phase"));
 	}
@@ -312,14 +306,14 @@ public class ParserUnitTests {
 		assertNull(dfa.getPropertyValue("errorChannel"));
 		DatagramPacketMessageMapper mapper = (DatagramPacketMessageMapper) dfa.getPropertyValue("mapper");
 		DirectFieldAccessor mapperAccessor = new DirectFieldAccessor(mapper);
-		assertTrue((Boolean)mapperAccessor.getPropertyValue("lookupHost"));
+		assertTrue((Boolean) mapperAccessor.getPropertyValue("lookupHost"));
 	}
 
 	@Test
 	public void testInTcp() {
 		DirectFieldAccessor dfa = new DirectFieldAccessor(tcpIn);
 		assertSame(cfS1, dfa.getPropertyValue("serverConnectionFactory"));
-		assertEquals("testInTcp",tcpIn.getComponentName());
+		assertEquals("testInTcp", tcpIn.getComponentName());
 		assertEquals("ip:tcp-inbound-channel-adapter", tcpIn.getComponentType());
 		assertEquals(errorChannel, dfa.getPropertyValue("errorChannel"));
 		assertFalse(cfS1.isLookupHost());
@@ -345,8 +339,7 @@ public class ParserUnitTests {
 	@Test
 	public void testInTcpNioSSLDefaultConfig() {
 		assertFalse(cfS1Nio.isLookupHost());
-		assertTrue((Boolean) TestUtils.getPropertyValue(
-				TestUtils.getPropertyValue(cfS1Nio, "mapper"), "applySequence"));
+		assertTrue((Boolean) TestUtils.getPropertyValue(cfS1Nio, "mapper.applySequence"));
 		Object connectionSupport = TestUtils.getPropertyValue(cfS1Nio, "tcpNioConnectionSupport");
 		assertTrue(connectionSupport instanceof DefaultTcpNioSSLConnectionSupport);
 		assertNotNull(TestUtils.getPropertyValue(connectionSupport, "sslContext"));
@@ -372,7 +365,7 @@ public class ParserUnitTests {
 		assertEquals("127.0.0.1", dfa.getPropertyValue("localAddress"));
 		assertSame(taskExecutor, dfa.getPropertyValue("taskExecutor"));
 		assertEquals(23, dfa.getPropertyValue("order"));
-		assertEquals("testOutUdp",udpOut.getComponentName());
+		assertEquals("testOutUdp", udpOut.getComponentName());
 		assertEquals("ip:udp-outbound-channel-adapter", udpOut.getComponentType());
 	}
 
@@ -410,31 +403,31 @@ public class ParserUnitTests {
 	}
 
 	@Test
-	public void udpAdvice() {
-		adviceCalled = 0;
+	public void udpAdvice() throws InterruptedException {
+		adviceCalled = new CountDownLatch(1);
 		this.udpAdviceChannel.send(new GenericMessage<String>("foo"));
-		assertEquals(1, adviceCalled);
+		assertTrue(adviceCalled.await(10, TimeUnit.SECONDS));
 	}
 
 	@Test
-	public void tcpAdvice() {
-		adviceCalled = 0;
+	public void tcpAdvice() throws InterruptedException {
+		adviceCalled = new CountDownLatch(1);
 		this.tcpAdviceChannel.send(new GenericMessage<String>("foo"));
-		assertEquals(1, adviceCalled);
+		assertTrue(adviceCalled.await(10, TimeUnit.SECONDS));
 	}
 
 	@Test
-	public void tcpGatewayAdvice() {
-		adviceCalled = 0;
+	public void tcpGatewayAdvice() throws InterruptedException {
+		adviceCalled = new CountDownLatch(1);
 		this.tcpAdviceGateChannel.send(new GenericMessage<String>("foo"));
-		assertEquals(1, adviceCalled);
+		assertTrue(adviceCalled.await(10, TimeUnit.SECONDS));
 	}
 
 	@Test
 	public void testOutTcp() {
 		DirectFieldAccessor dfa = new DirectFieldAccessor(tcpOut);
 		assertSame(cfC1, dfa.getPropertyValue("clientConnectionFactory"));
-		assertEquals("testOutTcpNio",tcpOut.getComponentName());
+		assertEquals("testOutTcpNio", tcpOut.getComponentName());
 		assertEquals("ip:tcp-outbound-channel-adapter", tcpOut.getComponentType());
 		assertFalse(cfC1.isLookupHost());
 		assertEquals(35, dfa.getPropertyValue("order"));
@@ -442,6 +435,7 @@ public class ParserUnitTests {
 		assertEquals(125, tcpOutEndpoint.getPhase());
 		assertFalse((Boolean) TestUtils.getPropertyValue(
 				TestUtils.getPropertyValue(cfC1, "mapper"), "applySequence"));
+		assertEquals(10000L, TestUtils.getPropertyValue(cfC1, "readDelay"));
 	}
 
 	@Test
@@ -449,7 +443,7 @@ public class ParserUnitTests {
 		DirectFieldAccessor dfa = new DirectFieldAccessor(tcpInboundGateway1);
 		assertSame(cfS2, dfa.getPropertyValue("serverConnectionFactory"));
 		assertEquals(456L, dfa.getPropertyValue("replyTimeout"));
-		assertEquals("inGateway1",tcpInboundGateway1.getComponentName());
+		assertEquals("inGateway1", tcpInboundGateway1.getComponentName());
 		assertEquals("ip:tcp-inbound-gateway", tcpInboundGateway1.getComponentType());
 		assertEquals(errorChannel, dfa.getPropertyValue("errorChannel"));
 		assertTrue(cfS2.isLookupHost());
@@ -457,6 +451,7 @@ public class ParserUnitTests {
 		assertEquals(126, tcpInboundGateway1.getPhase());
 		assertFalse((Boolean) TestUtils.getPropertyValue(
 				TestUtils.getPropertyValue(cfS2, "mapper"), "applySequence"));
+		assertEquals(100L, TestUtils.getPropertyValue(cfS2, "readDelay"));
 	}
 
 	@Test
@@ -464,7 +459,7 @@ public class ParserUnitTests {
 		DirectFieldAccessor dfa = new DirectFieldAccessor(tcpInboundGateway2);
 		assertSame(cfS3, dfa.getPropertyValue("serverConnectionFactory"));
 		assertEquals(456L, dfa.getPropertyValue("replyTimeout"));
-		assertEquals("inGateway2",tcpInboundGateway2.getComponentName());
+		assertEquals("inGateway2", tcpInboundGateway2.getComponentName());
 		assertEquals("ip:tcp-inbound-gateway", tcpInboundGateway2.getComponentType());
 		assertNull(dfa.getPropertyValue("errorChannel"));
 		assertEquals(Boolean.FALSE, dfa.getPropertyValue("isClientMode"));
@@ -480,13 +475,13 @@ public class ParserUnitTests {
 		MessagingTemplate messagingTemplate = TestUtils.getPropertyValue(tcpOutboundGateway, "messagingTemplate",
 				MessagingTemplate.class);
 		assertEquals(Long.valueOf(567), TestUtils.getPropertyValue(messagingTemplate, "sendTimeout", Long.class));
-		assertEquals(789L, dfa.getPropertyValue("remoteTimeout"));
-		assertEquals("outGateway",tcpOutboundGateway.getComponentName());
+		assertEquals("789", TestUtils.getPropertyValue(tcpOutboundGateway, "remoteTimeoutExpression.literalValue"));
+		assertEquals("outGateway", tcpOutboundGateway.getComponentName());
 		assertEquals("ip:tcp-outbound-gateway", tcpOutboundGateway.getComponentType());
 		assertTrue(cfC2.isLookupHost());
 		assertEquals(24, dfa.getPropertyValue("order"));
-		assertFalse(tcpOutboundGateway.isAutoStartup());
-		assertEquals(127, tcpOutboundGateway.getPhase());
+
+		assertEquals("4000", TestUtils.getPropertyValue(outAdviceGateway, "remoteTimeoutExpression.expression"));
 	}
 
 	@Test
@@ -663,36 +658,11 @@ public class ParserUnitTests {
 		assertSame(socketSupport, dfa.getPropertyValue("tcpSocketSupport"));
 	}
 
-	@SuppressWarnings("unchecked")
-	@Test
-	public void testEventAdapter() {
-		Set<?> eventTypes = TestUtils.getPropertyValue(this.eventAdapter, "eventTypes", Set.class);
-		assertEquals(2, eventTypes.size());
-		assertTrue(eventTypes.contains(EventSubclass1.class));
-		assertTrue(eventTypes.contains(EventSubclass2.class));
-		assertFalse(TestUtils.getPropertyValue(this.eventAdapter, "autoStartup", Boolean.class));
-		assertEquals(23, TestUtils.getPropertyValue(this.eventAdapter, "phase"));
-		assertEquals("eventErrors", TestUtils.getPropertyValue(this.eventAdapter, "errorChannel",
-				DirectChannel.class).getComponentName());
-
-		TcpConnectionSupport connection = mock(TcpConnectionSupport.class);
-		TcpConnectionEvent event = new TcpConnectionOpenEvent(connection, "foo");
-		Class<TcpConnectionEvent>[] types = (Class<TcpConnectionEvent>[]) new Class<?>[]{TcpConnectionEvent.class};
-		this.eventAdapter.setEventTypes(types);
-		this.eventAdapter.onApplicationEvent(event);
-		assertNull(this.eventChannel.receive(0));
-		this.eventAdapter.start();
-		this.eventAdapter.onApplicationEvent(event);
-		Message<?> eventMessage = this.eventChannel.receive(0);
-		assertNotNull(eventMessage);
-		assertSame(event, eventMessage.getPayload());
-	}
-
 	public static class FooAdvice extends AbstractRequestHandlerAdvice {
 
 		@Override
 		protected Object doInvoke(ExecutionCallback callback, Object target, Message<?> message) throws Exception {
-			adviceCalled++;
+			adviceCalled.countDown();
 			return null;
 		}
 

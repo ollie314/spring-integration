@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2011 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import static org.junit.Assert.assertTrue;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Iterator;
 import java.util.List;
 
 import org.junit.Before;
@@ -31,13 +32,13 @@ import org.springframework.beans.factory.BeanCreationException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
-import org.springframework.messaging.Message;
-import org.springframework.messaging.MessageChannel;
 import org.springframework.integration.annotation.MessageEndpoint;
 import org.springframework.integration.annotation.ServiceActivator;
 import org.springframework.integration.annotation.Splitter;
-import org.springframework.messaging.support.GenericMessage;
 import org.springframework.integration.support.MessageBuilder;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.MessageChannel;
+import org.springframework.messaging.support.GenericMessage;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.annotation.DirtiesContext.ClassMode;
 import org.springframework.test.context.ContextConfiguration;
@@ -47,10 +48,11 @@ import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
  * @author Iwein Fuld
  * @author Alexander Peters
  * @author Mark Fisher
+ * @author Gary Russell
  */
 @ContextConfiguration
 @RunWith(SpringJUnit4ClassRunner.class)
-@DirtiesContext(classMode=ClassMode.AFTER_EACH_TEST_METHOD)
+@DirtiesContext(classMode = ClassMode.AFTER_EACH_TEST_METHOD)
 public class SplitterIntegrationTests {
 
 	@Autowired
@@ -69,9 +71,9 @@ public class SplitterIntegrationTests {
 	@Qualifier("splitter.handler")
 	MethodInvokingSplitter splitter;
 
-	private String sentence = "The quick brown fox jumped over the lazy dog";
+	private final String sentence = "The quick brown fox jumped over the lazy dog";
 
-	private List<String> words = Arrays.asList(sentence.split("\\s"));
+	private final List<String> words = Arrays.asList(sentence.split("\\s"));
 
 	@Autowired
 	Receiver receiver;
@@ -83,7 +85,7 @@ public class SplitterIntegrationTests {
 
 	@MessageEndpoint
 	public static class Receiver {
-		private List<String> receivedWords = new ArrayList<String>();
+		private final List<String> receivedWords = new ArrayList<String>();
 
 		@ServiceActivator(inputChannel = "out")
 		public void deliveredWords(String string) {
@@ -95,8 +97,8 @@ public class SplitterIntegrationTests {
 	public static class TestSplitter {
 
 		@Splitter(inputChannel = "inAnnotated", outputChannel = "out")
-		public List<String> split(String sentence) {
-			return Arrays.asList(sentence.split("\\s"));
+		public Iterator<String> split(String sentence) {
+			return Arrays.asList(sentence.split("\\s")).iterator();
 		}
 	}
 
@@ -136,7 +138,8 @@ public class SplitterIntegrationTests {
 	@Test(expected = IllegalArgumentException.class)
 	public void delimitersNotAllowedWithRef() throws Throwable {
 		try {
-			new ClassPathXmlApplicationContext("SplitterIntegrationTests-invalidRef.xml", SplitterIntegrationTests.class);
+			new ClassPathXmlApplicationContext("SplitterIntegrationTests-invalidRef.xml",
+					SplitterIntegrationTests.class).close();
 		}
 		catch (BeanCreationException e) {
 			Throwable cause = e.getMostSpecificCause();
@@ -150,7 +153,8 @@ public class SplitterIntegrationTests {
 	@Test(expected = IllegalArgumentException.class)
 	public void delimitersNotAllowedWithInnerBean() throws Throwable {
 		try {
-			new ClassPathXmlApplicationContext("SplitterIntegrationTests-invalidInnerBean.xml", SplitterIntegrationTests.class);
+			new ClassPathXmlApplicationContext("SplitterIntegrationTests-invalidInnerBean.xml",
+					SplitterIntegrationTests.class).close();
 		}
 		catch (BeanCreationException e) {
 			Throwable cause = e.getMostSpecificCause();
@@ -164,7 +168,8 @@ public class SplitterIntegrationTests {
 	@Test(expected = IllegalArgumentException.class)
 	public void delimitersNotAllowedWithExpression() throws Throwable {
 		try {
-			new ClassPathXmlApplicationContext("SplitterIntegrationTests-invalidExpression.xml", SplitterIntegrationTests.class);
+			new ClassPathXmlApplicationContext("SplitterIntegrationTests-invalidExpression.xml",
+					SplitterIntegrationTests.class).close();
 		}
 		catch (BeanCreationException e) {
 			Throwable cause = e.getMostSpecificCause();

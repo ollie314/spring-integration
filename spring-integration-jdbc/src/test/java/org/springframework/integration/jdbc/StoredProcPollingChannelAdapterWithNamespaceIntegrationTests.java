@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,9 @@
 
 package org.springframework.integration.jdbc;
 
+import static org.hamcrest.Matchers.contains;
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertThat;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -40,67 +41,62 @@ import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 
 /**
  * @author Gunnar Hillert
+ * @author Gary Russell
  */
 @ContextConfiguration
 @RunWith(SpringJUnit4ClassRunner.class)
 @DirtiesContext // close at the end after class
 public class StoredProcPollingChannelAdapterWithNamespaceIntegrationTests {
 
-    @Autowired
-    private AbstractApplicationContext context;
+	@Autowired
+	private AbstractApplicationContext context;
 
-    @Autowired
-    private Consumer consumer;
+	@Autowired
+	private Consumer consumer;
 
-    @SuppressWarnings("unchecked")
+	@SuppressWarnings("unchecked")
 	@Test
-    public void pollH2DatabaseUsingStoredProcedureCall() throws Exception {
-        List<Message<?>> received = new ArrayList<Message<?>>();
+	public void pollH2DatabaseUsingStoredProcedureCall() throws Exception {
+		List<Message<?>> received = new ArrayList<Message<?>>();
 
-        received.add(consumer.poll(60000));
+		received.add(consumer.poll(60000));
 
-        Message<?> message = received.get(0);
-        context.stop();
-        assertNotNull(message);
-        assertNotNull(message.getPayload());
-        assertNotNull(message.getPayload() instanceof Collection<?>);
+		Message<?> message = received.get(0);
+		context.stop();
+		assertNotNull(message);
+		assertNotNull(message.getPayload());
+		assertNotNull(message.getPayload() instanceof Collection<?>);
 
-        List<Integer> primeNumbers = (List<Integer>) message.getPayload();
+		List<Integer> primeNumbers = (List<Integer>) message.getPayload();
 
-        assertTrue(primeNumbers.size() == 4);
+		assertThat(primeNumbers, contains(2, 3, 5, 7));
 
-        assertTrue(Integer.valueOf(2).equals(primeNumbers.get(0)));
-        assertTrue(Integer.valueOf(3).equals(primeNumbers.get(1)));
-        assertTrue(Integer.valueOf(5).equals(primeNumbers.get(2)));
-        assertTrue(Integer.valueOf(7).equals(primeNumbers.get(3)));
+	}
 
-    }
+	static class Counter {
 
-    static class Counter {
+		private final AtomicInteger count = new AtomicInteger();
 
-        private final AtomicInteger count = new AtomicInteger();
+		public Integer next() throws InterruptedException {
+			if (count.get() > 2) {
+				// prevent message overload
+				return null;
+			}
+			return Integer.valueOf(count.incrementAndGet());
+		}
+	}
 
-        public Integer next() throws InterruptedException {
-            if (count.get()>2){
-                //prevent message overload
-                return null;
-            }
-            return Integer.valueOf(count.incrementAndGet());
-        }
-    }
+	static class Consumer {
 
+		private final BlockingQueue<Message<?>> messages = new LinkedBlockingQueue<Message<?>>();
 
-    static class Consumer {
+		@ServiceActivator
+		public void receive(Message<?> message) {
+			messages.add(message);
+		}
 
-        private final BlockingQueue<Message<?>> messages = new LinkedBlockingQueue<Message<?>>();
-
-        @ServiceActivator
-        public void receive(Message<?>message) {
-            messages.add(message);
-        }
-
-        Message<?> poll(long timeoutInMillis) throws InterruptedException {
-            return messages.poll(timeoutInMillis, TimeUnit.MILLISECONDS);
-        }
-    }
+		Message<?> poll(long timeoutInMillis) throws InterruptedException {
+			return messages.poll(timeoutInMillis, TimeUnit.MILLISECONDS);
+		}
+	}
 }

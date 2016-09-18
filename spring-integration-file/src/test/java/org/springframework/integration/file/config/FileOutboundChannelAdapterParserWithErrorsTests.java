@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,16 +16,18 @@
 
 package org.springframework.integration.file.config;
 
-import static org.junit.Assert.fail;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.fail;
 
 import org.junit.Test;
+
 import org.springframework.beans.factory.parsing.BeanDefinitionParsingException;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
 
 /**
  *
  * @author Gunnar Hillert
+ * @author Gary Russell
  *
  */
 public class FileOutboundChannelAdapterParserWithErrorsTests {
@@ -34,8 +36,10 @@ public class FileOutboundChannelAdapterParserWithErrorsTests {
 	public void testSettingDirectoryAndDirectoryExpression() {
 
 		try {
-			new ClassPathXmlApplicationContext("FileOutboundChannelAdapterParserWithErrorsTests-context.xml", getClass());
-		} catch (BeanDefinitionParsingException e) {
+			new ClassPathXmlApplicationContext("FileOutboundChannelAdapterParserWithErrorsTests-context.xml",
+					getClass()).close();
+		}
+		catch (BeanDefinitionParsingException e) {
 			assertEquals("Configuration problem: Either directory or " +
 					"directory-expression must be provided but not both\nOffending " +
 					"resource: class path " +
@@ -52,8 +56,10 @@ public class FileOutboundChannelAdapterParserWithErrorsTests {
 	public void testNotSettingBothDirectoryAndDirectoryExpression() {
 
 		try {
-			new ClassPathXmlApplicationContext("FileOutboundChannelAdapterParserWithErrors2Tests-context.xml", getClass());
-		} catch (BeanDefinitionParsingException e) {
+			new ClassPathXmlApplicationContext("FileOutboundChannelAdapterParserWithErrors2Tests-context.xml",
+					getClass()).close();
+		}
+		catch (BeanDefinitionParsingException e) {
 			assertEquals("Configuration problem: directory or directory-expression " +
 					"is required\nOffending resource: class path resource " +
 					"[org/springframework/integration/file/config/FileOutboundChannelAdapterParserWithErrors2Tests-context.xml]",

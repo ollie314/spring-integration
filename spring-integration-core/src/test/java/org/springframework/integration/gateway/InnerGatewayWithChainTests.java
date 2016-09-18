@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,22 +13,21 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.gateway;
 
 import static org.junit.Assert.assertEquals;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
+import static org.junit.Assert.assertTrue;
+
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.mockito.Mockito;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.messaging.Message;
-import org.springframework.messaging.MessageHandler;
-import org.springframework.messaging.SubscribableChannel;
 import org.springframework.integration.endpoint.SourcePollingChannelAdapter;
+import org.springframework.messaging.SubscribableChannel;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 
@@ -36,6 +35,7 @@ import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 /**
  * @author Oleg Zhurakousky
  * @author Gunnar Hillert
+ * @author Artem Bilan
  *
  */
 @ContextConfiguration
@@ -66,50 +66,51 @@ public class InnerGatewayWithChainTests {
 
 
 	@Test
-	public void testExceptionHandledByMainGateway(){
+	public void testExceptionHandledByMainGateway() {
 		String reply = testGatewayWithErrorChannelA.echo(5);
 		assertEquals("ERROR from errorChannelA", reply);
 	}
 
 	@Test
-	public void testExceptionHandledByMainGatewayNoErrorChannelInChain(){
+	public void testExceptionHandledByMainGatewayNoErrorChannelInChain() {
 		String reply = testGatewayWithErrorChannelAA.echo(0);
 		assertEquals("ERROR from errorChannelA", reply);
 	}
 
 	@Test
-	public void testExceptionHandledByInnerGateway(){
+	public void testExceptionHandledByInnerGateway() {
 		String reply = testGatewayWithErrorChannelA.echo(0);
 		assertEquals("ERROR from errorChannelB", reply);
 	}
 
 	// if no error channels explicitly defined exception is rethrown
-	@Test(expected=ArithmeticException.class)
-	public void testGatewaysNoErrorChannel(){
+	@Test(expected = ArithmeticException.class)
+	public void testGatewaysNoErrorChannel() {
 		testGatewayWithNoErrorChannelAAA.echo(0);
 	}
 
 	@Test
-	public void testWithSPCADefaultErrorChannel() throws Exception{
-		MessageHandler handler = mock(MessageHandler.class);
-		errorChannel.subscribe(handler);
+	public void testWithSPCADefaultErrorChannel() throws Exception {
+		CountDownLatch errorLatch = new CountDownLatch(1);
+		errorChannel.subscribe(message -> errorLatch.countDown());
 		inboundAdapterDefaultErrorChannel.start();
-		Thread.sleep(1000);
+		assertTrue(errorLatch.await(10, TimeUnit.SECONDS));
 		inboundAdapterDefaultErrorChannel.stop();
-		verify(handler, times(1)).handleMessage(Mockito.any(Message.class));
 	}
 
 	@Test
-	public void testWithSPCAAssignedErrorChannel() throws Exception{
-		MessageHandler handler = mock(MessageHandler.class);
-		assignedErrorChannel.subscribe(handler);
+	public void testWithSPCAAssignedErrorChannel() throws Exception {
+		CountDownLatch errorLatch = new CountDownLatch(1);
+		assignedErrorChannel.subscribe(message -> errorLatch.countDown());
 		inboundAdapterAssignedErrorChannel.start();
-		Thread.sleep(1000);
+		assertTrue(errorLatch.await(10, TimeUnit.SECONDS));
 		inboundAdapterAssignedErrorChannel.stop();
-		verify(handler, times(1)).handleMessage(Mockito.any(Message.class));
 	}
 
-	public static interface TestGateway{
-		public String echo(int value);
+	public interface TestGateway {
+
+		String echo(int value);
+
 	}
+
 }

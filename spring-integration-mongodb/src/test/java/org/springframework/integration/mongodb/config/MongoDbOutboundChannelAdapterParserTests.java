@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.mongodb.config;
 
 import static org.junit.Assert.assertEquals;
@@ -27,7 +28,6 @@ import org.junit.Test;
 
 import org.springframework.aop.support.AopUtils;
 import org.springframework.beans.factory.parsing.BeanDefinitionParsingException;
-import org.springframework.context.ApplicationContext;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
 import org.springframework.expression.common.LiteralExpression;
 import org.springframework.expression.spel.standard.SpelExpression;
@@ -40,11 +40,12 @@ import org.springframework.messaging.MessageHandler;
 /**
  * @author Oleg Zhurakousky
  * @author Artem Bilan
+ * @author Gary Russell
  */
 public class MongoDbOutboundChannelAdapterParserTests {
 
 	@Test
-	public void minimalConfig(){
+	public void minimalConfig() {
 		ClassPathXmlApplicationContext context =
 				new ClassPathXmlApplicationContext("outbound-adapter-parser-config.xml", this.getClass());
 		MongoDbStoringMessageHandler handler =
@@ -56,10 +57,11 @@ public class MongoDbOutboundChannelAdapterParserTests {
 		assertNotNull(TestUtils.getPropertyValue(handler, "evaluationContext"));
 		assertTrue(TestUtils.getPropertyValue(handler, "collectionNameExpression") instanceof LiteralExpression);
 		assertEquals("data", TestUtils.getPropertyValue(handler, "collectionNameExpression.literalValue"));
+		context.close();
 	}
 
 	@Test
-	public void fullConfigWithCollectionExpression(){
+	public void fullConfigWithCollectionExpression() {
 		ClassPathXmlApplicationContext context =
 				new ClassPathXmlApplicationContext("outbound-adapter-parser-config.xml", this.getClass());
 		MongoDbStoringMessageHandler handler =
@@ -71,10 +73,11 @@ public class MongoDbOutboundChannelAdapterParserTests {
 		assertNotNull(TestUtils.getPropertyValue(handler, "evaluationContext"));
 		assertTrue(TestUtils.getPropertyValue(handler, "collectionNameExpression") instanceof SpelExpression);
 		assertEquals("headers.collectionName", TestUtils.getPropertyValue(handler, "collectionNameExpression.expression"));
+		context.close();
 	}
 
 	@Test
-	public void fullConfigWithCollection(){
+	public void fullConfigWithCollection() {
 		ClassPathXmlApplicationContext context =
 				new ClassPathXmlApplicationContext("outbound-adapter-parser-config.xml", this.getClass());
 		MongoDbStoringMessageHandler handler =
@@ -86,10 +89,11 @@ public class MongoDbOutboundChannelAdapterParserTests {
 		assertNotNull(TestUtils.getPropertyValue(handler, "evaluationContext"));
 		assertTrue(TestUtils.getPropertyValue(handler, "collectionNameExpression") instanceof LiteralExpression);
 		assertEquals("foo", TestUtils.getPropertyValue(handler, "collectionNameExpression.literalValue"));
+		context.close();
 	}
 
 	@Test
-	public void fullConfigWithMongoTemplate(){
+	public void fullConfigWithMongoTemplate() {
 		ClassPathXmlApplicationContext context =
 				new ClassPathXmlApplicationContext("outbound-adapter-parser-config.xml", this.getClass());
 		MongoDbStoringMessageHandler handler =
@@ -100,27 +104,33 @@ public class MongoDbOutboundChannelAdapterParserTests {
 		assertNotNull(TestUtils.getPropertyValue(handler, "evaluationContext"));
 		assertTrue(TestUtils.getPropertyValue(handler, "collectionNameExpression") instanceof LiteralExpression);
 		assertEquals("foo", TestUtils.getPropertyValue(handler, "collectionNameExpression.literalValue"));
+		context.close();
 	}
 
-	@Test(expected=BeanDefinitionParsingException.class)
-	public void templateAndFactoryFail(){
-		new ClassPathXmlApplicationContext("outbound-adapter-parser-fail-template-factory-config.xml", this.getClass());
+	@Test(expected = BeanDefinitionParsingException.class)
+	public void templateAndFactoryFail() {
+		new ClassPathXmlApplicationContext("outbound-adapter-parser-fail-template-factory-config.xml", this.getClass())
+				.close();
 	}
 
-	@Test(expected=BeanDefinitionParsingException.class)
-	public void templateAndConverterFail(){
-		new ClassPathXmlApplicationContext("outbound-adapter-parser-fail-template-converter-config.xml", this.getClass());
+	@Test(expected = BeanDefinitionParsingException.class)
+	public void templateAndConverterFail() {
+		new ClassPathXmlApplicationContext("outbound-adapter-parser-fail-template-converter-config.xml",
+				this.getClass()).close();
 	}
 
 	@Test
-	public void testInt3024PollerAndRequestHandlerAdviceChain(){
-		ApplicationContext context = new ClassPathXmlApplicationContext("outbound-adapter-parser-config.xml", this.getClass());
+	public void testInt3024PollerAndRequestHandlerAdviceChain() {
+		ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext(
+				"outbound-adapter-parser-config.xml", this.getClass());
 		AbstractEndpoint endpoint = context.getBean("pollableAdapter", AbstractEndpoint.class);
 		assertThat(endpoint, Matchers.instanceOf(PollingConsumer.class));
 		MessageHandler handler = TestUtils.getPropertyValue(endpoint, "handler", MessageHandler.class);
 		assertTrue(AopUtils.isAopProxy(handler));
 		List<?> advisors = TestUtils.getPropertyValue(handler, "h.advised.advisors", List.class);
-		assertThat(TestUtils.getPropertyValue(advisors.get(0), "advice"), Matchers.instanceOf(RequestHandlerRetryAdvice.class));
+		assertThat(TestUtils.getPropertyValue(advisors.get(0), "advice"),
+				Matchers.instanceOf(RequestHandlerRetryAdvice.class));
+		context.close();
 	}
 
 }

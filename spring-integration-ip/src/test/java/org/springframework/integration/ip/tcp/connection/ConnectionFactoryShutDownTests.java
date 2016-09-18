@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.ip.tcp.connection;
 
 import static org.junit.Assert.assertTrue;
@@ -47,31 +48,28 @@ public class ConnectionFactoryShutDownTests {
 		Executor executor = factory.getTaskExecutor();
 		final CountDownLatch latch1 = new CountDownLatch(1);
 		final CountDownLatch latch2 = new CountDownLatch(1);
-		executor.execute(new Runnable() {
-
-			@Override
-			public void run() {
-				latch1.countDown();
-				try {
-					while (true) {
-						factory.getTaskExecutor();
-						Thread.sleep(100);
-					}
+		executor.execute(() -> {
+			latch1.countDown();
+			try {
+				while (true) {
+					factory.getTaskExecutor();
+					Thread.sleep(100);
 				}
-				catch (MessagingException e) {
-				}
-				catch (InterruptedException e) {
-					Thread.currentThread().interrupt();
-				}
-				latch2.countDown();
 			}
+			catch (MessagingException e1) {
+			}
+			catch (InterruptedException e2) {
+				Thread.currentThread().interrupt();
+			}
+			latch2.countDown();
 		});
 		assertTrue(latch1.await(10, TimeUnit.SECONDS));
 		StopWatch watch = new StopWatch();
 		watch.start();
 		factory.stop();
 		watch.stop();
-		assertTrue("Expected < 1000, was:" + watch.getLastTaskTimeMillis(), watch.getLastTaskTimeMillis() < 1000);
+		assertTrue("Expected < 10000, was:" + watch.getLastTaskTimeMillis(), watch.getLastTaskTimeMillis() < 10000);
 		assertTrue(latch1.await(10, TimeUnit.SECONDS));
 	}
+
 }

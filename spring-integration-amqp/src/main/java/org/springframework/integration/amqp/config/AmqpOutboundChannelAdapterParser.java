@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,9 @@
 
 package org.springframework.integration.amqp.config;
 
+import org.w3c.dom.Element;
+
+import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.support.AbstractBeanDefinition;
 import org.springframework.beans.factory.support.BeanDefinitionBuilder;
 import org.springframework.beans.factory.xml.ParserContext;
@@ -24,7 +27,6 @@ import org.springframework.integration.amqp.support.DefaultAmqpHeaderMapper;
 import org.springframework.integration.config.xml.AbstractOutboundChannelAdapterParser;
 import org.springframework.integration.config.xml.IntegrationNamespaceUtils;
 import org.springframework.util.StringUtils;
-import org.w3c.dom.Element;
 
 /**
  * Parser for the AMQP 'outbound-channel-adapter' element.
@@ -32,6 +34,7 @@ import org.w3c.dom.Element;
  * @author Mark Fisher
  * @author Oleg Zhurakousky
  * @author Gary Russell
+ * @author Artem Bilan
  * @since 2.1
  */
 public class AmqpOutboundChannelAdapterParser extends AbstractOutboundChannelAdapterParser {
@@ -42,16 +45,39 @@ public class AmqpOutboundChannelAdapterParser extends AbstractOutboundChannelAda
 		String amqpTemplateRef = element.getAttribute("amqp-template");
 		if (!StringUtils.hasText(amqpTemplateRef)) {
 			amqpTemplateRef = "amqpTemplate";
+			if (StringUtils.hasText(element.getAttribute("return-channel"))
+					|| StringUtils.hasText(element.getAttribute("confirm-correlation-expression"))) {
+				parserContext.getReaderContext().error("A dedicated 'amqp-template' is required when" +
+						" using publisher confirms and returns", element);
+			}
 		}
 		builder.addConstructorArgReference(amqpTemplateRef);
 		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "exchange-name", true);
-		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "exchange-name-expression");
+		BeanDefinition exchangeNameExpression =
+				IntegrationNamespaceUtils.createExpressionDefIfAttributeDefined("exchange-name-expression", element);
+		if (exchangeNameExpression != null) {
+			builder.addPropertyValue("exchangeNameExpression", exchangeNameExpression);
+		}
 		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "routing-key", true);
-		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "routing-key-expression");
+		BeanDefinition routingKeyExpression =
+				IntegrationNamespaceUtils.createExpressionDefIfAttributeDefined("routing-key-expression", element);
+		if (routingKeyExpression != null) {
+			builder.addPropertyValue("routingKeyExpression", routingKeyExpression);
+		}
+		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "default-delivery-mode");
+		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "lazy-connect");
 
-		IntegrationNamespaceUtils.configureHeaderMapper(element, builder, parserContext, DefaultAmqpHeaderMapper.class, null);
+		BeanDefinitionBuilder mapperBuilder = BeanDefinitionBuilder
+				.genericBeanDefinition(DefaultAmqpHeaderMapper.class);
+		mapperBuilder.setFactoryMethod("outboundMapper");
+		IntegrationNamespaceUtils.configureHeaderMapper(element, builder, parserContext,
+				mapperBuilder, null);
 
-		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "confirm-correlation-expression");
+		BeanDefinition confirmCorrelationExpression =
+				IntegrationNamespaceUtils.createExpressionDefIfAttributeDefined("confirm-correlation-expression", element);
+		if (confirmCorrelationExpression != null) {
+			builder.addPropertyValue("confirmCorrelationExpression", confirmCorrelationExpression);
+		}
 		IntegrationNamespaceUtils.setReferenceIfAttributeDefined(builder, element, "confirm-ack-channel");
 		IntegrationNamespaceUtils.setReferenceIfAttributeDefined(builder, element, "confirm-nack-channel");
 		IntegrationNamespaceUtils.setReferenceIfAttributeDefined(builder, element, "return-channel");

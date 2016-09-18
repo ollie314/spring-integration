@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,6 +29,7 @@ import org.springframework.beans.factory.ListableBeanFactory;
 import org.springframework.integration.handler.AbstractMessageHandler;
 import org.springframework.integration.mapping.OutboundMessageMapper;
 import org.springframework.integration.monitor.IntegrationMBeanExporter;
+import org.springframework.integration.support.management.IntegrationManagedResource;
 import org.springframework.jmx.export.MBeanExporter;
 import org.springframework.jmx.export.annotation.ManagedResource;
 import org.springframework.jmx.export.notification.NotificationPublisher;
@@ -38,11 +39,19 @@ import org.springframework.messaging.Message;
 import org.springframework.util.Assert;
 
 /**
+ * An {@link AbstractMessageHandler} implementation to publish an incoming message
+ * as a JMX {@link Notification}.
+ * The {@link OutboundMessageMapper} is used to convert a {@link Message} to the {@link Notification}.
+ *
  * @author Mark Fisher
  * @author Oleg Zhurakousky
+ * @author Gary Russell
+ * @author Artem Bilan
+ *
  * @since 2.0
  */
-public class NotificationPublishingMessageHandler extends AbstractMessageHandler implements BeanFactoryAware, InitializingBean {
+public class NotificationPublishingMessageHandler extends AbstractMessageHandler
+		implements BeanFactoryAware, InitializingBean {
 
 	private final PublisherDelegate delegate = new PublisherDelegate();
 
@@ -74,7 +83,6 @@ public class NotificationPublishingMessageHandler extends AbstractMessageHandler
 	 * a default implementation will be used such that String-typed payloads will be
 	 * passed as the 'message' of the Notification and all other payload types
 	 * will be passed as the 'userData' of the Notification.
-	 *
 	 * @param notificationMapper The notification mapper.
 	 */
 	public void setNotificationMapper(OutboundMessageMapper<Notification> notificationMapper) {
@@ -86,11 +94,15 @@ public class NotificationPublishingMessageHandler extends AbstractMessageHandler
 	 * use by default when <em>no</em> explicit Notification mapper
 	 * has been configured. If not provided, then a notification type header will
 	 * be required for each message being mapped into a Notification.
-	 *
 	 * @param defaultNotificationType The default notification type.
 	 */
 	public void setDefaultNotificationType(String defaultNotificationType) {
 		this.defaultNotificationType = defaultNotificationType;
+	}
+
+	@Override
+	public String getComponentType() {
+		return "jmx:notification-publishing-channel-adapter";
 	}
 
 	@Override
@@ -123,9 +135,11 @@ public class NotificationPublishingMessageHandler extends AbstractMessageHandler
 
 	/**
 	 * Simple class used for the actual MBean instances to be registered.
+	 * Exposed to standard MBEs as well as the IMBE for backwards compatibility.
 	 */
 	@ManagedResource
-	private static class PublisherDelegate implements NotificationPublisherAware {
+	@IntegrationManagedResource
+	public static class PublisherDelegate implements NotificationPublisherAware {
 
 		private volatile NotificationPublisher notificationPublisher;
 
@@ -138,6 +152,7 @@ public class NotificationPublishingMessageHandler extends AbstractMessageHandler
 			Assert.state(this.notificationPublisher != null, "NotificationPublisher must not be null.");
 			this.notificationPublisher.sendNotification(notification);
 		}
+
 	}
 
 }

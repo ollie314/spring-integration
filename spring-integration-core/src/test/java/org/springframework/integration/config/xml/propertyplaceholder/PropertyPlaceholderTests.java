@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2008 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 
 /**
- * 
+ *
  * @author Iwein Fuld
  *
  */
@@ -34,8 +34,8 @@ public class PropertyPlaceholderTests {
 	public void context() throws Exception {
 		//parsing and instantiating is enough
 	}
-	
-	public static class SanityCheck{
+
+	public static class SanityCheck {
 		public SanityCheck(Integer i) {
 			//this will throw an exception if the placeholder isn't replaced
 		}

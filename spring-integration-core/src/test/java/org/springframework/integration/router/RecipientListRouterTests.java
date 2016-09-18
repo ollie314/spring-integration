@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2010 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,24 +19,35 @@ package org.springframework.integration.router;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 import org.junit.Test;
+import org.mockito.Mockito;
+
 import org.springframework.beans.DirectFieldAccessor;
+import org.springframework.beans.factory.BeanFactory;
 import org.springframework.integration.IntegrationMessageHeaderAccessor;
+import org.springframework.integration.channel.DirectChannel;
 import org.springframework.integration.channel.QueueChannel;
 import org.springframework.integration.core.MessageSelector;
-import org.springframework.messaging.support.GenericMessage;
 import org.springframework.integration.router.RecipientListRouter.Recipient;
+import org.springframework.integration.test.util.TestUtils;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.MessageDeliveryException;
+import org.springframework.messaging.support.GenericMessage;
 
 /**
  * @author Mark Fisher
+ * @author Gary Russell
+ * @author Artem Bilan
  */
 public class RecipientListRouterTests {
 
@@ -50,12 +61,13 @@ public class RecipientListRouterTests {
 		channels.add(channel2);
 		RecipientListRouter router = new RecipientListRouter();
 		router.setChannels(channels);
+		router.setBeanFactory(mock(BeanFactory.class));
 		router.afterPropertiesSet();
-		List<Recipient> recipients = (List<Recipient>)
+		ConcurrentLinkedQueue<Recipient> recipients = (ConcurrentLinkedQueue<Recipient>)
 				new DirectFieldAccessor(router).getPropertyValue("recipients");
 		assertEquals(2, recipients.size());
-		assertEquals(channel1, new DirectFieldAccessor(recipients.get(0)).getPropertyValue("channel"));
-		assertEquals(channel2, new DirectFieldAccessor(recipients.get(1)).getPropertyValue("channel"));
+		assertEquals(channel1, new DirectFieldAccessor(recipients.poll()).getPropertyValue("channel"));
+		assertEquals(channel2, new DirectFieldAccessor(recipients.poll()).getPropertyValue("channel"));
 	}
 
 	@Test
@@ -67,6 +79,7 @@ public class RecipientListRouterTests {
 		channels.add(channel2);
 		RecipientListRouter router = new RecipientListRouter();
 		router.setChannels(channels);
+		router.setBeanFactory(mock(BeanFactory.class));
 		router.afterPropertiesSet();
 		Message<String> message = new GenericMessage<String>("test");
 		router.handleMessage(message);
@@ -102,7 +115,7 @@ public class RecipientListRouterTests {
 		channelB.setBeanName("channelB");
 		channelC.setBeanName("channelC");
 		RecipientListRouter router = new RecipientListRouter();
-		router.setTimeout(0);
+		router.setSendTimeout(0);
 		List<MessageChannel> channels = new ArrayList<MessageChannel>();
 		channels.add(channelA);
 		channels.add(channelB);
@@ -132,7 +145,7 @@ public class RecipientListRouterTests {
 		channelB.setBeanName("channelB");
 		channelC.setBeanName("channelC");
 		RecipientListRouter router = new RecipientListRouter();
-		router.setTimeout(0);
+		router.setSendTimeout(0);
 		List<MessageChannel> channels = new ArrayList<MessageChannel>();
 		channels.add(channelA);
 		channels.add(channelB);
@@ -164,7 +177,7 @@ public class RecipientListRouterTests {
 		channelB.setBeanName("channelB");
 		channelC.setBeanName("channelC");
 		RecipientListRouter router = new RecipientListRouter();
-		router.setTimeout(0);
+		router.setSendTimeout(0);
 		List<MessageChannel> channels = new ArrayList<MessageChannel>();
 		channels.add(channelA);
 		channels.add(channelB);
@@ -199,7 +212,7 @@ public class RecipientListRouterTests {
 		channelC.setBeanName("channelC");
 		RecipientListRouter router = new RecipientListRouter();
 		router.setIgnoreSendFailures(true);
-		router.setTimeout(0);
+		router.setSendTimeout(0);
 		List<MessageChannel> channels = new ArrayList<MessageChannel>();
 		channels.add(channelA);
 		channels.add(channelB);
@@ -229,7 +242,7 @@ public class RecipientListRouterTests {
 		channelC.setBeanName("channelC");
 		RecipientListRouter router = new RecipientListRouter();
 		router.setIgnoreSendFailures(true);
-		router.setTimeout(0);
+		router.setSendTimeout(0);
 		List<MessageChannel> channels = new ArrayList<MessageChannel>();
 		channels.add(channelA);
 		channels.add(channelB);
@@ -259,7 +272,7 @@ public class RecipientListRouterTests {
 		channelC.setBeanName("channelC");
 		RecipientListRouter router = new RecipientListRouter();
 		router.setIgnoreSendFailures(true);
-		router.setTimeout(0);
+		router.setSendTimeout(0);
 		List<MessageChannel> channels = new ArrayList<MessageChannel>();
 		channels.add(channelA);
 		channels.add(channelB);
@@ -325,7 +338,7 @@ public class RecipientListRouterTests {
 		assertNotNull(result1a);
 		assertNotNull(result1b);
 		assertEquals("test", result1a.getPayload());
-		assertEquals(1,new IntegrationMessageHeaderAccessor(result1a).getSequenceNumber().intValue());
+		assertEquals(1, new IntegrationMessageHeaderAccessor(result1a).getSequenceNumber().intValue());
 		assertEquals(2, new IntegrationMessageHeaderAccessor(result1a).getSequenceSize().intValue());
 		assertEquals(message.getHeaders().getId(), new IntegrationMessageHeaderAccessor(result1a).getCorrelationId());
 		assertEquals("test", result1b.getPayload());
@@ -347,10 +360,16 @@ public class RecipientListRouterTests {
 		router.setChannels(channels);
 	}
 
-	@Test(expected = IllegalArgumentException.class)
-	public void noChannelListFailsInitialization() {
+	@Test
+	public void noChannelListPassInitialization() {
 		RecipientListRouter router = new RecipientListRouter();
+		router.setBeanFactory(mock(BeanFactory.class));
+		QueueChannel defaultOutputChannel = new QueueChannel();
+		router.setDefaultOutputChannel(defaultOutputChannel);
 		router.afterPropertiesSet();
+		router.handleMessage(new GenericMessage<String>("foo"));
+		Message<?> receive = defaultOutputChannel.receive(1000);
+		assertNotNull(receive);
 	}
 
 	@Test
@@ -402,8 +421,31 @@ public class RecipientListRouterTests {
 		assertNull(result2);
 	}
 
+	@Test
+	public void testDefaultChannelResolutionFromName() {
+		QueueChannel defaultChannel = new QueueChannel();
+		List<Recipient> recipients = new ArrayList<Recipient>();
+		recipients.add(new Recipient(new DirectChannel(), new AlwaysFalseSelector()));
+		RecipientListRouter router = new RecipientListRouter();
+		router.setRecipients(recipients);
+		router.setDefaultOutputChannelName("defaultChannel");
+
+		BeanFactory beanFactory = Mockito.mock(BeanFactory.class);
+		when(beanFactory.getBean(Mockito.eq("defaultChannel"), Mockito.eq(MessageChannel.class)))
+				.thenReturn(defaultChannel);
+		router.setBeanFactory(beanFactory);
+		router.afterPropertiesSet();
+
+		router.handleMessage(new GenericMessage<String>("foo"));
+
+		assertSame(defaultChannel, TestUtils.getPropertyValue(router, "defaultOutputChannel"));
+		Mockito.verify(beanFactory).getBean(Mockito.eq("defaultChannel"), Mockito.eq(MessageChannel.class));
+	}
+
+
 	private static class AlwaysTrueSelector implements MessageSelector {
 
+		@Override
 		public boolean accept(Message<?> message) {
 			return true;
 		}
@@ -412,6 +454,7 @@ public class RecipientListRouterTests {
 
 	private static class AlwaysFalseSelector implements MessageSelector {
 
+		@Override
 		public boolean accept(Message<?> message) {
 			return false;
 		}

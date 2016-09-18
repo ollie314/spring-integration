@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -84,7 +84,7 @@ public class SubscribableJmsChannel extends AbstractJmsChannel implements Subscr
 
 	@Override
 	public void onInit() throws Exception {
-		if (this.initialized){
+		if (this.initialized) {
 			return;
 		}
 		super.onInit();
@@ -92,7 +92,7 @@ public class SubscribableJmsChannel extends AbstractJmsChannel implements Subscr
 		this.configureDispatcher(isPubSub);
 		MessageListener listener = new DispatchingMessageListener(
 				this.getJmsTemplate(), this.dispatcher,
-				this, isPubSub,this.getMessageBuilderFactory());
+				this, isPubSub, this.getMessageBuilderFactory());
 		this.container.setMessageListener(listener);
 		if (!this.container.isActive()) {
 			this.container.afterPropertiesSet();
@@ -102,7 +102,9 @@ public class SubscribableJmsChannel extends AbstractJmsChannel implements Subscr
 
 	private void configureDispatcher(boolean isPubSub) {
 		if (isPubSub) {
-			this.dispatcher = new BroadcastingDispatcher(true);
+			BroadcastingDispatcher broadcastingDispatcher = new BroadcastingDispatcher(true);
+			broadcastingDispatcher.setBeanFactory(this.getBeanFactory());
+			this.dispatcher = broadcastingDispatcher;
 		}
 		else {
 			UnicastingDispatcher unicastingDispatcher = new UnicastingDispatcher();
@@ -117,68 +119,6 @@ public class SubscribableJmsChannel extends AbstractJmsChannel implements Subscr
 		}
 		this.dispatcher.setMaxSubscribers(this.maxSubscribers);
 	}
-
-
-	private static class DispatchingMessageListener implements MessageListener {
-
-		private final Log logger = LogFactory.getLog(this.getClass());
-
-		private final JmsTemplate jmsTemplate;
-
-		private final MessageDispatcher dispatcher;
-
-		private final SubscribableJmsChannel channel;
-
-		private final boolean isPubSub;
-
-		private final MessageBuilderFactory messageBuilderFactory;
-
-
-		private DispatchingMessageListener(JmsTemplate jmsTemplate,
-				MessageDispatcher dispatcher, SubscribableJmsChannel channel, boolean isPubSub,
-				MessageBuilderFactory messageBuilderFactory) {
-			this.jmsTemplate = jmsTemplate;
-			this.dispatcher = dispatcher;
-			this.channel = channel;
-			this.isPubSub = isPubSub;
-			this.messageBuilderFactory = messageBuilderFactory;
-		}
-
-
-		@Override
-		public void onMessage(javax.jms.Message message) {
-			Message<?> messageToSend = null;
-			try {
-				Object converted = this.jmsTemplate.getMessageConverter().fromMessage(message);
-				if (converted != null) {
-					messageToSend = (converted instanceof Message<?>) ? (Message<?>) converted
-							: this.messageBuilderFactory.withPayload(converted).build();
-					this.dispatcher.dispatch(messageToSend);
-				}
-				else if (this.logger.isWarnEnabled()) {
-					logger.warn("MessageConverter returned null, no Message to dispatch");
-				}
-			}
-			catch (MessageDispatchingException e) {
-				String exceptionMessage = e.getMessage() + " for jms-channel '"
-						+ this.channel.getFullChannelName() + "'.";
-				if (this.isPubSub) {
-					// log only for backwards compatibility with pub/sub
-					if (logger.isWarnEnabled()) {
-						logger.warn(exceptionMessage, e);
-					}
-				}
-				else {
-					throw new MessageDeliveryException(
-							messageToSend, exceptionMessage, e);
-				}
-			}
-			catch (Exception e) {
-				throw new MessagingException("failed to handle incoming JMS Message", e);
-			}
-		}
-	}
-
 
 	/*
 	 * SmartLifecycle implementation (delegates to the MessageListener container)
@@ -224,6 +164,67 @@ public class SubscribableJmsChannel extends AbstractJmsChannel implements Subscr
 	public void destroy() throws Exception {
 		if (this.container != null) {
 			this.container.destroy();
+		}
+	}
+
+
+	private static final class DispatchingMessageListener implements MessageListener {
+
+		private final Log logger = LogFactory.getLog(this.getClass());
+
+		private final JmsTemplate jmsTemplate;
+
+		private final MessageDispatcher dispatcher;
+
+		private final SubscribableJmsChannel channel;
+
+		private final boolean isPubSub;
+
+		private final MessageBuilderFactory messageBuilderFactory;
+
+
+		private DispatchingMessageListener(JmsTemplate jmsTemplate,
+				MessageDispatcher dispatcher, SubscribableJmsChannel channel, boolean isPubSub,
+				MessageBuilderFactory messageBuilderFactory) {
+			this.jmsTemplate = jmsTemplate;
+			this.dispatcher = dispatcher;
+			this.channel = channel;
+			this.isPubSub = isPubSub;
+			this.messageBuilderFactory = messageBuilderFactory;
+		}
+
+
+		@Override
+		public void onMessage(javax.jms.Message message) {
+			Message<?> messageToSend = null;
+			try {
+				Object converted = this.jmsTemplate.getMessageConverter().fromMessage(message);
+				if (converted != null) {
+					messageToSend = (converted instanceof Message<?>) ? (Message<?>) converted
+							: this.messageBuilderFactory.withPayload(converted).build();
+					this.dispatcher.dispatch(messageToSend);
+				}
+				else if (this.logger.isWarnEnabled()) {
+					this.logger.warn("MessageConverter returned null, no Message to dispatch");
+				}
+			}
+			catch (MessageDispatchingException e) {
+				String exceptionMessage = e.getMessage() + " for jms-channel '"
+						+ this.channel.getFullChannelName() + "'.";
+				if (this.isPubSub) {
+					// log only for backwards compatibility with pub/sub
+					if (this.logger.isWarnEnabled()) {
+						this.logger.warn(exceptionMessage, e);
+					}
+				}
+				else {
+					throw new MessageDeliveryException(
+							messageToSend, exceptionMessage, e);
+				}
+			}
+			catch (Exception e) {
+				throw new MessagingException("failed to handle incoming JMS Message", e);
+			}
 		}
 	}
 

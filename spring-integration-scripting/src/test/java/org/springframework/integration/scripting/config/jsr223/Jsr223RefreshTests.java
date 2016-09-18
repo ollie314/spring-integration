@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2011 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -63,7 +63,7 @@ public class Jsr223RefreshTests {
 			super.setValue(new CycleResource());
 		}
 	}
-	
+
 	private static class CycleResource extends AbstractResource {
 
 		private int count = -1;
@@ -72,23 +72,23 @@ public class Jsr223RefreshTests {
 		public String getDescription() {
 			return "CycleResource";
 		}
-		
+
 		@Override
 		public String getFilename() throws IllegalStateException {
 			return "CycleResource";
 		}
-		
+
 		@Override
 		public long lastModified() throws IOException {
 			return -1;
 		}
 
 		public InputStream getInputStream() throws IOException {
-			if (++count>scripts.length-1) {
+			if (++count > scripts.length - 1) {
 				count = 0;
 			}
 			return new ByteArrayInputStream(scripts[count].getBytes());
 		}
-		
+
 	}
 }

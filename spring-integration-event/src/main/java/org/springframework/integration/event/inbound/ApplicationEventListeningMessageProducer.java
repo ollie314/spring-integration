@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,18 +16,19 @@
 
 package org.springframework.integration.event.inbound;
 
-import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
 
 import org.springframework.context.ApplicationEvent;
 import org.springframework.context.ApplicationListener;
+import org.springframework.context.PayloadApplicationEvent;
 import org.springframework.context.event.ApplicationEventMulticaster;
 import org.springframework.context.event.ContextClosedEvent;
 import org.springframework.context.event.ContextStoppedEvent;
-import org.springframework.context.event.SmartApplicationListener;
+import org.springframework.context.event.GenericApplicationListener;
 import org.springframework.context.support.AbstractApplicationContext;
 import org.springframework.core.Ordered;
+import org.springframework.core.ResolvableType;
 import org.springframework.integration.endpoint.ExpressionMessageProducerSupport;
 import org.springframework.messaging.Message;
 import org.springframework.util.Assert;
@@ -35,19 +36,19 @@ import org.springframework.util.Assert;
 /**
  * An inbound Channel Adapter that implements {@link ApplicationListener} and
  * passes Spring {@link ApplicationEvent ApplicationEvents} within messages.
- * If a {@link #setPayloadExpression(String) payloadExpression} is provided, it will be evaluated against
+ * If a {@link #setPayloadExpression payloadExpression} is provided, it will be evaluated against
  * the ApplicationEvent instance to create the Message payload. Otherwise, the event itself will be the payload.
  *
  * @author Mark Fisher
  * @author Artem Bilan
  * @author Gary Russell
- *
  * @see ApplicationEventMulticaster
  * @see ExpressionMessageProducerSupport
  */
-public class ApplicationEventListeningMessageProducer extends ExpressionMessageProducerSupport implements SmartApplicationListener {
+public class ApplicationEventListeningMessageProducer extends ExpressionMessageProducerSupport
+		implements GenericApplicationListener {
 
-	private volatile Set<Class<? extends ApplicationEvent>> eventTypes;
+	private volatile Set<ResolvableType> eventTypes;
 
 	private ApplicationEventMulticaster applicationEventMulticaster;
 
@@ -55,7 +56,9 @@ public class ApplicationEventListeningMessageProducer extends ExpressionMessageP
 
 	private volatile long stoppedAt;
 
-	private volatile boolean phaseSet;
+	public ApplicationEventListeningMessageProducer() {
+		setPhase(Integer.MAX_VALUE / 2 - 1000);
+	}
 
 	/**
 	 * Set the list of event types (classes that extend ApplicationEvent) that
@@ -66,25 +69,22 @@ public class ApplicationEventListeningMessageProducer extends ExpressionMessageP
 	 * refreshed on the next appropriate {@link ApplicationEvent}.
 	 *
 	 * @param eventTypes The event types.
-	 *
 	 * @see ApplicationEventMulticaster#addApplicationListener
 	 * @see #supportsEventType
 	 */
-	public void setEventTypes(Class<? extends ApplicationEvent>... eventTypes) {
-		Set<Class<? extends ApplicationEvent>> eventSet = new HashSet<Class<? extends ApplicationEvent>>(
-				Arrays.asList(eventTypes));
-		eventSet.remove(null);
+	public final void setEventTypes(Class<?>... eventTypes) {
+		Assert.notNull(eventTypes, "'eventTypes' must not be null");
+		Set<ResolvableType> eventSet = new HashSet<ResolvableType>(eventTypes.length);
+		for (Class<?> eventType : eventTypes) {
+			if (eventType != null) {
+				eventSet.add(ResolvableType.forClass(eventType));
+			}
+		}
 		this.eventTypes = (eventSet.size() > 0 ? eventSet : null);
 
 		if (this.applicationEventMulticaster != null) {
 			this.applicationEventMulticaster.addApplicationListener(this);
 		}
-	}
-
-	@Override
-	public void setPhase(int phase) {
-		super.setPhase(phase);
-		this.phaseSet = true;
 	}
 
 	@Override
@@ -96,26 +96,39 @@ public class ApplicationEventListeningMessageProducer extends ExpressionMessageP
 	protected void onInit() {
 		super.onInit();
 		this.applicationEventMulticaster = this.getBeanFactory()
-				.getBean(AbstractApplicationContext.APPLICATION_EVENT_MULTICASTER_BEAN_NAME, ApplicationEventMulticaster.class);
+				.getBean(AbstractApplicationContext.APPLICATION_EVENT_MULTICASTER_BEAN_NAME,
+						ApplicationEventMulticaster.class);
 		Assert.notNull(this.applicationEventMulticaster,
-				"To use ApplicationListeners the 'applicationEventMulticaster' bean must be supplied within ApplicationContext.");
-		if (!this.phaseSet) {
-			super.setPhase(Integer.MIN_VALUE + 1000);
-		}
+				"To use ApplicationListeners the 'applicationEventMulticaster' " +
+						"bean must be supplied within ApplicationContext.");
 	}
 
 	@Override
 	public void onApplicationEvent(ApplicationEvent event) {
 		if (this.active || ((event instanceof ContextStoppedEvent || event instanceof ContextClosedEvent)
-								&& this.stoppedRecently())) {
+				&& this.stoppedRecently())) {
 			if (event.getSource() instanceof Message<?>) {
 				this.sendMessage((Message<?>) event.getSource());
 			}
 			else {
-				Object payload = this.evaluatePayloadExpression(event);
-				this.sendMessage(this.getMessageBuilderFactory().withPayload(payload).build());
+				Message<?> message = null;
+				Object result = extractObjectToSend(event);
+				if (result instanceof Message) {
+					message = (Message<?>) result;
+				}
+				else {
+					message = this.getMessageBuilderFactory().withPayload(result).build();
+				}
+				this.sendMessage(message);
 			}
 		}
+	}
+
+	private Object extractObjectToSend(Object root) {
+		if (root instanceof PayloadApplicationEvent) {
+			return ((PayloadApplicationEvent<?>) root).getPayload();
+		}
+		return evaluatePayloadExpression(root);
 	}
 
 	private boolean stoppedRecently() {
@@ -123,15 +136,33 @@ public class ApplicationEventListeningMessageProducer extends ExpressionMessageP
 	}
 
 	@Override
-	public boolean supportsEventType(Class<? extends ApplicationEvent> eventType) {
+	public boolean supportsEventType(ResolvableType eventType) {
 		if (this.eventTypes == null) {
 			return true;
 		}
-		for (Class<? extends ApplicationEvent> type : this.eventTypes) {
+
+		for (ResolvableType type : this.eventTypes) {
 			if (type.isAssignableFrom(eventType)) {
 				return true;
 			}
 		}
+
+
+
+		if (eventType.getRawClass() != null
+				&& PayloadApplicationEvent.class.isAssignableFrom(eventType.getRawClass())) {
+			if (eventType.hasUnresolvableGenerics()) {
+				return true;
+			}
+
+			ResolvableType payloadType = eventType.as(PayloadApplicationEvent.class).getGeneric();
+			for (ResolvableType type : this.eventTypes) {
+				if (type.isAssignableFrom(payloadType)) {
+					return true;
+				}
+			}
+		}
+
 		return false;
 	}
 

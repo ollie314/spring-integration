@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,6 +28,10 @@ import org.springframework.util.ClassUtils;
  */
 public final class JacksonJsonUtils {
 
+	private JacksonJsonUtils() {
+		super();
+	}
+
 	private static final ClassLoader classLoader = JacksonJsonUtils.class.getClassLoader();
 
 	private static final boolean jackson2Present =
@@ -38,9 +42,6 @@ public final class JacksonJsonUtils {
 			ClassUtils.isPresent("org.codehaus.jackson.map.ObjectMapper", classLoader) &&
 					ClassUtils.isPresent("org.codehaus.jackson.JsonGenerator", classLoader);
 
-	private static final IllegalStateException NO_JACKSON_LIB_EXCEPTION =
-			new IllegalStateException("Neither jackson-databind.jar, nor jackson-mapper-asl.jar aren't presented in the classpath.");
-
 	public static boolean isJackson2Present() {
 		return jackson2Present;
 	}
@@ -49,7 +50,4 @@ public final class JacksonJsonUtils {
 		return jacksonPresent;
 	}
 
-	public static IllegalStateException getNoJacksonLibException() {
-		return NO_JACKSON_LIB_EXCEPTION;
-	}
 }

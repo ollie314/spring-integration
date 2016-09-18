@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2009 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,7 +48,7 @@ import org.springframework.ws.context.MessageContext;
 import org.springframework.xml.transform.StringSource;
 
 /**
- * 
+ *
  * @author Iwein Fuld
  *
  */
@@ -60,7 +60,7 @@ public class MarshallingWebServiceIntegrationTests {
 	private static final String input = "<hello/>";
 
 	@Autowired MarshallingWebServiceInboundGateway gateway;
-	
+
 	@Mock
 	private MessageContext context;
 
@@ -71,25 +71,25 @@ public class MarshallingWebServiceIntegrationTests {
 	private WebServiceMessage request;
 
 	private Source stringSource = new StreamSource(new StringReader(input));
-	
+
 	private StringWriter output = new StringWriter();
 
 	private Result stringResult = new StreamResult(output);
-	
-	@Before public void setupMocks(){
+
+	@Before public void setupMocks() {
 		MockitoAnnotations.initMocks(this);
 	}
-	
+
 	@Test
 	public void configOk() throws Exception {
 		// just flag invalid config
 	}
-	
+
 	@Test
 	public void sendString() throws Exception {
 		when(context.getResponse()).thenReturn(response);
 		when(context.getRequest()).thenReturn(request);
-		when(request.getPayloadSource()).thenReturn(stringSource );
+		when(request.getPayloadSource()).thenReturn(stringSource);
 		when(response.getPayloadResult()).thenReturn(stringResult);
 		gateway.invoke(context);
 		assertTrue(output.toString().endsWith(input));
@@ -125,7 +125,7 @@ public class MarshallingWebServiceIntegrationTests {
 	}
 
 	public static class StubEndpoint {
-		@ServiceActivator(inputChannel="requests")
+		@ServiceActivator(inputChannel = "requests")
 		public Object handle(Object o) {
 			return o;
 		}

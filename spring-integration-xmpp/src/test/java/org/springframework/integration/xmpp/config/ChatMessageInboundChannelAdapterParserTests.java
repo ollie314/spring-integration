@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,22 +21,24 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertSame;
 
 import java.lang.reflect.Field;
+import java.util.Map;
 
-import org.jivesoftware.smack.Chat;
-import org.jivesoftware.smack.ChatManager;
-import org.jivesoftware.smack.PacketListener;
+import org.jivesoftware.smack.SmackException.NotConnectedException;
+import org.jivesoftware.smack.StanzaListener;
 import org.jivesoftware.smack.XMPPConnection;
 import org.jivesoftware.smack.packet.Message;
+import org.jivesoftware.smackx.jiveproperties.JivePropertiesManager;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mockito;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.ApplicationContext;
-import org.springframework.messaging.MessageChannel;
 import org.springframework.integration.channel.QueueChannel;
 import org.springframework.integration.test.util.TestUtils;
 import org.springframework.integration.xmpp.inbound.ChatMessageListeningEndpoint;
+import org.springframework.messaging.MessageChannel;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.annotation.DirtiesContext.ClassMode;
 import org.springframework.test.context.ContextConfiguration;
@@ -47,10 +49,12 @@ import org.springframework.util.ReflectionUtils;
  * @author Oleg Zhurakousky
  * @author Mark Fisher
  * @author Gunnar Hillert
+ * @author Florian Schmaus
+ * @author Artem Bilan
  */
 @ContextConfiguration
 @RunWith(SpringJUnit4ClassRunner.class)
-@DirtiesContext(classMode=ClassMode.AFTER_EACH_TEST_METHOD)
+@DirtiesContext(classMode = ClassMode.AFTER_EACH_TEST_METHOD)
 public class ChatMessageInboundChannelAdapterParserTests {
 
 	@Autowired
@@ -62,28 +66,35 @@ public class ChatMessageInboundChannelAdapterParserTests {
 	@Autowired
 	private MessageChannel autoChannel;
 
-	@Autowired @Qualifier("autoChannel.adapter")
+	@Autowired
+	@Qualifier("autoChannel.adapter")
 	private ChatMessageListeningEndpoint autoChannelAdapter;
 
 	@Test
-	public void testInboundAdapter(){
+	@SuppressWarnings("rawtypes")
+	public void testInboundAdapter() {
 		ChatMessageListeningEndpoint adapter = context.getBean("xmppInboundAdapter", ChatMessageListeningEndpoint.class);
 		MessageChannel errorChannel = (MessageChannel) TestUtils.getPropertyValue(adapter, "errorChannel");
 		assertEquals(context.getBean("errorChannel"), errorChannel);
 		assertFalse(adapter.isAutoStartup());
 		QueueChannel channel = (QueueChannel) TestUtils.getPropertyValue(adapter, "outputChannel");
 		assertEquals("xmppInbound", channel.getComponentName());
-		XMPPConnection connection = (XMPPConnection)TestUtils.getPropertyValue(adapter, "xmppConnection");
-		assertEquals(connection, context.getBean("testConnection"));
+		XMPPConnection connection = (XMPPConnection) TestUtils.getPropertyValue(adapter, "xmppConnection");
+		assertSame(connection, context.getBean("testConnection"));
+		Object stanzaFilter = context.getBean("stanzaFilter");
+		assertSame(stanzaFilter, TestUtils.getPropertyValue(adapter, "stanzaFilter"));
+		assertEquals("#root", TestUtils.getPropertyValue(adapter, "payloadExpression.expression"));
+		adapter.start();
+		Map asyncRecvListeners = TestUtils.getPropertyValue(connection, "asyncRecvListeners", Map.class);
+		assertEquals(1, asyncRecvListeners.size());
+		assertSame(stanzaFilter,
+				TestUtils.getPropertyValue(asyncRecvListeners.values().iterator().next(), "packetFilter"));
+		adapter.stop();
 	}
 
 	@Test
-	public void testInboundAdapterUsageWithHeaderMapper() {
+	public void testInboundAdapterUsageWithHeaderMapper() throws NotConnectedException {
 		XMPPConnection xmppConnection = Mockito.mock(XMPPConnection.class);
-		ChatManager chatManager = Mockito.mock(ChatManager.class);
-		Mockito.when(xmppConnection.getChatManager()).thenReturn(chatManager);
-		Chat chat = Mockito.mock(Chat.class);
-		Mockito.when(chatManager.getThreadChat(Mockito.any(String.class))).thenReturn(chat);
 
 		ChatMessageListeningEndpoint adapter = context.getBean("xmppInboundAdapter", ChatMessageListeningEndpoint.class);
 
@@ -91,14 +102,14 @@ public class ChatMessageInboundChannelAdapterParserTests {
 		xmppConnectionField.setAccessible(true);
 		ReflectionUtils.setField(xmppConnectionField, adapter, xmppConnection);
 
-		PacketListener packetListener = TestUtils.getPropertyValue(adapter, "packetListener", PacketListener.class);
+		StanzaListener stanzaListener = TestUtils.getPropertyValue(adapter, "stanzaListener", StanzaListener.class);
 
 		Message message = new Message();
 		message.setBody("hello");
 		message.setTo("oleg");
-		message.setProperty("foo", "foo");
-		message.setProperty("bar", "bar");
-		packetListener.processPacket(message);
+		JivePropertiesManager.addProperty(message, "foo", "foo");
+		JivePropertiesManager.addProperty(message, "bar", "bar");
+		stanzaListener.processPacket(message);
 		org.springframework.messaging.Message<?> siMessage = xmppInbound.receive(0);
 		assertEquals("foo", siMessage.getHeaders().get("foo"));
 		assertEquals("oleg", siMessage.getHeaders().get("xmpp_to"));
@@ -108,4 +119,5 @@ public class ChatMessageInboundChannelAdapterParserTests {
 	public void testAutoChannel() {
 		assertSame(autoChannel, TestUtils.getPropertyValue(autoChannelAdapter, "outputChannel"));
 	}
+
 }

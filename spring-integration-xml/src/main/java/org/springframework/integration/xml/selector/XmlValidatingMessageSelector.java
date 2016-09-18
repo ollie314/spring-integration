@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,9 +40,28 @@ import org.springframework.xml.validation.XmlValidatorFactory;
 /**
  * @author Oleg Zhurakousky
  * @author Gary Russell
+ * @author Liujiong
  * @since 2.0
  */
 public class XmlValidatingMessageSelector implements MessageSelector {
+
+	public enum SchemaType {
+
+		XML_SCHEMA(XmlValidatorFactory.SCHEMA_W3C_XML),
+
+		RELAX_NG(XmlValidatorFactory.SCHEMA_RELAX_NG);
+
+		private final String url;
+
+		SchemaType(String url) {
+			this.url = url;
+		}
+
+		public String getUrl() {
+			return this.url;
+		}
+
+	}
 
 	private final Log logger = LogFactory.getLog(this.getClass());
 
@@ -58,6 +77,7 @@ public class XmlValidatingMessageSelector implements MessageSelector {
 		this.xmlValidator = xmlValidator;
 	}
 
+
 	/**
 	 * Creates a selector with a default {@link XmlValidator}. The validator will be initialized with
 	 * the provided 'schema' location {@link Resource} and 'schemaType'. The valid options for schema
@@ -69,12 +89,17 @@ public class XmlValidatingMessageSelector implements MessageSelector {
 	 *
 	 * @throws IOException if the XmlValidatorFactory fails to create a validator
 	 */
-	public XmlValidatingMessageSelector(Resource schema, String schemaType) throws IOException {
+	public XmlValidatingMessageSelector(Resource schema, SchemaType schemaType) throws IOException {
 		Assert.notNull(schema, "You must provide XML schema location to perform validation");
-		if (!StringUtils.hasText(schemaType)) {
-			schemaType = XmlValidatorFactory.SCHEMA_W3C_XML;
+		if (schemaType == null) {
+			schemaType = SchemaType.XML_SCHEMA;
 		}
-		this.xmlValidator = XmlValidatorFactory.createValidator(schema, schemaType);
+		this.xmlValidator = XmlValidatorFactory.createValidator(schema, schemaType.getUrl());
+	}
+
+	public XmlValidatingMessageSelector(Resource schema, String schemaType) throws IOException {
+		this(schema, StringUtils.isEmpty(schemaType) ? null :
+				SchemaType.valueOf(schemaType.toUpperCase().replaceFirst("-", "_")));
 	}
 
 
@@ -106,11 +131,9 @@ public class XmlValidatingMessageSelector implements MessageSelector {
 			if (this.throwExceptionOnRejection) {
 				throw new MessageRejectedException(message, "Message was rejected due to XML Validation errors",
 						new AggregatedXmlMessageValidationException(
-								Arrays.<Throwable> asList(validationExceptions)));
+								Arrays.<Throwable>asList(validationExceptions)));
 			}
-			if (logger.isDebugEnabled()) {
-				logger.debug("Message was rejected due to XML Validation errors");
-			}
+			this.logger.debug("Message was rejected due to XML Validation errors");
 		}
 		return validationSuccess;
 	}

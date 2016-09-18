@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2010 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,16 +17,19 @@
 package org.springframework.integration.gateway;
 
 import static org.junit.Assert.assertEquals;
+import static org.mockito.Mockito.mock;
 
 import org.junit.Test;
 
-import org.springframework.messaging.Message;
+import org.springframework.beans.factory.BeanFactory;
 import org.springframework.integration.channel.DirectChannel;
 import org.springframework.integration.handler.AbstractReplyProducingMessageHandler;
 import org.springframework.integration.support.MessageBuilder;
+import org.springframework.messaging.Message;
 
 /**
  * @author Mark Fisher
+ * @author Gary Russell
  */
 public class NestedGatewayTests {
 
@@ -40,8 +43,9 @@ public class NestedGatewayTests {
 				return requestMessage.getPayload() + "-reply";
 			}
 		});
-		final MessagingGatewaySupport innerGateway = new MessagingGatewaySupport() {};
+		final MessagingGatewaySupport innerGateway = new MessagingGatewaySupport() { };
 		innerGateway.setRequestChannel(innerChannel);
+		innerGateway.setBeanFactory(mock(BeanFactory.class));
 		innerGateway.afterPropertiesSet();
 		outerChannel.subscribe(new AbstractReplyProducingMessageHandler() {
 			@Override
@@ -50,8 +54,9 @@ public class NestedGatewayTests {
 						"pre-" + requestMessage.getPayload()).getPayload() + "-post";
 			}
 		});
-		MessagingGatewaySupport outerGateway = new MessagingGatewaySupport() {};
+		MessagingGatewaySupport outerGateway = new MessagingGatewaySupport() { };
 		outerGateway.setRequestChannel(outerChannel);
+		outerGateway.setBeanFactory(mock(BeanFactory.class));
 		outerGateway.afterPropertiesSet();
 		Message<?> reply = outerGateway.sendAndReceiveMessage("test");
 		assertEquals("pre-test-reply-post", reply.getPayload());
@@ -67,8 +72,9 @@ public class NestedGatewayTests {
 				return requestMessage.getPayload() + "-reply";
 			}
 		});
-		MessagingGatewaySupport gateway = new MessagingGatewaySupport() {};
+		MessagingGatewaySupport gateway = new MessagingGatewaySupport() { };
 		gateway.setRequestChannel(requestChannel);
+		gateway.setBeanFactory(mock(BeanFactory.class));
 		gateway.afterPropertiesSet();
 		Message<?> message = MessageBuilder.withPayload("test")
 				.setReplyChannel(replyChannel).build();
@@ -87,8 +93,9 @@ public class NestedGatewayTests {
 				return requestMessage.getPayload() + "-reply";
 			}
 		});
-		MessagingGatewaySupport gateway = new MessagingGatewaySupport() {};
+		MessagingGatewaySupport gateway = new MessagingGatewaySupport() { };
 		gateway.setRequestChannel(requestChannel);
+		gateway.setBeanFactory(mock(BeanFactory.class));
 		gateway.afterPropertiesSet();
 		Message<?> message = MessageBuilder.withPayload("test")
 				.setErrorChannel(errorChannel).build();

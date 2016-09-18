@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,17 +24,19 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Indicates that a method is capable of mapping its parameters to a message
- * or message payload. These method-level annotations are detected by the
- * {@link org.springframework.integration.gateway.GatewayProxyFactoryBean}
+ * Indicates that an interface method is capable of mapping its parameters
+ * to a message or message payload. These method-level annotations are detected
+ * by the {@link org.springframework.integration.gateway.GatewayProxyFactoryBean}
  * where the annotation attributes can override the default channel settings.
  *
  * <p>A method annotated with @Gateway may accept a single non-annotated
  * parameter of type {@link org.springframework.messaging.Message}
  * or of the intended Message payload type. Method parameters may be mapped
- * to individual Message header values by using the {@link Header @Header}
+ * to individual Message header values by using the
+ * {@link org.springframework.messaging.handler.annotation.Header @Header}
  * parameter annotation. Alternatively, to pass the entire Message headers
- * map, a Map-typed parameter may be annotated with {@link Headers}.
+ * map, a Map-typed parameter may be annotated with
+ * {@link org.springframework.messaging.handler.annotation.Headers}.
  *
  * <p>Return values from the annotated method may be of any type. If the
  * declared return value is not a Message, the reply Message's payload will be
@@ -42,26 +44,65 @@ import java.lang.annotation.Target;
  * {@link org.springframework.beans.SimpleTypeConverter} will be applied to
  * the return value if necessary.
  *
+ * <p>Note: unlike @Publisher, this annotation is for exposing a
+ * Messaging Endpoint based on a Proxy for the marked interface method.
+ * The method invocation causes messaging interaction using an
+ * AOP Advice. Method parameters become the part of sent message (payload, headers).
+ * The method return value is the result (payload) of the messaging flow invoked by the
+ * Proxy.
+ *
  * @author Mark Fisher
  * @author Gary Russell
  * @author Artem Bilan
+ *
+ * @see MessagingGateway
  */
-@Target(ElementType.METHOD)
+@Target({ElementType.METHOD, ElementType.ANNOTATION_TYPE})
 @Retention(RetentionPolicy.RUNTIME)
 @Inherited
 @Documented
 public @interface Gateway {
 
+	/**
+	 * Specify the channel to which messages will be sent; overrides the encompassing
+	 * gateway's default request channel.
+	 * @return the channel name.
+	 */
 	String requestChannel() default "";
 
+	/**
+	 * Specify the channel from which reply messages will be received; overrides the
+	 * encompassing gateway's default reply channel.
+	 * @return the channel name.
+	 */
 	String replyChannel() default "";
 
+	/**
+	 * Specify the timeout (ms) when sending to the request channel - only applies if the
+	 * send might block (such as a bounded {@code QueueChannel} that is currently full.
+	 * Overrides the encompassing gatewsy's default request timeout.
+	 * @return the timeout.
+	 */
 	long requestTimeout() default Long.MIN_VALUE;
 
+	/**
+	 * Specify the time (ms) that the thread sending the request will wait for a reply.
+	 * The timer starts when the thread returns to the gateway, not when the request
+	 * message is sent. Overrides the encompassing gateway's default reply timeout.
+	 * @return the timeout.
+	 */
 	long replyTimeout() default Long.MIN_VALUE;
 
+	/**
+	 * Specify a SpEL expression to determine the payload of the request message.
+	 * @return the expression.
+	 */
 	String payloadExpression() default "";
 
+	/**
+	 * Specify additional headers that will be added to the request message.
+	 * @return the headers.
+	 */
 	GatewayHeader[] headers() default {};
 
 }

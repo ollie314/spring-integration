@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,13 +23,13 @@ import org.springframework.messaging.Message;
  *
  * @author Mark Fisher
  */
+@FunctionalInterface
 public interface MessageSource<T> {
 
 	/**
 	 * Retrieve the next available message from this source.
 	 * Returns <code>null</code> if no message is available.
-	 *
-	 * @return The messasge or null.
+	 * @return The message or null.
 	 */
 	Message<T> receive();
 

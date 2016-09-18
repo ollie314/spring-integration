@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2010 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -42,7 +42,7 @@ import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 @ContextConfiguration
 @RunWith(SpringJUnit4ClassRunner.class)
 public class SelectorChainParserTests {
-	
+
 	@Autowired
 	ApplicationContext context;
 
@@ -56,6 +56,7 @@ public class SelectorChainParserTests {
 		assertEquals(selector1, selectors.get(0));
 		assertEquals(selector2, selectors.get(1));
 		assertTrue(chain.accept(new GenericMessage<String>("test")));
+		assertTrue(this.context.containsBean("pojoSelector"));
 	}
 
 	@Test
@@ -103,13 +104,13 @@ public class SelectorChainParserTests {
 	private VotingStrategy getStrategy(MessageSelectorChain chain) {
 		return (VotingStrategy) new DirectFieldAccessor(chain).getPropertyValue("votingStrategy");
 	}
-	
+
 	public static class StubMessageSelector implements MessageSelector {
 		public boolean accept(Message<?> message) {
 			return true;
 		}
 	}
-	
+
 	public static class StubPojoSelector {
 		public boolean accept(Message<?> message) {
 			return true;

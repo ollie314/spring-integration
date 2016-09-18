@@ -1,15 +1,19 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
- * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
- * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
- * specific language governing permissions and limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
+
 package org.springframework.integration.jpa.outbound;
 
 import java.util.List;
@@ -20,13 +24,13 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.messaging.MessagingException;
 import org.springframework.integration.jpa.test.JpaTestUtils;
 import org.springframework.integration.jpa.test.entity.StudentDomain;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.messaging.MessagingException;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
-import org.springframework.test.context.transaction.TransactionConfiguration;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -34,13 +38,12 @@ import org.springframework.transaction.annotation.Transactional;
  * @author Gunnar Hillert
  * @author Artem Bilan
  * @author Amol Nayak
- *
  * @since 2.2
- *
  */
 @RunWith(SpringJUnit4ClassRunner.class)
 @ContextConfiguration
-@TransactionConfiguration(transactionManager="transactionManager", defaultRollback=true)
+@Transactional
+@DirtiesContext
 public class JpaOutboundGatewayTests {
 
 	@Autowired
@@ -83,7 +86,8 @@ public class JpaOutboundGatewayTests {
 
 		try {
 			studentService.deleteStudent(student);
-		} catch (IllegalArgumentException e) {
+		}
+		catch (IllegalArgumentException e) {
 			return;
 		}
 
@@ -94,7 +98,8 @@ public class JpaOutboundGatewayTests {
 	public void getStudentWithException() {
 		try {
 			studentService.getStudentWithException(1001L);
-		} catch (MessagingException e) {
+		}
+		catch (MessagingException e) {
 			Assert.assertEquals("The Jpa operation returned more than 1 result object but expectSingleResult was 'true'.",
 					e.getMessage());
 
@@ -115,11 +120,9 @@ public class JpaOutboundGatewayTests {
 
 	@Test
 	public void getAllStudents() {
-
-		final List<StudentDomain> students = studentService.getAllStudents();
+		List<StudentDomain> students = studentService.getAllStudents();
 		Assert.assertNotNull(students);
 		Assert.assertTrue(students.size() == 3);
-
 	}
 
 	@Test
@@ -165,6 +168,12 @@ public class JpaOutboundGatewayTests {
 		Assert.assertNotNull(persistedStudent);
 		Assert.assertNotNull(persistedStudent.getRollNumber());
 
+	}
+
+	@Test
+	public void testJpaRepositoryAsService() {
+		List<StudentDomain> students = this.studentService.getStudentsUsingJpaRepository("F");
+		Assert.assertEquals(2, students.size());
 	}
 
 }

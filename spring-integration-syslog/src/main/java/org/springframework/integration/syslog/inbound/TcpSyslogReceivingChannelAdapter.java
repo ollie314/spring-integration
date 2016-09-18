@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.syslog.inbound;
 
 
@@ -28,6 +29,7 @@ import org.springframework.messaging.Message;
  * TCP implementation of a syslog inbound channel adapter.
  *
  * @author Gary Russell
+ * @author Artem Bilan
  * @since 3.0
  *
  */
@@ -51,14 +53,21 @@ public class TcpSyslogReceivingChannelAdapter extends SyslogReceivingChannelAdap
 	}
 
 	@Override
+	public String getComponentType() {
+		return "syslog:inbound-channel-adapter(tcp)";
+	}
+
+	@Override
 	protected void onInit() {
 		super.onInit();
 		if (this.connectionFactory == null) {
 			this.connectionFactory = new TcpNioServerConnectionFactory(this.getPort());
 			this.connectionFactory.setDeserializer(new ByteArrayLfSerializer());
+			this.connectionFactory.setBeanFactory(getBeanFactory());
 			if (this.applicationEventPublisher != null) {
 				this.connectionFactory.setApplicationEventPublisher(this.applicationEventPublisher);
 			}
+			this.connectionFactory.afterPropertiesSet();
 		}
 		this.connectionFactory.registerListener(this);
 	}

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2010 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,17 +20,21 @@ import java.io.File;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-
 import org.junit.Before;
 
 /**
  * @author Oleg Zhurakousky
+ * @author Gary Russell
  *
  */
 public class ActiveMqTestUtils {
 
 	private static final Log logger = LogFactory.getLog(ActiveMqTestUtils.class);
 
+
+	private ActiveMqTestUtils() {
+		super();
+	}
 
 	@Before
 	public static void prepare() {
@@ -40,10 +44,10 @@ public class ActiveMqTestUtils {
 	}
 
 	private static void deleteDir(File directory) {
-		if (directory.exists()){
+		if (directory.exists()) {
 			String[] children = directory.list();
-			if (children != null){
-				 for (int i=0; i < children.length; i++) {
+			if (children != null) {
+				 for (int i = 0; i < children.length; i++) {
 			         deleteDir(new File(directory, children[i]));
 			     }
 			}

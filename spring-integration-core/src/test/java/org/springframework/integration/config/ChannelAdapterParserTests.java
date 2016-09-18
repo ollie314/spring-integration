@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -83,7 +83,7 @@ public class ChannelAdapterParserTests {
 		assertTrue(adapter instanceof SourcePollingChannelAdapter);
 		assertEquals(-1, ((SourcePollingChannelAdapter) adapter).getPhase());
 		this.applicationContext.start();
-		Message<?> message = channel.receive(1000);
+		Message<?> message = channel.receive(10000);
 		assertNotNull(message);
 		assertEquals("source test", testBean.getMessage());
 		this.applicationContext.stop();
@@ -101,7 +101,7 @@ public class ChannelAdapterParserTests {
 		assertNotNull(adapter);
 		assertTrue(adapter instanceof SourcePollingChannelAdapter);
 		this.applicationContextInner.start();
-		Message<?> message = channel.receive(1000);
+		Message<?> message = channel.receive(10000);
 		assertNotNull(message);
 		//assertEquals("source test", testBean.getMessage());
 		this.applicationContextInner.stop();
@@ -188,7 +188,7 @@ public class ChannelAdapterParserTests {
 		assertNotNull(adapter);
 		assertTrue(adapter instanceof SourcePollingChannelAdapter);
 		((SourcePollingChannelAdapter) adapter).start();
-		Message<?> message = channel.receive(100);
+		Message<?> message = channel.receive(10000);
 		assertNotNull(message);
 		assertEquals("source test", testBean.getMessage());
 		((SourcePollingChannelAdapter) adapter).stop();
@@ -204,7 +204,7 @@ public class ChannelAdapterParserTests {
 		assertNotNull(adapter);
 		assertTrue(adapter instanceof SourcePollingChannelAdapter);
 		((SourcePollingChannelAdapter) adapter).start();
-		Message<?> message = channel.receive(100);
+		Message<?> message = channel.receive(10000);
 		((SourcePollingChannelAdapter) adapter).stop();
 		assertNotNull(message);
 		assertEquals("source test", testBean.getMessage());
@@ -236,7 +236,7 @@ public class ChannelAdapterParserTests {
 		assertNotNull(adapter);
 		assertTrue(adapter instanceof SourcePollingChannelAdapter);
 		((SourcePollingChannelAdapter) adapter).start();
-		Message<?> message = channel.receive(1000);
+		Message<?> message = channel.receive(10000);
 		assertNotNull(message);
 		assertEquals("source test", testBean.getMessage());
 		((SourcePollingChannelAdapter) adapter).stop();
@@ -279,7 +279,8 @@ public class ChannelAdapterParserTests {
 
 	@Test(expected = BeanDefinitionParsingException.class)
 	public void innerBeanAndExpressionFail() throws Exception {
-		new ClassPathXmlApplicationContext("InboundChannelAdapterInnerBeanWithExpression-fail-context.xml", this.getClass());
+		new ClassPathXmlApplicationContext("InboundChannelAdapterInnerBeanWithExpression-fail-context.xml",
+				this.getClass()).close();
 	}
 
 	@Test
@@ -292,6 +293,7 @@ public class ChannelAdapterParserTests {
 			assertNotNull(message);
 			assertEquals(i + 1, message.getPayload());
 			message = channel2.receive(5000);
+			assertNotNull(message);
 			assertEquals(i + 1, message.getPayload());
 		}
 	}

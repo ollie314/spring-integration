@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -53,14 +53,14 @@ public class RoundRobinLoadBalancingStrategy implements LoadBalancingStrategy {
 		return this.buildHandlerIterator(size, handlers.toArray(new MessageHandler[size]));
 	}
 
-	private Iterator<MessageHandler> buildHandlerIterator(int size, final MessageHandler[] handlers){
+	private Iterator<MessageHandler> buildHandlerIterator(int size, final MessageHandler[] handlers) {
 
 		int nextHandlerStartIndex = getNextHandlerStartIndex(size);
 
 		final MessageHandler[] reorderedHandlers = new MessageHandler[size];
 
-		System.arraycopy(handlers, nextHandlerStartIndex, reorderedHandlers, 0, size-nextHandlerStartIndex);
-		System.arraycopy(handlers, 0, reorderedHandlers, size-nextHandlerStartIndex, 0+nextHandlerStartIndex);
+		System.arraycopy(handlers, nextHandlerStartIndex, reorderedHandlers, 0, size - nextHandlerStartIndex);
+		System.arraycopy(handlers, 0, reorderedHandlers, size - nextHandlerStartIndex, 0 + nextHandlerStartIndex);
 
 		return new Iterator<MessageHandler>() {
 			int currentIndex = 0;
@@ -85,8 +85,8 @@ public class RoundRobinLoadBalancingStrategy implements LoadBalancingStrategy {
 	 * <code>size</code>.
 	 */
 	private int getNextHandlerStartIndex(int size) {
-		if (size > 0){
-			int indexTail = currentHandlerIndex.getAndIncrement() % size;
+		if (size > 0) {
+			int indexTail = this.currentHandlerIndex.getAndIncrement() % size;
 			return indexTail < 0 ? indexTail + size : indexTail;
 		}
 		else {

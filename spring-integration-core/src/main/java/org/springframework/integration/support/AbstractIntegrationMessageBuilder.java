@@ -1,5 +1,5 @@
 /*
- * Copyright 2014 the original author or authors.
+ * Copyright 2014-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.support;
 
 import java.util.ArrayList;
@@ -34,6 +35,10 @@ import org.springframework.util.Assert;
  *
  */
 public abstract class AbstractIntegrationMessageBuilder<T> {
+
+	public abstract T getPayload();
+
+	public abstract Map<String, Object> getHeaders();
 
 	/**
 	 * Set the value for the given header name. If the provided value is <code>null</code>, the header will be removed.

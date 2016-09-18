@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,10 +24,11 @@ import java.util.Map;
 
 import org.springframework.amqp.core.MessageDeliveryMode;
 import org.springframework.amqp.core.MessageProperties;
+import org.springframework.amqp.support.AmqpHeaders;
 import org.springframework.integration.IntegrationMessageHeaderAccessor;
-import org.springframework.integration.amqp.AmqpHeaders;
 import org.springframework.integration.mapping.AbstractHeaderMapper;
 import org.springframework.integration.mapping.support.JsonHeaders;
+import org.springframework.util.MimeType;
 import org.springframework.util.StringUtils;
 
 /**
@@ -48,6 +49,7 @@ import org.springframework.util.StringUtils;
  * @author Oleg Zhurakousky
  * @author Gary Russell
  * @author Artem Bilan
+ * @author Stephane Nicoll
  * @since 2.1
  */
 public class DefaultAmqpHeaderMapper extends AbstractHeaderMapper<MessageProperties> implements AmqpHeaderMapper {
@@ -61,11 +63,14 @@ public class DefaultAmqpHeaderMapper extends AbstractHeaderMapper<MessagePropert
 		STANDARD_HEADER_NAMES.add(AmqpHeaders.CONTENT_LENGTH);
 		STANDARD_HEADER_NAMES.add(AmqpHeaders.CONTENT_TYPE);
 		STANDARD_HEADER_NAMES.add(AmqpHeaders.CORRELATION_ID);
+		STANDARD_HEADER_NAMES.add(AmqpHeaders.DELAY);
 		STANDARD_HEADER_NAMES.add(AmqpHeaders.DELIVERY_MODE);
 		STANDARD_HEADER_NAMES.add(AmqpHeaders.DELIVERY_TAG);
 		STANDARD_HEADER_NAMES.add(AmqpHeaders.EXPIRATION);
 		STANDARD_HEADER_NAMES.add(AmqpHeaders.MESSAGE_COUNT);
 		STANDARD_HEADER_NAMES.add(AmqpHeaders.MESSAGE_ID);
+		STANDARD_HEADER_NAMES.add(AmqpHeaders.RECEIVED_DELAY);
+		STANDARD_HEADER_NAMES.add(AmqpHeaders.RECEIVED_DELIVERY_MODE);
 		STANDARD_HEADER_NAMES.add(AmqpHeaders.RECEIVED_EXCHANGE);
 		STANDARD_HEADER_NAMES.add(AmqpHeaders.RECEIVED_ROUTING_KEY);
 		STANDARD_HEADER_NAMES.add(AmqpHeaders.REDELIVERED);
@@ -78,6 +83,16 @@ public class DefaultAmqpHeaderMapper extends AbstractHeaderMapper<MessagePropert
 		STANDARD_HEADER_NAMES.add(JsonHeaders.KEY_TYPE_ID);
 		STANDARD_HEADER_NAMES.add(AmqpHeaders.SPRING_REPLY_CORRELATION);
 		STANDARD_HEADER_NAMES.add(AmqpHeaders.SPRING_REPLY_TO_STACK);
+	}
+
+	protected DefaultAmqpHeaderMapper(String[] requestHeaderNames, String[] replyHeaderNames) {
+		super(AmqpHeaders.PREFIX, STANDARD_HEADER_NAMES, STANDARD_HEADER_NAMES);
+		if (requestHeaderNames != null) {
+			setRequestHeaderNames(requestHeaderNames);
+		}
+		if (replyHeaderNames != null) {
+			setReplyHeaderNames(replyHeaderNames);
+		}
 	}
 
 	/**
@@ -111,9 +126,9 @@ public class DefaultAmqpHeaderMapper extends AbstractHeaderMapper<MessagePropert
 			if (correlationId != null && correlationId.length > 0) {
 				headers.put(AmqpHeaders.CORRELATION_ID, correlationId);
 			}
-			MessageDeliveryMode deliveryMode = amqpMessageProperties.getDeliveryMode();
-			if (deliveryMode != null) {
-				headers.put(AmqpHeaders.DELIVERY_MODE, deliveryMode);
+			MessageDeliveryMode receivedDeliveryMode = amqpMessageProperties.getReceivedDeliveryMode();
+			if (receivedDeliveryMode != null) {
+				headers.put(AmqpHeaders.RECEIVED_DELIVERY_MODE, receivedDeliveryMode);
 			}
 			long deliveryTag = amqpMessageProperties.getDeliveryTag();
 			if (deliveryTag > 0) {
@@ -134,6 +149,10 @@ public class DefaultAmqpHeaderMapper extends AbstractHeaderMapper<MessagePropert
 			Integer priority = amqpMessageProperties.getPriority();
 			if (priority != null && priority > 0) {
 				headers.put(IntegrationMessageHeaderAccessor.PRIORITY, priority);
+			}
+			Integer receivedDelay = amqpMessageProperties.getReceivedDelay();
+			if (receivedDelay != null) {
+				headers.put(AmqpHeaders.RECEIVED_DELAY, receivedDelay);
 			}
 			String receivedExchange = amqpMessageProperties.getReceivedExchange();
 			if (StringUtils.hasText(receivedExchange)) {
@@ -159,9 +178,9 @@ public class DefaultAmqpHeaderMapper extends AbstractHeaderMapper<MessagePropert
 			if (StringUtils.hasText(type)) {
 				headers.put(AmqpHeaders.TYPE, type);
 			}
-			String userId = amqpMessageProperties.getUserId();
+			String userId = amqpMessageProperties.getReceivedUserId();
 			if (StringUtils.hasText(userId)) {
-				headers.put(AmqpHeaders.USER_ID, userId);
+				headers.put(AmqpHeaders.RECEIVED_USER_ID, userId);
 			}
 
 			for (String jsonHeader : JsonHeaders.HEADERS) {
@@ -171,20 +190,6 @@ public class DefaultAmqpHeaderMapper extends AbstractHeaderMapper<MessagePropert
 				}
 			}
 
-			@SuppressWarnings("deprecation")
-			Object replyCorrelation = amqpMessageProperties.getHeaders().get(AmqpHeaders.STACKED_CORRELATION_HEADER);
-			if (replyCorrelation instanceof String) {
-				if (StringUtils.hasText((String) replyCorrelation)) {
-					headers.put(AmqpHeaders.SPRING_REPLY_CORRELATION, replyCorrelation);
-				}
-			}
-			@SuppressWarnings("deprecation")
-			Object replyToStack = amqpMessageProperties.getHeaders().get(AmqpHeaders.STACKED_REPLY_TO_HEADER);
-			if (replyToStack instanceof String) {
-				if (StringUtils.hasText((String) replyToStack)) {
-					headers.put(AmqpHeaders.SPRING_REPLY_TO_STACK, replyToStack);
-				}
-			}
 		}
 		catch (Exception e) {
 			if (logger.isWarnEnabled()) {
@@ -197,14 +202,9 @@ public class DefaultAmqpHeaderMapper extends AbstractHeaderMapper<MessagePropert
 	/**
 	 * Extract user-defined headers from an AMQP MessageProperties instance.
 	 */
-	@SuppressWarnings("deprecation")
 	@Override
 	protected Map<String, Object> extractUserDefinedHeaders(MessageProperties amqpMessageProperties) {
-		Map<String, Object> headers = amqpMessageProperties.getHeaders();
-		headers.remove(AmqpHeaders.STACKED_CORRELATION_HEADER);
-		headers.remove(AmqpHeaders.STACKED_REPLY_TO_HEADER);
-
-		return headers;
+		return amqpMessageProperties.getHeaders();
 	}
 
 	/**
@@ -237,6 +237,10 @@ public class DefaultAmqpHeaderMapper extends AbstractHeaderMapper<MessagePropert
 		Object correlationId = headers.get(AmqpHeaders.CORRELATION_ID);
 		if (correlationId instanceof byte[]) {
 			amqpMessageProperties.setCorrelationId((byte[]) correlationId);
+		}
+		Integer delay = getHeaderIfAvailable(headers, AmqpHeaders.DELAY, Integer.class);
+		if (delay != null) {
+			amqpMessageProperties.setDelay(delay);
 		}
 		MessageDeliveryMode deliveryMode = getHeaderIfAvailable(headers, AmqpHeaders.DELIVERY_MODE, MessageDeliveryMode.class);
 		if (deliveryMode != null) {
@@ -331,39 +335,20 @@ public class DefaultAmqpHeaderMapper extends AbstractHeaderMapper<MessagePropert
 		}
 	}
 
-
-	@Override
-	protected List<String> getStandardRequestHeaderNames() {
-		return STANDARD_HEADER_NAMES;
-	}
-
-
-	@Override
-	protected List<String> getStandardReplyHeaderNames() {
-		return STANDARD_HEADER_NAMES;
-	}
-
-
-	@Override
-	protected String getStandardHeaderPrefix() {
-		return AmqpHeaders.PREFIX;
-	}
-
 	/**
 	 * Will extract Content-Type from MessageHeaders and convert it to String if possible
-	 * Required since Content-Type can be represented as org.springframework.http.MediaType
-	 * see INT-2713 for more details
+	 * Required since Content-Type can be represented as org.springframework.util.MimeType.
 	 *
 	 */
-	private String extractContentTypeAsString(Map<String, Object> headers){
+	private String extractContentTypeAsString(Map<String, Object> headers) {
 		String contentTypeStringValue = null;
 
 		Object contentType = getHeaderIfAvailable(headers, AmqpHeaders.CONTENT_TYPE, Object.class);
 
-		if (contentType != null){
+		if (contentType != null) {
 			String contentTypeClassName = contentType.getClass().getName();
 
-			if (contentTypeClassName.equals("org.springframework.http.MediaType")){ // see INT-2713
+			if (contentType instanceof MimeType) {
 				contentTypeStringValue = contentType.toString();
 			}
 			else if (contentType instanceof String) {
@@ -377,6 +362,82 @@ public class DefaultAmqpHeaderMapper extends AbstractHeaderMapper<MessagePropert
 			}
 		}
 		return contentTypeStringValue;
+	}
+
+	@Override
+	public Map<String, Object> toHeadersFromRequest(MessageProperties source) {
+		Map<String, Object> headersFromRequest = super.toHeadersFromRequest(source);
+		addConsumerMetadata(source, headersFromRequest);
+		return headersFromRequest;
+	}
+
+	private void addConsumerMetadata(MessageProperties messageProperties, Map<String, Object> headers) {
+		String consumerTag = messageProperties.getConsumerTag();
+		if (consumerTag != null) {
+			headers.put(AmqpHeaders.CONSUMER_TAG, consumerTag);
+		}
+		String consumerQueue = messageProperties.getConsumerQueue();
+		if (consumerQueue != null) {
+			headers.put(AmqpHeaders.CONSUMER_QUEUE, consumerQueue);
+		}
+	}
+
+	/**
+	 * Construct a default inbound header mapper.
+	 * @return the mapper.
+	 * @see #inboundRequestHeaders()
+	 * @see #inboundReplyHeaders()
+	 * @since 4.3
+	 */
+	public static DefaultAmqpHeaderMapper inboundMapper() {
+		return new DefaultAmqpHeaderMapper(inboundRequestHeaders(), inboundReplyHeaders());
+	}
+
+	/**
+	 * Construct a default outbound header mapper.
+	 * @return the mapper.
+	 * @see #outboundRequestHeaders()
+	 * @see #outboundReplyHeaders()
+	 * @since 4.3
+	 */
+	public static DefaultAmqpHeaderMapper outboundMapper() {
+		return new DefaultAmqpHeaderMapper(outboundRequestHeaders(), outboundReplyHeaders());
+	}
+
+	/**
+	 * @return the default request headers for an inbound mapper.
+	 * @since 4.3
+	 */
+	public static String[] inboundRequestHeaders() {
+		return new String[] { "*" };
+	}
+
+	/**
+	 * @return the default reply headers for an inbound mapper.
+	 * @since 4.3
+	 */
+	public static String[] inboundReplyHeaders() {
+		return safeOutboundHeaders();
+	}
+
+	/**
+	 * @return the default request headers for an outbound mapper.
+	 * @since 4.3
+	 */
+	public static String[] outboundRequestHeaders() {
+		return safeOutboundHeaders();
+	}
+
+	/**
+	 * @return the default reply headers for an outbound mapper.
+	 * @since 4.3
+	 */
+	public static String[] outboundReplyHeaders() {
+		return new String[] { "*" };
+	}
+
+	private static String[] safeOutboundHeaders() {
+		return new String[] { "!x-*", "*" };
 	}
 
 }

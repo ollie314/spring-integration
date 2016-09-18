@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2007 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,16 +13,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.xml.transformer.jaxbmarshaling;
 
 import javax.xml.bind.annotation.XmlElement;
 import javax.xml.bind.annotation.XmlRootElement;
 import javax.xml.bind.annotation.XmlType;
 
-@XmlType @XmlRootElement(name="person")
+@XmlType @XmlRootElement(name = "person")
 public class JaxbAnnotatedPerson {
-	
-	@XmlElement(name="firstname")
+
+	@XmlElement(name = "firstname")
 	public String getFirstName() {
 		return firstName;
 	}
@@ -31,9 +32,9 @@ public class JaxbAnnotatedPerson {
 		this.firstName = firstName;
 	}
 
-	
+
 	private String firstName;
-	
-	
+
+
 
 }

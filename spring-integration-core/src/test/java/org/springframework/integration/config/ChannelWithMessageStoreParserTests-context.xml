@@ -10,7 +10,7 @@
 	<context:property-placeholder location="classpath:org/springframework/integration/config/ms.properties"/>
 
 	<channel id="output">
-		<queue capacity="5" message-store="${ms}" />
+		<queue message-store="${ms}" />
 	</channel>
 
 	<channel id="input" />
@@ -22,5 +22,11 @@
 	<beans:bean id="bean" class="org.springframework.integration.config.TestHandler">
 		<beans:property name="replyMessageText" value="hello"/>
 	</beans:bean>
+
+	<channel id="priority">
+		<priority-queue message-store="priorityMessageStore" />
+	</channel>
+
+	<beans:bean id="priorityMessageStore" class="org.springframework.integration.config.ChannelWithMessageStoreParserTests$DummyPriorityMS" />
 
 </beans:beans>

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.mqtt;
 
 import static org.junit.Assume.assumeNoException;
@@ -23,7 +24,7 @@ import java.util.Map;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.eclipse.paho.client.mqttv3.MqttClient;
+import org.eclipse.paho.client.mqttv3.IMqttClient;
 import org.eclipse.paho.client.mqttv3.MqttException;
 import org.junit.rules.TestWatcher;
 import org.junit.runner.Description;
@@ -41,7 +42,7 @@ public class BrokerRunning extends TestWatcher {
 	private static Log logger = LogFactory.getLog(BrokerRunning.class);
 
 	// Static so that we only test once on failure: speeds up test suite
-	private static Map<Integer,Boolean> brokerOnline = new HashMap<Integer, Boolean>();
+	private static Map<Integer, Boolean> brokerOnline = new HashMap<Integer, Boolean>();
 
 	private final int port;
 
@@ -54,7 +55,7 @@ public class BrokerRunning extends TestWatcher {
 	public Statement apply(Statement base, Description description) {
 		assumeTrue(brokerOnline.get(port));
 		String url = "tcp://localhost:" + port;
-		MqttClient client = null;
+		IMqttClient client = null;
 		try {
 			client = new DefaultMqttPahoClientFactory().getClientInstance(url, "junit-" + System.currentTimeMillis());
 			client.connect();
@@ -66,6 +67,7 @@ public class BrokerRunning extends TestWatcher {
 		finally {
 			if (client != null) {
 				try {
+					client.disconnect();
 					client.close();
 				}
 				catch (MqttException e) {

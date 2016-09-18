@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,34 +19,44 @@ package org.springframework.integration.config.xml;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 
 import java.util.Date;
+import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
+import org.springframework.beans.DirectFieldAccessor;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.ApplicationContext;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
 import org.springframework.integration.channel.DefaultHeaderChannelRegistry;
 import org.springframework.integration.channel.DirectChannel;
+import org.springframework.integration.core.MessagingTemplate;
 import org.springframework.integration.support.MessageBuilder;
+import org.springframework.integration.test.util.TestUtils;
 import org.springframework.jmx.export.annotation.ManagedOperation;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.PollableChannel;
-import org.springframework.integration.core.MessagingTemplate;
 import org.springframework.messaging.support.GenericMessage;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 
 /**
  * @author Dave Syer
  * @author Gunnar Hillert
+ * @author Gary Russell
+ * @author Artem Bilan
  * @since 2.0
  */
 @ContextConfiguration
 @RunWith(SpringJUnit4ClassRunner.class)
+@DirtiesContext
 public class ControlBusTests {
 
 	@Autowired
@@ -58,6 +68,9 @@ public class ControlBusTests {
 	@Autowired
 	private DefaultHeaderChannelRegistry registry;
 
+	@Autowired
+	private Service service;
+
 	@Test
 	public void testDefaultEvaluationContext() {
 		Message<?> message = MessageBuilder.withPayload("@service.convert('aardvark')+headers.foo").setHeader("foo", "bar").build();
@@ -67,14 +80,23 @@ public class ControlBusTests {
 	}
 
 	@Test
+	public void testvoidOperation() throws Exception {
+		Message<?> message = MessageBuilder.withPayload("@service.voidOp('foo')").build();
+		this.input.send(message);
+		assertTrue(this.service.latch.await(10, TimeUnit.SECONDS));
+	}
+
+	@Test
 	public void testLifecycleMethods() {
-		ApplicationContext context = new ClassPathXmlApplicationContext("ControlBusLifecycleTests-context.xml", this.getClass());
+		ConfigurableApplicationContext context = new ClassPathXmlApplicationContext(
+				"ControlBusLifecycleTests-context.xml", this.getClass());
 		MessageChannel inputChannel = context.getBean("inputChannel", MessageChannel.class);
 		PollableChannel outputChannel = context.getBean("outputChannel", PollableChannel.class);
 		assertNull(outputChannel.receive(1000));
 		Message<?> message = MessageBuilder.withPayload("@adapter.start()").build();
 		inputChannel.send(message);
 		assertNotNull(outputChannel.receive(1000));
+		context.close();
 	}
 
 	@Test
@@ -83,27 +105,59 @@ public class ControlBusTests {
 		messagingTemplate.convertAndSend(input, "@integrationHeaderChannelRegistry.size()");
 		Message<?> result = this.output.receive(0);
 		assertNotNull(result);
+		// No channels in the registry
 		assertEquals(0, result.getPayload());
-		this.registry.setReaperDelay(10);
 		this.registry.channelToChannelName(new DirectChannel());
+		// Sleep a bit to be sure that we aren't reaped by registry TTL as 60000
+		Thread.sleep(100);
 		messagingTemplate.convertAndSend(input, "@integrationHeaderChannelRegistry.size()");
 		result = this.output.receive(0);
 		assertNotNull(result);
 		assertEquals(1, result.getPayload());
-		Thread.sleep(100);
+		// Some DirectFieldAccessor magic to modify 'expireAt' to the past to avoid timing issues on high-loaded build
+		Object messageChannelWrapper =
+				TestUtils.getPropertyValue(this.registry, "channels", Map.class).values().iterator().next();
+		DirectFieldAccessor dfa = new DirectFieldAccessor(messageChannelWrapper);
+		dfa.setPropertyValue("expireAt", System.currentTimeMillis() - 60000);
 		messagingTemplate.convertAndSend(input, "@integrationHeaderChannelRegistry.runReaper()");
 		messagingTemplate.convertAndSend(input, "@integrationHeaderChannelRegistry.size()");
 		result = this.output.receive(0);
 		assertNotNull(result);
 		assertEquals(0, result.getPayload());
-		this.registry.setReaperDelay(60000);
+	}
+
+	@Test
+	public void testRouterMappings() {
+		MessagingTemplate messagingTemplate = new MessagingTemplate();
+		messagingTemplate.setReceiveTimeout(1000);
+		messagingTemplate.convertAndSend(input, "@'router.handler'.getChannelMappings()");
+		Message<?> result = this.output.receive(0);
+		assertNotNull(result);
+		Map<?, ?> mappings = (Map<?, ?>) result.getPayload();
+		assertEquals("bar", mappings.get("foo"));
+		assertEquals("qux", mappings.get("baz"));
+		messagingTemplate.convertAndSend(input,
+				"@'router.handler'.replaceChannelMappings('foo=qux \n baz=bar')");
+		messagingTemplate.convertAndSend(input, "@'router.handler'.getChannelMappings()");
+		result = this.output.receive(0);
+		assertNotNull(result);
+		mappings = (Map<?, ?>) result.getPayload();
+		assertEquals("bar", mappings.get("baz"));
+		assertEquals("qux", mappings.get("foo"));
 	}
 
 	public static class Service {
 
+		private final CountDownLatch latch = new CountDownLatch(1);
+
 		@ManagedOperation
 		public String convert(String input) {
 			return "cat";
+		}
+
+		@ManagedOperation
+		public void voidOp(String input) {
+			latch.countDown();
 		}
 
 	}

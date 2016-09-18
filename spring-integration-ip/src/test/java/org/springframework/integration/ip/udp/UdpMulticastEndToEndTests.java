@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,15 +21,18 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.util.Date;
+import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
-import org.junit.Ignore;
+import org.junit.Rule;
 import org.junit.Test;
 
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.support.AbstractApplicationContext;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
+import org.springframework.core.env.PropertiesPropertySource;
+import org.springframework.core.env.StandardEnvironment;
 import org.springframework.integration.channel.QueueChannel;
 import org.springframework.integration.support.channel.BeanFactoryChannelResolver;
 import org.springframework.messaging.Message;
@@ -48,11 +51,13 @@ import org.springframework.messaging.support.GenericMessage;
  * received in the other context (and written back to the console).
  *
  * @author Gary Russell
+ * @author Artem Bilan
  * @since 2.0
  */
 public class UdpMulticastEndToEndTests implements Runnable {
 
-	private String testingIpText;
+	@Rule
+	public MulticastRule multicastRule = new MulticastRule();
 
 	private Message<byte[]> finalMessage;
 
@@ -66,22 +71,44 @@ public class UdpMulticastEndToEndTests implements Runnable {
 
 	private final CountDownLatch readyToReceive = new CountDownLatch(1);
 
+	private volatile int receiverPort;
+
 	private static long hangAroundFor = 0;
 
 
 	@Test
-	@Ignore
 	public void runIt() throws Exception {
+		String location = "org/springframework/integration/ip/udp/testIp-out-multicast-context.xml";
+		test(location);
+	}
+
+	private void test(String location) throws Exception {
 		UdpMulticastEndToEndTests launcher = new UdpMulticastEndToEndTests();
 		Thread t = new Thread(launcher);
 		t.start(); // launch the receiver
-		AbstractApplicationContext applicationContext = new ClassPathXmlApplicationContext(
-				"testIp-out-multicast-context.xml",
-				UdpMulticastEndToEndTests.class);
+		int n = 0;
+		while (n++ < 100 && launcher.getReceiverPort() == 0) {
+			Thread.sleep(100);
+		}
+		assertTrue("Receiver failed to listen", n < 100);
+
+		ClassPathXmlApplicationContext applicationContext = createContext(launcher, location);
 		launcher.launchSender(applicationContext);
-		applicationContext.stop();
+		applicationContext.close();
 	}
 
+	private ClassPathXmlApplicationContext createContext(UdpMulticastEndToEndTests launcher, String location) {
+		ClassPathXmlApplicationContext applicationContext = new ClassPathXmlApplicationContext();
+		applicationContext.setConfigLocation(location);
+		StandardEnvironment env = new StandardEnvironment();
+		Properties props = new Properties();
+		props.setProperty("port", Integer.toString(launcher.getReceiverPort()));
+		PropertiesPropertySource pps = new PropertiesPropertySource("ftpprops", props);
+		env.getPropertySources().addLast(pps);
+		applicationContext.setEnvironment(env);
+		applicationContext.refresh();
+		return applicationContext;
+	}
 
 	public void launchSender(ApplicationContext applicationContext) throws Exception {
 		DestinationResolver<MessageChannel> channelResolver = new BeanFactoryChannelResolver(applicationContext);
@@ -89,6 +116,7 @@ public class UdpMulticastEndToEndTests implements Runnable {
 		if (!readyToReceive.await(30, TimeUnit.SECONDS)) {
 			fail("Receiver failed to start in 30s");
 		}
+		String testingIpText;
 		try {
 			testingIpText = ">>>>>>> Testing IP (multicast) " + new Date();
 			inputChannel.send(new GenericMessage<String>(testingIpText));
@@ -99,7 +127,8 @@ public class UdpMulticastEndToEndTests implements Runnable {
 			catch (InterruptedException e) {
 				e.printStackTrace();
 			}
-		} catch (MessagingException e) {
+		}
+		catch (MessagingException e) {
 			// no multicast this host
 			e.printStackTrace();
 			return;
@@ -118,6 +147,9 @@ public class UdpMulticastEndToEndTests implements Runnable {
 		assertEquals(testingIpText, new String(finalMessage.getPayload()));
 	}
 
+	public int getReceiverPort() {
+		return receiverPort;
+	}
 
 	/**
 	 * Instantiate the receiving context
@@ -125,9 +157,28 @@ public class UdpMulticastEndToEndTests implements Runnable {
 	@Override
 	@SuppressWarnings("unchecked")
 	public void run() {
+		@SuppressWarnings("resource")
 		AbstractApplicationContext ctx = new ClassPathXmlApplicationContext(
 				"testIp-in-multicast-context.xml",
 				UdpMulticastEndToEndTests.class);
+		MulticastReceivingChannelAdapter inbound = ctx.getBean(MulticastReceivingChannelAdapter.class);
+		int n = 0;
+		try {
+			while (!inbound.isListening()) {
+				Thread.sleep(100);
+				if (n++ > 100) {
+					throw new RuntimeException("Failed to start listening");
+				}
+			}
+		}
+		catch (RuntimeException e) {
+			throw e;
+		}
+		catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new RuntimeException("interrupted");
+		}
+		this.receiverPort = inbound.getPort();
 		while (okToRun) {
 			try {
 				readyToReceive.countDown();
@@ -146,7 +197,6 @@ public class UdpMulticastEndToEndTests implements Runnable {
 				e.printStackTrace();
 			}
 		}
-		ctx.stop();
 		ctx.close();
 	}
 

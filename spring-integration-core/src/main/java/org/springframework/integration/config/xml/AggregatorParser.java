@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,17 +16,17 @@
 
 package org.springframework.integration.config.xml;
 
+import org.w3c.dom.Element;
+
 import org.springframework.beans.BeanMetadataElement;
 import org.springframework.beans.factory.config.RuntimeBeanReference;
 import org.springframework.beans.factory.parsing.BeanComponentDefinition;
 import org.springframework.beans.factory.support.BeanDefinitionBuilder;
 import org.springframework.beans.factory.xml.ParserContext;
-import org.springframework.integration.aggregator.AggregatingMessageHandler;
 import org.springframework.integration.aggregator.DefaultAggregatingMessageGroupProcessor;
 import org.springframework.integration.aggregator.ExpressionEvaluatingMessageGroupProcessor;
-import org.springframework.integration.aggregator.MethodInvokingMessageGroupProcessor;
+import org.springframework.integration.config.AggregatorFactoryBean;
 import org.springframework.util.StringUtils;
-import org.w3c.dom.Element;
 
 /**
  * Parser for the <em>aggregator</em> element of the integration namespace. Registers the annotation-driven
@@ -37,6 +37,7 @@ import org.w3c.dom.Element;
  * @author Oleg Zhurakousky
  * @author Dave Syer
  * @author Stefan Ferstl
+ * @author Gary Russell
  */
 public class AggregatorParser extends AbstractCorrelatingMessageHandlerParser {
 
@@ -47,40 +48,35 @@ public class AggregatorParser extends AbstractCorrelatingMessageHandlerParser {
 		BeanComponentDefinition innerHandlerDefinition = IntegrationNamespaceUtils.parseInnerHandlerDefinition(element,
 				parserContext);
 		String ref = element.getAttribute(REF_ATTRIBUTE);
-		BeanDefinitionBuilder builder;
-
-		builder = BeanDefinitionBuilder.genericBeanDefinition(AggregatingMessageHandler.class);
-		BeanDefinitionBuilder processorBuilder = null;
+		BeanDefinitionBuilder builder = BeanDefinitionBuilder.genericBeanDefinition(AggregatorFactoryBean.class);
 		BeanMetadataElement processor = null;
 
 		if (innerHandlerDefinition != null || StringUtils.hasText(ref)) {
-			processorBuilder = BeanDefinitionBuilder.genericBeanDefinition(MethodInvokingMessageGroupProcessor.class);
-			builder.addConstructorArgValue(processorBuilder.getBeanDefinition());
 			if (innerHandlerDefinition != null) {
 				processor = innerHandlerDefinition;
 			}
 			else {
 				processor = new RuntimeBeanReference(ref);
 			}
-			processorBuilder.addConstructorArgValue(processor);
+			builder.addPropertyValue("processorBean", processor);
 		}
 		else {
 			if (StringUtils.hasText(element.getAttribute(EXPRESSION_ATTRIBUTE))) {
 				String expression = element.getAttribute(EXPRESSION_ATTRIBUTE);
-				BeanDefinitionBuilder adapterBuilder = BeanDefinitionBuilder.genericBeanDefinition(ExpressionEvaluatingMessageGroupProcessor.class);
+				BeanDefinitionBuilder adapterBuilder = BeanDefinitionBuilder
+						.genericBeanDefinition(ExpressionEvaluatingMessageGroupProcessor.class);
 				adapterBuilder.addConstructorArgValue(expression);
-				builder.addConstructorArgValue(adapterBuilder.getBeanDefinition());
+				builder.addPropertyValue("processorBean", adapterBuilder.getBeanDefinition());
 			}
 			else {
-				builder.addConstructorArgValue(BeanDefinitionBuilder.genericBeanDefinition(DefaultAggregatingMessageGroupProcessor.class)
-						.getBeanDefinition());
+				builder.addPropertyValue("processorBean", BeanDefinitionBuilder
+						.genericBeanDefinition(DefaultAggregatingMessageGroupProcessor.class).getBeanDefinition());
 			}
 		}
 
 		if (StringUtils.hasText(element.getAttribute(METHOD_ATTRIBUTE))) {
 			String method = element.getAttribute(METHOD_ATTRIBUTE);
-			processorBuilder.getRawBeanDefinition().getConstructorArgumentValues().addGenericArgumentValue(method,
-					"java.lang.String");
+			builder.addPropertyValue("methodName", method);
 		}
 
 		this.doParse(builder, element, processor, parserContext);

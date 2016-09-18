@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,12 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.mongodb.store;
+
+import com.mongodb.MongoClient;
 
 import org.springframework.data.mongodb.core.SimpleMongoDbFactory;
 import org.springframework.integration.store.MessageStore;
 
-import com.mongodb.Mongo;
 /**
  * @author Mark Fisher
  * @author Oleg Zhurakousky
@@ -29,7 +31,9 @@ public class MongoDbMessageStoreTests extends AbstractMongoDbMessageStoreTests {
 
 	@Override
 	protected MessageStore getMessageStore() throws Exception {
-		return new MongoDbMessageStore(new SimpleMongoDbFactory(new Mongo(), "test"));
+		MongoDbMessageStore mongoDbMessageStore = new MongoDbMessageStore(new SimpleMongoDbFactory(new MongoClient(), "test"));
+		mongoDbMessageStore.afterPropertiesSet();
+		return mongoDbMessageStore;
 	}
 
 }

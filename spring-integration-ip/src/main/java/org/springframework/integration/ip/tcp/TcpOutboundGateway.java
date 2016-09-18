@@ -1,5 +1,5 @@
 /*
- * Copyright 2001-2014 the original author or authors.
+ * Copyright 2001-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,13 +22,21 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.Lifecycle;
 import org.springframework.context.SmartLifecycle;
+import org.springframework.expression.EvaluationContext;
+import org.springframework.expression.Expression;
+import org.springframework.expression.common.LiteralExpression;
+import org.springframework.expression.spel.support.StandardEvaluationContext;
 import org.springframework.integration.MessageTimeoutException;
+import org.springframework.integration.expression.ExpressionUtils;
 import org.springframework.integration.handler.AbstractReplyProducingMessageHandler;
 import org.springframework.integration.ip.IpHeaders;
 import org.springframework.integration.ip.tcp.connection.AbstractClientConnectionFactory;
 import org.springframework.integration.ip.tcp.connection.AbstractConnectionFactory;
 import org.springframework.integration.ip.tcp.connection.TcpConnection;
+import org.springframework.integration.ip.tcp.connection.TcpConnectionFailedCorrelationEvent;
 import org.springframework.integration.ip.tcp.connection.TcpListener;
 import org.springframework.integration.ip.tcp.connection.TcpSender;
 import org.springframework.messaging.Message;
@@ -50,23 +58,22 @@ import org.springframework.util.Assert;
  * @author Gary Russell
  * @since 2.0
  */
-public class TcpOutboundGateway extends AbstractReplyProducingMessageHandler implements TcpSender, TcpListener, SmartLifecycle {
+public class TcpOutboundGateway extends AbstractReplyProducingMessageHandler
+		implements TcpSender, TcpListener, Lifecycle {
 
 	private volatile AbstractClientConnectionFactory connectionFactory;
+
+	private volatile boolean isSingleUse;
 
 	private final Map<String, AsyncReply> pendingReplies = new ConcurrentHashMap<String, AsyncReply>();
 
 	private final Semaphore semaphore = new Semaphore(1, true);
 
-	private volatile long remoteTimeout = 10000L;
-
-	private volatile boolean remoteTimeoutSet = false;
+	private volatile Expression remoteTimeoutExpression = new LiteralExpression("10000");
 
 	private volatile long requestTimeout = 10000;
 
-	private volatile boolean autoStartup = true;
-
-	private volatile int phase;
+	private volatile EvaluationContext evaluationContext = new StandardEvaluationContext();
 
 	/**
 	 * @param requestTimeout the requestTimeout to set
@@ -79,32 +86,38 @@ public class TcpOutboundGateway extends AbstractReplyProducingMessageHandler imp
 	 * @param remoteTimeout the remoteTimeout to set
 	 */
 	public void setRemoteTimeout(long remoteTimeout) {
-		this.remoteTimeout = remoteTimeout;
-		this.remoteTimeoutSet = true;
+		this.remoteTimeoutExpression = new LiteralExpression("" + remoteTimeout);
+	}
+
+	/**
+	 * @param remoteTimeoutExpression the remoteTimeoutExpression to set
+	 */
+	public void setRemoteTimeoutExpression(Expression remoteTimeoutExpression) {
+		this.remoteTimeoutExpression = remoteTimeoutExpression;
+	}
+
+	public void setIntegrationEvaluationContext(EvaluationContext evaluationContext) {
+		this.evaluationContext = evaluationContext;
 	}
 
 	@Override
-	public void setSendTimeout(long sendTimeout) {
-		super.setSendTimeout(sendTimeout);
-		/*
-		 * For backwards compatibility, also set the remote
-		 * timeout to this value, unless it has been
-		 * explicitly set.
-		 */
-		if (!this.remoteTimeoutSet) {
-			this.remoteTimeout = sendTimeout;
+	protected void doInit() {
+		super.doInit();
+
+		if (this.evaluationContext == null) {
+			this.evaluationContext = ExpressionUtils.createStandardEvaluationContext(getBeanFactory());
 		}
 	}
 
 	@Override
 	protected Object handleRequestMessage(Message<?> requestMessage) {
-		Assert.notNull(connectionFactory, this.getClass().getName() +
+		Assert.notNull(this.connectionFactory, this.getClass().getName() +
 				" requires a client connection factory");
 		boolean haveSemaphore = false;
+		TcpConnection connection = null;
 		String connectionId = null;
 		try {
-			boolean singleUseConnection = this.connectionFactory.isSingleUse();
-			if (!singleUseConnection) {
+			if (!this.isSingleUse) {
 				logger.debug("trying semaphore");
 				if (!this.semaphore.tryAcquire(this.requestTimeout, TimeUnit.MILLISECONDS)) {
 					throw new MessageTimeoutException(requestMessage, "Timed out waiting for connection");
@@ -114,25 +127,26 @@ public class TcpOutboundGateway extends AbstractReplyProducingMessageHandler imp
 					logger.debug("got semaphore");
 				}
 			}
-			TcpConnection connection = this.connectionFactory.getConnection();
-			AsyncReply reply = new AsyncReply();
+			connection = this.connectionFactory.getConnection();
+			AsyncReply reply = new AsyncReply(this.remoteTimeoutExpression.getValue(this.evaluationContext,
+					requestMessage, Long.class));
 			connectionId = connection.getConnectionId();
-			pendingReplies.put(connectionId, reply);
+			this.pendingReplies.put(connectionId, reply);
 			if (logger.isDebugEnabled()) {
-				logger.debug("Added " + connection.getConnectionId());
+				logger.debug("Added pending reply " + connectionId);
 			}
 			connection.send(requestMessage);
 			Message<?> replyMessage = reply.getReply();
 			if (replyMessage == null) {
 				if (logger.isDebugEnabled()) {
-					logger.debug("Remote Timeout on " + connection.getConnectionId());
+					logger.debug("Remote Timeout on " + connectionId);
 				}
 				// The connection is dirty - force it closed.
 				this.connectionFactory.forceClose(connection);
 				throw new MessageTimeoutException(requestMessage, "Timed out waiting for response");
 			}
 			if (logger.isDebugEnabled()) {
-				logger.debug("Respose " + replyMessage);
+				logger.debug("Response " + replyMessage);
 			}
 			return replyMessage;
 		}
@@ -145,7 +159,13 @@ public class TcpOutboundGateway extends AbstractReplyProducingMessageHandler imp
 		}
 		finally {
 			if (connectionId != null) {
-				pendingReplies.remove(connectionId);
+				this.pendingReplies.remove(connectionId);
+				if (logger.isDebugEnabled()) {
+					logger.debug("Removed pending reply " + connectionId);
+				}
+				if (this.isSingleUse) {
+					connection.close();
+				}
 			}
 			if (haveSemaphore) {
 				this.semaphore.release();
@@ -161,12 +181,13 @@ public class TcpOutboundGateway extends AbstractReplyProducingMessageHandler imp
 		String connectionId = (String) message.getHeaders().get(IpHeaders.CONNECTION_ID);
 		if (connectionId == null) {
 			logger.error("Cannot correlate response - no connection id");
+			publishNoConnectionEvent(message, null, "Cannot correlate response - no connection id");
 			return false;
 		}
 		if (logger.isTraceEnabled()) {
 			logger.trace("onMessage: " + connectionId + "(" + message + ")");
 		}
-		AsyncReply reply = pendingReplies.get(connectionId);
+		AsyncReply reply = this.pendingReplies.get(connectionId);
 		if (reply == null) {
 			if (message instanceof ErrorMessage) {
 				/*
@@ -176,7 +197,9 @@ public class TcpOutboundGateway extends AbstractReplyProducingMessageHandler imp
 				return false;
 			}
 			else {
-				logger.error("Cannot correlate response - no pending reply");
+				String errorMessage = "Cannot correlate response - no pending reply for " + connectionId;
+				logger.error(errorMessage);
+				publishNoConnectionEvent(message, connectionId, errorMessage);
 				return false;
 			}
 		}
@@ -184,13 +207,19 @@ public class TcpOutboundGateway extends AbstractReplyProducingMessageHandler imp
 		return false;
 	}
 
-	public void setConnectionFactory(AbstractConnectionFactory connectionFactory) {
-		// TODO: In 3.0 Change parameter type to AbstractClientConnectionFactory
-		Assert.isTrue(connectionFactory instanceof AbstractClientConnectionFactory,
-				this.getClass().getName() + " requires a client connection factory");
-		this.connectionFactory = (AbstractClientConnectionFactory) connectionFactory;
+	private void publishNoConnectionEvent(Message<?> message, String connectionId, String errorMessage) {
+		ApplicationEventPublisher applicationEventPublisher = this.connectionFactory.getApplicationEventPublisher();
+		if (applicationEventPublisher != null) {
+			applicationEventPublisher.publishEvent(new TcpConnectionFailedCorrelationEvent(this, connectionId,
+					new MessagingException(message, errorMessage)));
+		}
+	}
+
+	public void setConnectionFactory(AbstractClientConnectionFactory connectionFactory) {
+		this.connectionFactory = connectionFactory;
 		connectionFactory.registerListener(this);
 		connectionFactory.registerSender(this);
+		this.isSingleUse = connectionFactory.isSingleUse();
 	}
 
 	@Override
@@ -206,14 +235,14 @@ public class TcpOutboundGateway extends AbstractReplyProducingMessageHandler imp
 	/**
 	 * Specify the Spring Integration reply channel. If this property is not
 	 * set the gateway will check for a 'replyChannel' header on the request.
-	 *
 	 * @param replyChannel The reply channel.
 	 */
 	public void setReplyChannel(MessageChannel replyChannel) {
 		this.setOutputChannel(replyChannel);
 	}
+
 	@Override
-	public String getComponentType(){
+	public String getComponentType() {
 		return "ip:tcp-outbound-gateway";
 	}
 
@@ -232,34 +261,11 @@ public class TcpOutboundGateway extends AbstractReplyProducingMessageHandler imp
 		return this.connectionFactory.isRunning();
 	}
 
-	@Override
-	public int getPhase() {
-		return this.phase;
-	}
-
-	@Override
-	public boolean isAutoStartup() {
-		return this.autoStartup;
-	}
-
-	@Override
-	public void stop(Runnable callback) {
-		this.connectionFactory.stop(callback);
-	}
-
-	public void setAutoStartup(boolean autoStartup) {
-		this.autoStartup = autoStartup;
-	}
-
-	public void setPhase(int phase) {
-		this.phase = phase;
-	}
-
 	/**
 	 * @return the connectionFactory
 	 */
 	protected AbstractConnectionFactory getConnectionFactory() {
-		return connectionFactory;
+		return this.connectionFactory;
 	}
 
 	/**
@@ -268,17 +274,20 @@ public class TcpOutboundGateway extends AbstractReplyProducingMessageHandler imp
 	 * @author Gary Russell
 	 * @since 2.0
 	 */
-	private class AsyncReply {
+	private final class AsyncReply {
 
 		private final CountDownLatch latch;
 
 		private final CountDownLatch secondChanceLatch;
 
+		private final long remoteTimeout;
+
 		private volatile Message<?> reply;
 
-		public AsyncReply() {
+		private AsyncReply(long remoteTimeout) {
 			this.latch = new CountDownLatch(1);
 			this.secondChanceLatch = new CountDownLatch(1);
+			this.remoteTimeout = remoteTimeout;
 		}
 
 		/**
@@ -288,7 +297,7 @@ public class TcpOutboundGateway extends AbstractReplyProducingMessageHandler imp
 		 */
 		public Message<?> getReply() throws Exception {
 			try {
-				if (!this.latch.await(remoteTimeout, TimeUnit.MILLISECONDS)) {
+				if (!this.latch.await(this.remoteTimeout, TimeUnit.MILLISECONDS)) {
 					return null;
 				}
 			}
@@ -296,7 +305,7 @@ public class TcpOutboundGateway extends AbstractReplyProducingMessageHandler imp
 				Thread.currentThread().interrupt();
 			}
 			boolean waitForMessageAfterError = true;
-			while (reply instanceof ErrorMessage) {
+			while (this.reply instanceof ErrorMessage) {
 				if (waitForMessageAfterError) {
 					/*
 					 * Possible race condition with NIO; we might have received the close
@@ -306,11 +315,11 @@ public class TcpOutboundGateway extends AbstractReplyProducingMessageHandler imp
 					this.secondChanceLatch.await(2, TimeUnit.SECONDS);
 					waitForMessageAfterError = false;
 				}
-				else if (reply.getPayload() instanceof MessagingException) {
-					throw (MessagingException) reply.getPayload();
+				else if (this.reply.getPayload() instanceof MessagingException) {
+					throw (MessagingException) this.reply.getPayload();
 				}
 				else {
-					throw new MessagingException("Exception while awaiting reply", (Throwable) reply.getPayload());
+					throw new MessagingException("Exception while awaiting reply", (Throwable) this.reply.getPayload());
 				}
 			}
 			return this.reply;
@@ -319,7 +328,7 @@ public class TcpOutboundGateway extends AbstractReplyProducingMessageHandler imp
 		/**
 		 * We have a race condition when a socket is closed right after the reply is received. The close "error"
 		 * might arrive before the actual reply. Overwrite an error with a good reply, but not vice-versa.
-		 * @param reply
+		 * @param reply the reply message.
 		 */
 		public void setReply(Message<?> reply) {
 			if (this.reply == null) {
@@ -331,6 +340,7 @@ public class TcpOutboundGateway extends AbstractReplyProducingMessageHandler imp
 				this.secondChanceLatch.countDown();
 			}
 		}
+
 	}
 
 }

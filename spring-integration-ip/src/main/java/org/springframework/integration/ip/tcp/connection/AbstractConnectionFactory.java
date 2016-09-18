@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,14 +29,17 @@ import java.nio.channels.SocketChannel;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 
 import org.springframework.context.ApplicationEventPublisher;
@@ -60,6 +63,10 @@ public abstract class AbstractConnectionFactory extends IntegrationObjectSupport
 		implements ConnectionFactory, SmartLifecycle, ApplicationEventPublisherAware {
 
 	protected static final int DEFAULT_REPLY_TIMEOUT = 10000;
+
+	private static final int DEFAULT_NIO_HARVEST_INTERVAL = 2000;
+
+	private static final int DEFAULT_READ_DELAY = 100;
 
 	private volatile String host;
 
@@ -89,9 +96,13 @@ public abstract class AbstractConnectionFactory extends IntegrationObjectSupport
 
 	private volatile Deserializer<?> deserializer = new ByteArrayCrLfSerializer();
 
+	private volatile boolean deserializerSet;
+
 	private volatile Serializer<?> serializer = new ByteArrayCrLfSerializer();
 
 	private volatile TcpMessageMapper mapper = new TcpMessageMapper();
+
+	private volatile boolean mapperSet;
 
 	private volatile boolean singleUse;
 
@@ -101,7 +112,7 @@ public abstract class AbstractConnectionFactory extends IntegrationObjectSupport
 
 	private volatile boolean lookupHost = true;
 
-	private volatile List<TcpConnectionSupport> connections = new LinkedList<TcpConnectionSupport>();
+	private final Map<String, TcpConnectionSupport> connections = new ConcurrentHashMap<String, TcpConnectionSupport>();
 
 	private volatile TcpSocketSupport tcpSocketSupport = new DefaultTcpSocketSupport();
 
@@ -113,7 +124,9 @@ public abstract class AbstractConnectionFactory extends IntegrationObjectSupport
 
 	private volatile ApplicationEventPublisher applicationEventPublisher;
 
-	private static final int DEFAULT_NIO_HARVEST_INTERVAL = 2000;
+	private final BlockingQueue<PendingIO> delayedReads = new LinkedBlockingQueue<AbstractConnectionFactory.PendingIO>();
+
+	private volatile long readDelay = DEFAULT_READ_DELAY;
 
 	public AbstractConnectionFactory(int port) {
 		this.port = port;
@@ -128,10 +141,14 @@ public abstract class AbstractConnectionFactory extends IntegrationObjectSupport
 	@Override
 	public void setApplicationEventPublisher(ApplicationEventPublisher applicationEventPublisher) {
 		this.applicationEventPublisher = applicationEventPublisher;
+		if (!this.deserializerSet && this.deserializer instanceof ApplicationEventPublisherAware) {
+			((ApplicationEventPublisherAware) this.deserializer)
+					.setApplicationEventPublisher(applicationEventPublisher);
+		}
 	}
 
-	protected ApplicationEventPublisher getApplicationEventPublisher() {
-		return applicationEventPublisher;
+	public ApplicationEventPublisher getApplicationEventPublisher() {
+		return this.applicationEventPublisher;
 	}
 
 	/**
@@ -164,7 +181,7 @@ public abstract class AbstractConnectionFactory extends IntegrationObjectSupport
 	 * @return the soTimeout
 	 */
 	public int getSoTimeout() {
-		return soTimeout;
+		return this.soTimeout;
 	}
 
 	/**
@@ -178,7 +195,7 @@ public abstract class AbstractConnectionFactory extends IntegrationObjectSupport
 	 * @return the soReceiveBufferSize
 	 */
 	public int getSoReceiveBufferSize() {
-		return soReceiveBufferSize;
+		return this.soReceiveBufferSize;
 	}
 
 	/**
@@ -192,7 +209,7 @@ public abstract class AbstractConnectionFactory extends IntegrationObjectSupport
 	 * @return the soSendBufferSize
 	 */
 	public int getSoSendBufferSize() {
-		return soSendBufferSize;
+		return this.soSendBufferSize;
 	}
 
 	/**
@@ -206,7 +223,7 @@ public abstract class AbstractConnectionFactory extends IntegrationObjectSupport
 	 * @return the soTcpNoDelay
 	 */
 	public boolean isSoTcpNoDelay() {
-		return soTcpNoDelay;
+		return this.soTcpNoDelay;
 	}
 
 	/**
@@ -220,7 +237,7 @@ public abstract class AbstractConnectionFactory extends IntegrationObjectSupport
 	 * @return the soLinger
 	 */
 	public int getSoLinger() {
-		return soLinger;
+		return this.soLinger;
 	}
 
 	/**
@@ -234,7 +251,7 @@ public abstract class AbstractConnectionFactory extends IntegrationObjectSupport
 	 * @return the soKeepAlive
 	 */
 	public boolean isSoKeepAlive() {
-		return soKeepAlive;
+		return this.soKeepAlive;
 	}
 
 	/**
@@ -248,7 +265,7 @@ public abstract class AbstractConnectionFactory extends IntegrationObjectSupport
 	 * @return the soTrafficClass
 	 */
 	public int getSoTrafficClass() {
-		return soTrafficClass;
+		return this.soTrafficClass;
 	}
 
 	/**
@@ -262,49 +279,49 @@ public abstract class AbstractConnectionFactory extends IntegrationObjectSupport
 	 * @return the host
 	 */
 	public String getHost() {
-		return host;
+		return this.host;
 	}
 
 	/**
 	 * @return the port
 	 */
 	public int getPort() {
-		return port;
+		return this.port;
 	}
 
 	/**
 	 * @return the listener
 	 */
 	public TcpListener getListener() {
-		return listener;
+		return this.listener;
 	}
 
 	/**
 	 * @return the sender
 	 */
 	public TcpSender getSender() {
-		return sender;
+		return this.sender;
 	}
 
 	/**
 	 * @return the serializer
 	 */
 	public Serializer<?> getSerializer() {
-		return serializer;
+		return this.serializer;
 	}
 
 	/**
 	 * @return the deserializer
 	 */
 	public Deserializer<?> getDeserializer() {
-		return deserializer;
+		return this.deserializer;
 	}
 
 	/**
 	 * @return the mapper
 	 */
 	public TcpMessageMapper getMapper() {
-		return mapper;
+		return this.mapper;
 	}
 
 	/**
@@ -343,6 +360,7 @@ public abstract class AbstractConnectionFactory extends IntegrationObjectSupport
 	 */
 	public void setDeserializer(Deserializer<?> deserializer) {
 		this.deserializer = deserializer;
+		this.deserializerSet = true;
 	}
 
 	/**
@@ -359,13 +377,14 @@ public abstract class AbstractConnectionFactory extends IntegrationObjectSupport
 	 */
 	public void setMapper(TcpMessageMapper mapper) {
 		this.mapper = mapper;
+		this.mapperSet = true;
 	}
 
 	/**
 	 * @return the singleUse
 	 */
 	public boolean isSingleUse() {
-		return singleUse;
+		return this.singleUse;
 	}
 
 	/**
@@ -394,7 +413,7 @@ public abstract class AbstractConnectionFactory extends IntegrationObjectSupport
 	 * @return the lookupHost
 	 */
 	public boolean isLookupHost() {
-		return lookupHost;
+		return this.lookupHost;
 	}
 
 	/**
@@ -407,6 +426,32 @@ public abstract class AbstractConnectionFactory extends IntegrationObjectSupport
 	public void setNioHarvestInterval(int nioHarvestInterval) {
 		Assert.isTrue(nioHarvestInterval > 0, "NIO Harvest interval must be > 0");
 		this.nioHarvestInterval = nioHarvestInterval;
+	}
+
+	protected BlockingQueue<PendingIO> getDelayedReads() {
+		return this.delayedReads;
+	}
+
+	protected long getReadDelay() {
+		return this.readDelay;
+	}
+
+	/**
+	 * The delay (in milliseconds) before retrying a read after the previous attempt
+	 * failed due to insufficient threads. Default 100.
+	 * @param readDelay the readDelay to set.
+	 */
+	public void setReadDelay(long readDelay) {
+		Assert.isTrue(readDelay > 0, "'readDelay' must be positive");
+		this.readDelay = readDelay;
+	}
+
+	@Override
+	protected void onInit() throws Exception {
+		super.onInit();
+		if (!this.mapperSet) {
+			this.mapper.setBeanFactory(this.getBeanFactory());
+		}
 	}
 
 	@Override
@@ -440,9 +485,9 @@ public abstract class AbstractConnectionFactory extends IntegrationObjectSupport
 	public void stop() {
 		this.active = false;
 		synchronized (this.connections) {
-			Iterator<TcpConnectionSupport> iterator = this.connections.iterator();
+			Iterator<Entry<String, TcpConnectionSupport>> iterator = this.connections.entrySet().iterator();
 			while (iterator.hasNext()) {
-				TcpConnection connection = iterator.next();
+				TcpConnection connection = iterator.next().getValue();
 				connection.close();
 				iterator.remove();
 			}
@@ -459,10 +504,12 @@ public abstract class AbstractConnectionFactory extends IntegrationObjectSupport
 							logger.debug("Executor failed to shutdown");
 						}
 					}
-				} catch (InterruptedException e) {
+				}
+				catch (InterruptedException e) {
 					executorService.shutdownNow();
 					Thread.currentThread().interrupt();
-				} finally {
+				}
+				finally {
 					this.taskExecutor = null;
 					this.privateExecutor = false;
 				}
@@ -496,7 +543,8 @@ public abstract class AbstractConnectionFactory extends IntegrationObjectSupport
 				connection = wrapper;
 			}
 			return connection;
-		} finally {
+		}
+		finally {
 			this.addConnection(connection);
 		}
 	}
@@ -515,7 +563,8 @@ public abstract class AbstractConnectionFactory extends IntegrationObjectSupport
 	 */
 	protected void processNioSelections(int selectionCount, final Selector selector, ServerSocketChannel server,
 			Map<SocketChannel, TcpNioConnection> connections) throws IOException {
-		long now = System.currentTimeMillis();
+		final long now = System.currentTimeMillis();
+		rescheduleDelayedReads(selector, now);
 		if (this.soTimeout > 0 ||
 				now >= this.nextCheckForClosedNioConnections ||
 				selectionCount == 0) {
@@ -527,7 +576,7 @@ public abstract class AbstractConnectionFactory extends IntegrationObjectSupport
 					logger.debug("Removing closed channel");
 					it.remove();
 				}
-				else if (soTimeout > 0) {
+				else if (this.soTimeout > 0) {
 					TcpNioConnection connection = connections.get(channel);
 					if (now - connection.getLastRead() >= this.soTimeout) {
 						/*
@@ -536,8 +585,7 @@ public abstract class AbstractConnectionFactory extends IntegrationObjectSupport
 						 */
 						if (!connection.isServer() &&
 							now - connection.getLastSend() < this.soTimeout &&
-							now - connection.getLastRead() < this.soTimeout * 2)
-						{
+							now - connection.getLastRead() < this.soTimeout * 2) {
 							if (logger.isDebugEnabled()) {
 								logger.debug("Skipping a connection timeout because we have a recent send "
 										+ connection.getConnectionId());
@@ -548,8 +596,10 @@ public abstract class AbstractConnectionFactory extends IntegrationObjectSupport
 								logger.warn("Timing out TcpNioConnection " +
 										    connection.getConnectionId());
 							}
-							connection.publishConnectionExceptionEvent(new SocketTimeoutException("Timing out connection"));
+							SocketTimeoutException exception = new SocketTimeoutException("Timing out connection");
+							connection.publishConnectionExceptionEvent(exception);
 							connection.timeout();
+							connection.sendExceptionToListener(exception);
 						}
 					}
 				}
@@ -557,9 +607,10 @@ public abstract class AbstractConnectionFactory extends IntegrationObjectSupport
 		}
 		this.harvestClosedConnections();
 		if (logger.isTraceEnabled()) {
-			if (host == null) {
+			if (this.host == null) {
 				logger.trace("Port " + this.port + " SelectionCount: " + selectionCount);
-			} else {
+			}
+			else {
 				logger.trace("Host " + this.host + " port " + this.port + " SelectionCount: " + selectionCount);
 			}
 		}
@@ -574,53 +625,120 @@ public abstract class AbstractConnectionFactory extends IntegrationObjectSupport
 						logger.debug("Selection key no longer valid");
 					}
 					else if (key.isReadable()) {
-						key.interestOps(key.interestOps() - key.readyOps());
+						key.interestOps(key.interestOps() - SelectionKey.OP_READ);
 						final TcpNioConnection connection;
 						connection = (TcpNioConnection) key.attachment();
 						connection.setLastRead(System.currentTimeMillis());
-						this.taskExecutor.execute(new Runnable() {
-							@Override
-							public void run() {
+						try {
+							this.taskExecutor.execute(() -> {
+								boolean delayed = false;
 								try {
 									connection.readPacket();
 								}
-								catch (Exception e) {
+								catch (RejectedExecutionException e1) {
+									delayRead(selector, now, key);
+									delayed = true;
+								}
+								catch (Exception e2) {
 									if (connection.isOpen()) {
 										logger.error("Exception on read " +
 												connection.getConnectionId() + " " +
-												e.getMessage());
+												e2.getMessage());
 										connection.close();
 									}
 									else {
 										logger.debug("Connection closed");
 									}
 								}
-								if (key.channel().isOpen()) {
-									key.interestOps(SelectionKey.OP_READ);
-									selector.wakeup();
+								if (!delayed) {
+									if (key.channel().isOpen()) {
+										key.interestOps(SelectionKey.OP_READ);
+										selector.wakeup();
+									}
+									else {
+										connection.sendExceptionToListener(new EOFException("Connection is closed"));
+									}
 								}
-								else {
-									connection.sendExceptionToListener(new EOFException("Connection is closed"));
-								}
-							}});
+							});
+						}
+						catch (RejectedExecutionException e) {
+							delayRead(selector, now, key);
+						}
 					}
 					else if (key.isAcceptable()) {
 						try {
 							doAccept(selector, server, now);
-						} catch (Exception e) {
+						}
+						catch (Exception e) {
 							logger.error("Exception accepting new connection", e);
 						}
 					}
 					else {
 						logger.error("Unexpected key: " + key);
 					}
-				} catch (CancelledKeyException e) {
+				}
+				catch (CancelledKeyException e) {
 					if (logger.isDebugEnabled()) {
 						logger.debug("Selection key " + key + " cancelled");
 					}
-				} catch (Exception e) {
+				}
+				catch (Exception e) {
 					logger.error("Exception on selection key " + key, e);
 				}
+			}
+		}
+	}
+
+	protected void delayRead(Selector selector, long now, final SelectionKey key) {
+		TcpNioConnection connection = (TcpNioConnection) key.attachment();
+		if (!this.delayedReads.add(new PendingIO(now, key))) { // should never happen - unbounded queue
+			logger.error("Failed to delay read; closing " + connection.getConnectionId());
+			connection.close();
+		}
+		else {
+			if (logger.isDebugEnabled()) {
+				logger.debug("No threads available, delaying read for " + connection.getConnectionId());
+			}
+			// wake the selector in case it is currently blocked, and waiting for longer than readDelay
+			selector.wakeup();
+		}
+	}
+
+	/**
+	 * If any reads were delayed due to insufficient threads, reschedule them if
+	 * the readDelay has passed.
+	 * @param selector the selector to wake if necessary.
+	 * @param now the current time.
+	 */
+	private void rescheduleDelayedReads(Selector selector, long now) {
+		boolean wakeSelector = false;
+		try {
+			while (this.delayedReads.size() > 0) {
+				if (this.delayedReads.peek().failedAt + this.readDelay < now) {
+					PendingIO pendingRead = this.delayedReads.take();
+					if (pendingRead.key.channel().isOpen()) {
+						pendingRead.key.interestOps(SelectionKey.OP_READ);
+						wakeSelector = true;
+						if (logger.isDebugEnabled()) {
+							logger.debug("Rescheduling delayed read for " + ((TcpNioConnection) pendingRead.key.attachment()).getConnectionId());
+						}
+					}
+					else {
+						((TcpNioConnection) pendingRead.key.attachment()).sendExceptionToListener(new EOFException("Connection is closed"));
+					}
+				}
+				else {
+					// remaining delayed reads have not expired yet.
+					break;
+				}
+			}
+		}
+		catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+		}
+		finally {
+			if (wakeSelector) {
+				selector.wakeup();
 			}
 		}
 	}
@@ -661,7 +779,10 @@ public abstract class AbstractConnectionFactory extends IntegrationObjectSupport
 				connection.close();
 				return;
 			}
-			this.connections.add(connection);
+			this.connections.put(connection.getConnectionId(), connection);
+			if (logger.isDebugEnabled()) {
+				logger.debug(getComponentName() +  ": Added new connection: " + connection.getConnectionId());
+			}
 		}
 	}
 
@@ -672,14 +793,21 @@ public abstract class AbstractConnectionFactory extends IntegrationObjectSupport
 	private List<String> removeClosedConnectionsAndReturnOpenConnectionIds() {
 		synchronized (this.connections) {
 			List<String> openConnectionIds = new ArrayList<String>();
-			Iterator<TcpConnectionSupport> iterator = this.connections.iterator();
+			Iterator<Entry<String, TcpConnectionSupport>> iterator = this.connections.entrySet().iterator();
 			while (iterator.hasNext()) {
-				TcpConnection connection = iterator.next();
+				Entry<String, TcpConnectionSupport> entry = iterator.next();
+				TcpConnectionSupport connection = entry.getValue();
 				if (!connection.isOpen()) {
 					iterator.remove();
+					if (logger.isDebugEnabled()) {
+						logger.debug(getComponentName() +  ": Removed closed connection: " + connection.getConnectionId());
+					}
 				}
 				else {
-					openConnectionIds.add(connection.getConnectionId());
+					openConnectionIds.add(entry.getKey());
+					if (logger.isTraceEnabled()) {
+						logger.trace(getComponentName() +  ": Connection is open: " + connection.getConnectionId());
+					}
 				}
 			}
 			return openConnectionIds;
@@ -702,7 +830,7 @@ public abstract class AbstractConnectionFactory extends IntegrationObjectSupport
 	 * @return the active
 	 */
 	protected boolean isActive() {
-		return active;
+		return this.active;
 	}
 
 	/**
@@ -719,7 +847,7 @@ public abstract class AbstractConnectionFactory extends IntegrationObjectSupport
 	}
 
 	protected TcpSocketSupport getTcpSocketSupport() {
-		return tcpSocketSupport;
+		return this.tcpSocketSupport;
 	}
 
 	public void setTcpSocketSupport(TcpSocketSupport tcpSocketSupport) {
@@ -743,24 +871,44 @@ public abstract class AbstractConnectionFactory extends IntegrationObjectSupport
 	 */
 	public boolean closeConnection(String connectionId) {
 		Assert.notNull(connectionId, "'connectionId' to close must not be null");
-		synchronized(this.connections) {
+		// closed connections are removed from #connections in #harvestClosedConnections()
+		synchronized (this.connections) {
 			boolean closed = false;
-			for (TcpConnectionSupport connection : connections) {
-				if (connectionId.equals(connection.getConnectionId())) {
-					try {
-						connection.close();
-						closed = true;
-						break;
+			TcpConnectionSupport connection = this.connections.get(connectionId);
+			if (connection != null) {
+				try {
+					connection.close();
+					closed = true;
+				}
+				catch (Exception e) {
+					if (logger.isDebugEnabled()) {
+						logger.debug("Failed to close connection " + connectionId, e);
 					}
-					catch (Exception e) {
-						if (logger.isDebugEnabled()) {
-							logger.debug("Failed to close connection " + connectionId, e);
-						}
-						connection.publishConnectionExceptionEvent(e);
-					}
+					connection.publishConnectionExceptionEvent(e);
 				}
 			}
 			return closed;
 		}
 	}
+
+	@Override
+	public String toString() {
+		return super.toString()
+				+ (this.host != null ? ", host=" + this.host : "")
+				+ ", port=" + getPort();
+	}
+
+	private final class PendingIO {
+
+		private final long failedAt;
+
+		private final SelectionKey key;
+
+		private PendingIO(long failedAt, SelectionKey key) {
+			this.failedAt = failedAt;
+			this.key = key;
+		}
+
+	}
+
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2010 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,16 +38,17 @@ import org.springframework.jms.core.MessageCreator;
  * @author Oleg Zhurakousky
  */
 public class ExceptionHandlingSiConsumerTests {
-	
+
 	@Test
 	public void nonSiProducer_siConsumer_sync_withReturn() throws Exception {
 		ActiveMqTestUtils.prepare();
 		ConfigurableApplicationContext applicationContext = new ClassPathXmlApplicationContext("Exception-nonSiProducer-siConsumer.xml", ExceptionHandlingSiConsumerTests.class);
-		JmsTemplate jmsTemplate = new JmsTemplate(applicationContext.getBean("connectionFactory", ConnectionFactory.class));
+		JmsTemplate jmsTemplate = new JmsTemplate(applicationContext.getBean("jmsConnectionFactory", ConnectionFactory.class));
 		Destination request = applicationContext.getBean("requestQueueA", Destination.class);
 		final Destination reply = applicationContext.getBean("replyQueueA", Destination.class);
 		jmsTemplate.send(request, new MessageCreator() {
-			
+
+			@Override
 			public Message createMessage(Session session) throws JMSException {
 				TextMessage message = session.createTextMessage();
 				message.setText("echoChannel");
@@ -57,18 +58,19 @@ public class ExceptionHandlingSiConsumerTests {
 		});
 		Message message = jmsTemplate.receive(reply);
 		assertNotNull(message);
-		applicationContext.close();  
+		applicationContext.close();
 	}
 
-	@Test 
+	@Test
 	public void nonSiProducer_siConsumer_sync_withReturnNoException() throws Exception {
 		ActiveMqTestUtils.prepare();
 		ConfigurableApplicationContext applicationContext = new ClassPathXmlApplicationContext("Exception-nonSiProducer-siConsumer.xml", ExceptionHandlingSiConsumerTests.class);
-		JmsTemplate jmsTemplate = new JmsTemplate(applicationContext.getBean("connectionFactory", ConnectionFactory.class));
+		JmsTemplate jmsTemplate = new JmsTemplate(applicationContext.getBean("jmsConnectionFactory", ConnectionFactory.class));
 		Destination request = applicationContext.getBean("requestQueueB", Destination.class);
 		final Destination reply = applicationContext.getBean("replyQueueB", Destination.class);
 		jmsTemplate.send(request, new MessageCreator() {
-			
+
+			@Override
 			public Message createMessage(Session session) throws JMSException {
 				TextMessage message = session.createTextMessage();
 				message.setText("echoWithExceptionChannel");
@@ -79,11 +81,11 @@ public class ExceptionHandlingSiConsumerTests {
 		Message message = jmsTemplate.receive(reply);
 		assertNotNull(message);
 		assertEquals("echoWithException", ((TextMessage) message).getText());
-		applicationContext.close();  
+		applicationContext.close();
 	}
 
-	@Test 
-	public void nonSiProducer_siConsumer_sync_withOutboundGateway() throws Exception{
+	@Test
+	public void nonSiProducer_siConsumer_sync_withOutboundGateway() throws Exception {
 		ActiveMqTestUtils.prepare();
 		final ConfigurableApplicationContext applicationContext = new ClassPathXmlApplicationContext("Exception-nonSiProducer-siConsumer.xml", ExceptionHandlingSiConsumerTests.class);
 		SampleGateway gateway = applicationContext.getBean("sampleGateway", SampleGateway.class);
@@ -99,7 +101,7 @@ public class ExceptionHandlingSiConsumerTests {
 			throw new SampleException("echoWithException");
 		}
 
-		public String echo(String value){
+		public String echo(String value) {
 			return value;
 		}
 	}
@@ -107,14 +109,14 @@ public class ExceptionHandlingSiConsumerTests {
 
 	@SuppressWarnings("serial")
 	public static class SampleException extends RuntimeException {
-		public SampleException(String message){
+		public SampleException(String message) {
 			super(message);
 		}
 	}
 
 
-	public static interface SampleGateway {
-		public String echo(String value);
+	public interface SampleGateway {
+		String echo(String value);
 	}
 
 

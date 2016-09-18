@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -58,6 +58,7 @@ import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
  */
 @ContextConfiguration
 @RunWith(SpringJUnit4ClassRunner.class)
+@DirtiesContext
 public class NotificationPublishingChannelAdapterParserTests {
 
 	@Autowired
@@ -123,8 +124,11 @@ public class NotificationPublishingChannelAdapterParserTests {
 
 	@Test //INT-2275
 	public void publishStringMessageWithinChain() throws Exception {
-		assertNotNull(this.beanFactory.getBean("chainWithJmxNotificationPublishing$child.jmx-notification-publishing-channel-adapter-within-chain.handler",
-				MessageHandler.class));
+		assertNotNull(
+				this.beanFactory.getBean(
+						"chainWithJmxNotificationPublishing$child."
+								+ "jmx-notification-publishing-channel-adapter-within-chain.handler",
+						MessageHandler.class));
 		assertNull(listener.lastNotification);
 		Message<?> message = MessageBuilder.withPayload("XYZ")
 				.setHeader(JmxHeaders.NOTIFICATION_TYPE, "test.type").build();
@@ -134,10 +138,9 @@ public class NotificationPublishingChannelAdapterParserTests {
 		assertEquals("XYZ", notification.getMessage());
 		assertEquals("test.type", notification.getType());
 		assertNull(notification.getUserData());
-		Set<ObjectName> names = server.queryNames(
-				new ObjectName("*:type=MessageHandler," +
-						"name=chainWithJmxNotificationPublishing$child.jmx-notification-publishing-channel-adapter-within-chain,*")
-				, null);
+		Set<ObjectName> names = server
+				.queryNames(new ObjectName("*:type=MessageHandler," + "name=chainWithJmxNotificationPublishing$child."
+						+ "jmx-notification-publishing-channel-adapter-within-chain,*"), null);
 		assertEquals(1, names.size());
 	}
 
@@ -148,7 +151,7 @@ public class NotificationPublishingChannelAdapterParserTests {
 		for (ObjectInstance mbean : mbeans) {
 			if (mbean.toString().contains("MessageHistoryConfigurer")) {
 				ObjectName objectName = mbean.getObjectName();
-				try{
+				try {
 					server.setAttribute(objectName, new Attribute("ComponentNamePatternsString", "foo, bar"));
 					fail("Exception expected");
 				}
@@ -173,15 +176,14 @@ public class NotificationPublishingChannelAdapterParserTests {
 
 	}
 
-	public static class FooADvice extends AbstractRequestHandlerAdvice {
+	public static class FooAdvice extends AbstractRequestHandlerAdvice {
 
 		@Override
 		protected Object doInvoke(ExecutionCallback callback, Object target, Message<?> message) throws Exception {
 			adviceCalled++;
-			System.out.println("foo");
-			new RuntimeException("foo").printStackTrace();
 			return callback.execute();
 		}
 
 	}
+
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2011 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,16 +20,17 @@ import javax.mail.MessagingException;
 import javax.mail.internet.MimeMessage;
 
 import org.springframework.core.io.ByteArrayResource;
-import org.springframework.messaging.MessageHandlingException;
 import org.springframework.integration.handler.AbstractMessageHandler;
 import org.springframework.integration.mapping.MessageMappingException;
 import org.springframework.mail.MailMessage;
+import org.springframework.mail.MailSender;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMailMessage;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageHandler;
+import org.springframework.messaging.MessageHandlingException;
 import org.springframework.messaging.MessageHeaders;
 import org.springframework.util.Assert;
 import org.springframework.util.ObjectUtils;
@@ -49,32 +50,39 @@ import org.springframework.util.StringUtils;
  * @author Marius Bogoevici
  * @author Mark Fisher
  * @author Oleg Zhurakousky
+ * @author Artem Bilan
  */
 public class MailSendingMessageHandler extends AbstractMessageHandler {
 
-	private final JavaMailSender mailSender;
+	private final MailSender mailSender;
 
 
 	/**
-	 * Create a MailSendingMessageConsumer.
-	 *
-	 * @param mailSender the {@link JavaMailSender} instance to which this
+	 * Create a MailSendingMessageHandler.
+	 * @param mailSender the {@link MailSender} instance to which this
 	 * adapter will delegate.
 	 */
-	public MailSendingMessageHandler(JavaMailSender mailSender) {
+	public MailSendingMessageHandler(MailSender mailSender) {
 		Assert.notNull(mailSender, "'mailSender' must not be null");
 		this.mailSender = mailSender;
 	}
 
+	@Override
+	public String getComponentType() {
+		return "mail:outbound-channel-adapter";
+	}
 
 	@Override
 	protected final void handleMessageInternal(Message<?> message) {
-		MailMessage mailMessage = this.convertMessageToMailMessage(message);
+		MailMessage mailMessage = convertMessageToMailMessage(message);
 		if (mailMessage instanceof SimpleMailMessage) {
 			this.mailSender.send((SimpleMailMessage) mailMessage);
 		}
 		else if (mailMessage instanceof MimeMailMessage) {
-			this.mailSender.send(((MimeMailMessage) mailMessage).getMimeMessage());
+			Assert.state(this.mailSender instanceof JavaMailSender,
+					"this adapter requires a 'JavaMailSender' to send a 'MimeMailMessage'");
+
+			((JavaMailSender) this.mailSender).send(((MimeMailMessage) mailMessage).getMimeMessage());
 		}
 		else {
 			throw new IllegalArgumentException(
@@ -107,25 +115,32 @@ public class MailSendingMessageHandler extends AbstractMessageHandler {
 		}
 		else {
 			throw new MessageHandlingException(message, "Unable to create MailMessage from payload type ["
-					+ message.getPayload().getClass().getName() + "], expected MimeMessage, MailMessage, byte array or String.");
+					+ message.getPayload().getClass().getName() + "], " +
+					"expected MimeMessage, MailMessage, byte array or String.");
 		}
 		this.applyHeadersToMailMessage(mailMessage, message.getHeaders());
 		return mailMessage;
 	}
 
-	private MailMessage createMailMessageWithContentType(Message<String> message, String contentType){
-		MimeMessage mimeMessage = this.mailSender.createMimeMessage();
+	private MailMessage createMailMessageWithContentType(Message<String> message, String contentType) {
+		Assert.state(this.mailSender instanceof JavaMailSender,
+				"this adapter requires a 'JavaMailSender' to send a 'MimeMailMessage'");
+
+		MimeMessage mimeMessage = ((JavaMailSender) this.mailSender).createMimeMessage();
 		try {
 			mimeMessage.setContent(message.getPayload(), contentType);
 			return new MimeMailMessage(mimeMessage);
 		}
 		catch (Exception e) {
-			throw new org.springframework.messaging.MessagingException("Failed to creaet MimeMessage with contentType: " +
-																			contentType, e);
+			throw new org.springframework.messaging.MessagingException("Failed to create MimeMessage with contentType: "
+					+ contentType, e);
 		}
 	}
 
 	private MailMessage createMailMessageFromByteArrayMessage(Message<byte[]> message) {
+		Assert.state(this.mailSender instanceof JavaMailSender,
+				"this adapter requires a 'JavaMailSender' to send a 'MimeMailMessage'");
+
 		String attachmentFileName = message.getHeaders().get(MailHeaders.ATTACHMENT_FILENAME, String.class);
 		if (attachmentFileName == null) {
 			throw new MessageMappingException(message, "Header '" + MailHeaders.ATTACHMENT_FILENAME
@@ -135,7 +150,8 @@ public class MailSendingMessageHandler extends AbstractMessageHandler {
 		if (multipartMode == null) {
 			multipartMode = MimeMessageHelper.MULTIPART_MODE_MIXED;
 		}
-		MimeMessage mimeMessage = this.mailSender.createMimeMessage();
+
+		MimeMessage mimeMessage = ((JavaMailSender) this.mailSender).createMimeMessage();
 		try {
 			MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, multipartMode);
 			helper.addAttachment(attachmentFileName, new ByteArrayResource(message.getPayload()));
@@ -152,7 +168,7 @@ public class MailSendingMessageHandler extends AbstractMessageHandler {
 			mailMessage.setSubject(subject);
 		}
 		String[] to = this.retrieveHeaderValueAsStringArray(headers, MailHeaders.TO);
-		if (to != null){
+		if (to != null) {
 			mailMessage.setTo(to);
 		}
 		if (mailMessage instanceof SimpleMailMessage) {
@@ -183,11 +199,12 @@ public class MailSendingMessageHandler extends AbstractMessageHandler {
 		if (value != null) {
 			if (value instanceof String[]) {
 				returnedHeaders = (String[]) value;
-			} else if (value instanceof String) {
+			}
+			else if (value instanceof String) {
 				returnedHeaders = StringUtils.commaDelimitedListToStringArray((String) value);
 			}
 		}
-		if (returnedHeaders == null || ObjectUtils.isEmpty(returnedHeaders)){
+		if (returnedHeaders == null || ObjectUtils.isEmpty(returnedHeaders)) {
 			returnedHeaders = null;
 		}
 		return returnedHeaders;

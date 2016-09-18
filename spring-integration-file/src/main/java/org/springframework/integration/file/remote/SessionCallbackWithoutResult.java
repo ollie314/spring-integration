@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2014 the original author or authors.
+ * Copyright 2013-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.file.remote;
 
 import java.io.IOException;
@@ -24,14 +25,16 @@ import org.springframework.integration.file.remote.session.Session;
  * no result is returned.
  *
  * @author Gary Russell
+ * @author Artem Bilan
  * @since 3.0
  *
  */
-public abstract class SessionCallbackWithoutResult<F> implements SessionCallback<F, Object> {
+@FunctionalInterface
+public interface SessionCallbackWithoutResult<F> extends SessionCallback<F, Object> {
 
 	@Override
-	public Object doInSession(Session<F> session) throws IOException {
-		this.doInSessionWithoutResult(session);
+	default Object doInSession(Session<F> session) throws IOException {
+		doInSessionWithoutResult(session);
 		return null;
 	}
 
@@ -39,10 +42,9 @@ public abstract class SessionCallbackWithoutResult<F> implements SessionCallback
 	 * Called within the context of a session.
 	 * Perform some operation(s) on the session. The caller will take
 	 * care of closing the session after this method exits.
-	 *
 	 * @param session The session.
 	 * @throws IOException Any IOException.
 	 */
-	protected abstract void doInSessionWithoutResult(Session<F> session) throws IOException;
+	void doInSessionWithoutResult(Session<F> session) throws IOException;
 
 }

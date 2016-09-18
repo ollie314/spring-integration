@@ -72,6 +72,20 @@
 		<priority value="42"/>
 	</header-enricher>
 
+	<header-enricher input-channel="priorityExpressionInput">
+		<priority expression="payload.priority"/>
+	</header-enricher>
+
+	<beans:bean id="bazRoutingSlip" class="org.mockito.Mockito" factory-method="mock">
+		<beans:constructor-arg value="org.springframework.integration.routingslip.RoutingSlipRouteStrategy"/>
+	</beans:bean>
+
+	<channel id="fooChannel"/>
+
+	<header-enricher input-channel="routingSlipInput">
+		<routing-slip value="fooChannel; barExpression; bazRoutingSlip"/>
+	</header-enricher>
+
 	<header-enricher input-channel="payloadExpressionInput">
 		<header name="testHeader" expression="payload.name + 'bar'"/>
 	</header-enricher>

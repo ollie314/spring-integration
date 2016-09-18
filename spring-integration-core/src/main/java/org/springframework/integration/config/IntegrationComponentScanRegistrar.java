@@ -1,11 +1,11 @@
 /*
- * Copyright 2014 the original author or authors.
+ * Copyright 2014-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -39,16 +39,18 @@ import org.springframework.util.StringUtils;
  * {@link ImportBeanDefinitionRegistrar} implementation to scan and register Integration specific components.
  *
  * @author Artem Bilan
+ * @author Gary Russell
  * @since 4.0
  */
-public class IntegrationComponentScanRegistrar implements ImportBeanDefinitionRegistrar, ResourceLoaderAware {
+public class IntegrationComponentScanRegistrar implements ImportBeanDefinitionRegistrar,
+		ResourceLoaderAware {
 
 	private final Map<TypeFilter, ImportBeanDefinitionRegistrar> componentRegistrars = new HashMap<TypeFilter, ImportBeanDefinitionRegistrar>();
 
 	private ResourceLoader resourceLoader;
 
 	public IntegrationComponentScanRegistrar() {
-		this.componentRegistrars.put(new AnnotationTypeFilter(MessagingGateway.class), new MessagingGatewayRegistrar());
+		this.componentRegistrars.put(new AnnotationTypeFilter(MessagingGateway.class, true), new MessagingGatewayRegistrar());
 	}
 
 	@Override
@@ -58,7 +60,8 @@ public class IntegrationComponentScanRegistrar implements ImportBeanDefinitionRe
 
 	@Override
 	public void registerBeanDefinitions(AnnotationMetadata importingClassMetadata, BeanDefinitionRegistry registry) {
-		Map<String, Object> componentScan = importingClassMetadata.getAnnotationAttributes("org.springframework.integration.annotation.IntegrationComponentScan");
+		Map<String, Object> componentScan = importingClassMetadata
+				.getAnnotationAttributes("org.springframework.integration.annotation.IntegrationComponentScan");
 
 		Set<String> basePackages = new HashSet<String>();
 		for (String pkg : (String[]) componentScan.get("value")) {
@@ -83,22 +86,24 @@ public class IntegrationComponentScanRegistrar implements ImportBeanDefinitionRe
 
 			@Override
 			protected boolean isCandidateComponent(AnnotatedBeanDefinition beanDefinition) {
-				return beanDefinition.getMetadata().isIndependent();
+				return beanDefinition.getMetadata().isIndependent()
+						&& !beanDefinition.getMetadata().isAnnotation();
 			}
 		};
 
-		for (TypeFilter typeFilter : componentRegistrars.keySet()) {
+		for (TypeFilter typeFilter : this.componentRegistrars.keySet()) {
 			scanner.addIncludeFilter(typeFilter);
 		}
 
-		scanner.setResourceLoader(resourceLoader);
+		scanner.setResourceLoader(this.resourceLoader);
 
 		for (String basePackage : basePackages) {
 			Set<BeanDefinition> candidateComponents = scanner.findCandidateComponents(basePackage);
 			for (BeanDefinition candidateComponent : candidateComponents) {
 				if (candidateComponent instanceof AnnotatedBeanDefinition) {
-					for (ImportBeanDefinitionRegistrar importBeanDefinitionRegistrar : componentRegistrars.values()) {
-						importBeanDefinitionRegistrar.registerBeanDefinitions(((AnnotatedBeanDefinition) candidateComponent).getMetadata(), registry);
+					for (ImportBeanDefinitionRegistrar importBeanDefinitionRegistrar : this.componentRegistrars.values()) {
+						importBeanDefinitionRegistrar.registerBeanDefinitions(((AnnotatedBeanDefinition) candidateComponent).getMetadata(),
+								registry);
 					}
 				}
 			}

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.jdbc.storedproc.derby;
 
 import java.sql.Clob;
@@ -28,9 +29,14 @@ import org.springframework.jdbc.support.JdbcUtils;
  *
  * @author Gunnar Hillert
  * @author Artem Bilan
+ * @author Gary Russell
  *
  */
 public final class DerbyStoredProcedures {
+
+	private DerbyStoredProcedures() {
+		super();
+	}
 
 	public static void createUser(String username, String password, String email)
 			throws SQLException {
@@ -45,7 +51,8 @@ public final class DerbyStoredProcedures {
 			stmt.setString(2, password);
 			stmt.setString(3, email);
 			stmt.executeUpdate();
-		} finally {
+		}
+		finally {
 			JdbcUtils.closeStatement(stmt);
 			JdbcUtils.closeConnection(conn);
 		}
@@ -70,7 +77,8 @@ public final class DerbyStoredProcedures {
 			stmt2 = conn.prepareStatement("select * from USERS");
 			returnedData[0] = stmt2.executeQuery();
 
-		} finally {
+		}
+		finally {
 			JdbcUtils.closeConnection(conn);
 		}
 
@@ -81,7 +89,7 @@ public final class DerbyStoredProcedures {
 		Connection conn = DriverManager.getConnection("jdbc:default:connection");
 
 		PreparedStatement stmt = conn.prepareStatement("select MESSAGE_JSON from JSON_MESSAGE where MESSAGE_ID = ?");
-		stmt.setString( 1, messageId);
+		stmt.setString(1, messageId);
 		ResultSet results = stmt.executeQuery();
 		if (results.next()) {
 			returnedData[0] = results.getClob(1);

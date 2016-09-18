@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2010 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -82,14 +82,14 @@ public class ServiceActivatorAnnotationPostProcessorTests {
 	}
 
 
-	@MessageEndpoint	
+	@MessageEndpoint
 	public static class SimpleServiceActivatorAnnotationTestBean extends AbstractServiceActivatorAnnotationTestBean {
 
 		public SimpleServiceActivatorAnnotationTestBean(CountDownLatch latch) {
 			super(latch);
 		}
 
-		@ServiceActivator(inputChannel="testChannel")
+		@ServiceActivator(inputChannel = "testChannel")
 		public void testMethod(String messageText) {
 			this.messageText = messageText;
 			this.countDown();

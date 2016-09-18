@@ -1,15 +1,19 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
- * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
- * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
- * specific language governing permissions and limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
+
 package org.springframework.integration.scripting.jsr223;
 
 import java.util.Map;
@@ -29,11 +33,13 @@ import org.springframework.util.Assert;
 public class ScriptExecutingMessageProcessor extends AbstractScriptExecutingMessageProcessor<Object> {
 
 	private final ScriptExecutor scriptExecutor;
+
 	private volatile ScriptSource scriptSource;
 
 
 	/**
-	 * Create a processor for the {@link ScriptSource} using the provided {@link ScriptExecutor} using the DefaultScriptVariableGenerator
+	 * Create a processor for the {@link ScriptSource} using the provided
+	 * {@link ScriptExecutor} using the DefaultScriptVariableGenerator
 	 *
 	 * @param scriptSource The script source.
 	 * @param scriptExecutor The script executor.
@@ -45,26 +51,30 @@ public class ScriptExecutingMessageProcessor extends AbstractScriptExecutingMess
 	}
 
 	/**
-	 * Create a processor for the {@link ScriptSource} using the provided {@link ScriptExecutor}
+	 * Create a processor for the {@link ScriptSource} using the provided
+	 * {@link ScriptExecutor}
 	 *
 	 * @param scriptSource The script source.
 	 * @param scriptVariableGenerator The script variable generator.
 	 * @param scriptExecutor The script executor.
 	 */
-	public ScriptExecutingMessageProcessor(ScriptSource scriptSource, ScriptVariableGenerator scriptVariableGenerator, ScriptExecutor scriptExecutor) {
+	public ScriptExecutingMessageProcessor(ScriptSource scriptSource, ScriptVariableGenerator scriptVariableGenerator,
+			ScriptExecutor scriptExecutor) {
 		super(scriptVariableGenerator);
 		this.scriptSource = scriptSource;
 		this.scriptExecutor = scriptExecutor;
 	}
 
 	/**
-	 * Create a processor for the {@link ScriptSource} using the provided {@link ScriptExecutor} using the DefaultScriptVariableGenerator
+	 * Create a processor for the {@link ScriptSource} using the provided
+	 * {@link ScriptExecutor} using the DefaultScriptVariableGenerator
 	 *
 	 * @param scriptSource The script source.
 	 * @param scriptExecutor The script executor.
 	 * @param variables The variables.
 	 */
-	public ScriptExecutingMessageProcessor(ScriptSource scriptSource, ScriptExecutor scriptExecutor,Map<String,Object> variables ) {
+	public ScriptExecutingMessageProcessor(ScriptSource scriptSource, ScriptExecutor scriptExecutor,
+			Map<String, Object> variables) {
 		super(new DefaultScriptVariableGenerator(variables));
 		this.scriptSource = scriptSource;
 		this.scriptExecutor = scriptExecutor;
@@ -79,7 +89,7 @@ public class ScriptExecutingMessageProcessor extends AbstractScriptExecutingMess
 	@Override
 	protected Object executeScript(ScriptSource scriptSource, Map<String, Object> variables) throws Exception {
 		Assert.notNull(scriptSource, "scriptSource must not be null");
-		return this.scriptExecutor.executeScript(scriptSource,variables);
+		return this.scriptExecutor.executeScript(scriptSource, variables);
 	}
 
 }

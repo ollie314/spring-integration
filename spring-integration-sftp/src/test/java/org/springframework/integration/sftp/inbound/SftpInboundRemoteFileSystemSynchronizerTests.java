@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,8 +32,8 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.Collection;
 import java.util.List;
-import java.util.Queue;
 import java.util.Vector;
 
 import org.hamcrest.Matchers;
@@ -41,14 +41,16 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
-import org.springframework.integration.expression.ExpressionUtils;
+import org.springframework.beans.factory.BeanFactory;
+import org.springframework.integration.file.filters.AcceptOnceFileListFilter;
 import org.springframework.integration.file.filters.CompositeFileListFilter;
 import org.springframework.integration.file.filters.FileListFilter;
-import org.springframework.integration.file.remote.session.Session;
+import org.springframework.integration.file.filters.RegexPatternFileListFilter;
 import org.springframework.integration.metadata.PropertiesPersistingMetadataStore;
 import org.springframework.integration.sftp.filters.SftpPersistentAcceptOnceFileListFilter;
 import org.springframework.integration.sftp.filters.SftpRegexPatternFileListFilter;
 import org.springframework.integration.sftp.session.DefaultSftpSessionFactory;
+import org.springframework.integration.sftp.session.SftpSession;
 import org.springframework.integration.sftp.session.SftpTestSessionFactory;
 import org.springframework.integration.test.util.TestUtils;
 import org.springframework.messaging.Message;
@@ -70,9 +72,9 @@ public class SftpInboundRemoteFileSystemSynchronizerTests {
 
 	@Before
 	@After
-	public void cleanup(){
+	public void cleanup() {
 		File file = new File("test");
-		if (file.exists()){
+		if (file.exists()) {
 			String[] files = file.list();
 			for (String fileName : files) {
 				new File(file, fileName).delete();
@@ -83,23 +85,22 @@ public class SftpInboundRemoteFileSystemSynchronizerTests {
 
 	@Test
 	public void testCopyFileToLocalDir() throws Exception {
-		this.cleanup();
-		File localDirectoy = new File("test");
-		assertFalse(localDirectoy.exists());
+		File localDirectory = new File("test");
+		assertFalse(localDirectory.exists());
 
 		TestSftpSessionFactory ftpSessionFactory = new TestSftpSessionFactory();
 		ftpSessionFactory.setUser("kermit");
 		ftpSessionFactory.setPassword("frog");
 		ftpSessionFactory.setHost("foo.com");
 
-
 		SftpInboundFileSynchronizer synchronizer = spy(new SftpInboundFileSynchronizer(ftpSessionFactory));
 		synchronizer.setDeleteRemoteFiles(true);
 		synchronizer.setPreserveTimestamp(true);
 		synchronizer.setRemoteDirectory("remote-test-dir");
 		SftpRegexPatternFileListFilter patternFilter = new SftpRegexPatternFileListFilter(".*\\.test$");
-		PropertiesPersistingMetadataStore store = new PropertiesPersistingMetadataStore();
+		PropertiesPersistingMetadataStore store = spy(new PropertiesPersistingMetadataStore());
 		store.setBaseDirectory("test");
+		store.afterPropertiesSet();
 		SftpPersistentAcceptOnceFileListFilter persistFilter =
 				new SftpPersistentAcceptOnceFileListFilter(store, "foo");
 		List<FileListFilter<LsEntry>> filters = new ArrayList<FileListFilter<LsEntry>>();
@@ -107,12 +108,18 @@ public class SftpInboundRemoteFileSystemSynchronizerTests {
 		filters.add(patternFilter);
 		CompositeFileListFilter<LsEntry> filter = new CompositeFileListFilter<LsEntry>(filters);
 		synchronizer.setFilter(filter);
-		synchronizer.setIntegrationEvaluationContext(ExpressionUtils.createStandardEvaluationContext());
+		synchronizer.setBeanFactory(mock(BeanFactory.class));
+		synchronizer.afterPropertiesSet();
 
-		SftpInboundFileSynchronizingMessageSource ms =
-				new SftpInboundFileSynchronizingMessageSource(synchronizer);
+		SftpInboundFileSynchronizingMessageSource ms = new SftpInboundFileSynchronizingMessageSource(synchronizer);
 		ms.setAutoCreateLocalDirectory(true);
-		ms.setLocalDirectory(localDirectoy);
+		ms.setLocalDirectory(localDirectory);
+		ms.setBeanFactory(mock(BeanFactory.class));
+		CompositeFileListFilter<File> localFileListFilter = new CompositeFileListFilter<File>();
+		localFileListFilter.addFilter(new RegexPatternFileListFilter(".*\\.test$"));
+		AcceptOnceFileListFilter<File> localAcceptOnceFilter = new AcceptOnceFileListFilter<File>();
+		localFileListFilter.addFilter(localAcceptOnceFilter);
+		ms.setLocalFilter(localFileListFilter);
 		ms.afterPropertiesSet();
 		Message<File> atestFile =  ms.receive();
 		assertNotNull(atestFile);
@@ -130,12 +137,12 @@ public class SftpInboundRemoteFileSystemSynchronizerTests {
 		assertNull(nothing);
 
 		// two times because on the third receive (above) the internal queue will be empty, so it will attempt
-		verify(synchronizer, times(2)).synchronizeToLocalDirectory(localDirectoy);
+		verify(synchronizer, times(2)).synchronizeToLocalDirectory(localDirectory, Integer.MIN_VALUE);
 
 		assertTrue(new File("test/a.test").exists());
 		assertTrue(new File("test/b.test").exists());
 
-		TestUtils.getPropertyValue(ms, "localFileListFilter.seen", Queue.class).clear();
+		TestUtils.getPropertyValue(localAcceptOnceFilter, "seenSet", Collection.class).clear();
 
 		new File("test/a.test").delete();
 		new File("test/b.test").delete();
@@ -143,6 +150,9 @@ public class SftpInboundRemoteFileSystemSynchronizerTests {
 		nothing =  ms.receive();
 		assertNull(nothing);
 
+		ms.stop();
+		verify(synchronizer).close();
+		verify(store).close();
 	}
 
 	public static class TestSftpSessionFactory extends DefaultSftpSessionFactory {
@@ -166,7 +176,7 @@ public class SftpInboundRemoteFileSystemSynchronizerTests {
 		}
 
 		@Override
-		public Session<LsEntry> getSession() {
+		public SftpSession getSession() {
 			if (this.sftpEntries.size() == 0) {
 				this.init();
 			}
@@ -176,16 +186,19 @@ public class SftpInboundRemoteFileSystemSynchronizerTests {
 
 				String[] files = new File("remote-test-dir").list();
 				for (String fileName : files) {
-					when(channel.get("remote-test-dir/"+fileName)).thenReturn(new FileInputStream("remote-test-dir/" + fileName));
+					when(channel.get("remote-test-dir/" + fileName))
+							.thenReturn(new FileInputStream("remote-test-dir/" + fileName));
 				}
 				when(channel.ls("remote-test-dir")).thenReturn(sftpEntries);
 
 				when(jschSession.openChannel("sftp")).thenReturn(channel);
 				return SftpTestSessionFactory.createSftpSession(jschSession);
-			} catch (Exception e) {
+			}
+			catch (Exception e) {
 				throw new RuntimeException("Failed to create mock sftp session", e);
 			}
 		}
+
 	}
 
 }

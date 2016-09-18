@@ -1,5 +1,5 @@
 /*
- * Copyright 2014 the original author or authors.
+ * Copyright 2014-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,13 +13,19 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.support.converter;
 
+import org.springframework.beans.BeansException;
+import org.springframework.beans.factory.BeanFactory;
+import org.springframework.beans.factory.BeanFactoryAware;
 import org.springframework.core.convert.ConversionService;
-import org.springframework.integration.context.IntegrationObjectSupport;
+import org.springframework.core.convert.support.DefaultConversionService;
+import org.springframework.integration.support.utils.IntegrationUtils;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageHeaders;
 import org.springframework.messaging.converter.MessageConverter;
+import org.springframework.util.Assert;
 
 /**
  * Default message converter for datatype channels. Registered under bean name
@@ -30,7 +36,12 @@ import org.springframework.messaging.converter.MessageConverter;
  * @since 4.0
  *
  */
-public class DefaultDatatypeChannelMessageConverter extends IntegrationObjectSupport implements MessageConverter {
+public class DefaultDatatypeChannelMessageConverter implements MessageConverter,
+		BeanFactoryAware {
+
+	private volatile ConversionService conversionService = new DefaultConversionService();
+
+	private volatile boolean conversionServiceSet;
 
 	/**
 	 * Specify the {@link ConversionService} to use when trying to convert to
@@ -40,9 +51,20 @@ public class DefaultDatatypeChannelMessageConverter extends IntegrationObjectSup
 	 *
 	 * @param conversionService The conversion service.
 	 */
-	@Override
 	public void setConversionService(ConversionService conversionService) {
-		super.setConversionService(conversionService);
+		Assert.notNull(conversionService, "'conversionService' must not be null");
+		this.conversionService = conversionService;
+		this.conversionServiceSet = true;
+	}
+
+	@Override
+	public void setBeanFactory(BeanFactory beanFactory) throws BeansException {
+		if (!this.conversionServiceSet && beanFactory != null) {
+			ConversionService integrationConversionService = IntegrationUtils.getConversionService(beanFactory);
+			if (integrationConversionService != null) {
+				this.conversionService = integrationConversionService;
+			}
+		}
 	}
 
 	/**
@@ -50,7 +72,7 @@ public class DefaultDatatypeChannelMessageConverter extends IntegrationObjectSup
 	 */
 	@Override
 	public Object fromMessage(Message<?> message, Class<?> targetClass) {
-		ConversionService conversionService = this.getConversionService();
+		ConversionService conversionService = this.conversionService;
 		if (conversionService != null) {
 			if (conversionService.canConvert(message.getPayload().getClass(), targetClass)) {
 				return conversionService.convert(message.getPayload(), targetClass);

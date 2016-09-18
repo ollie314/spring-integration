@@ -10,7 +10,8 @@
 	<int:gateway default-request-channel="pipeline03" default-request-timeout="10000" default-reply-timeout="10000"/>
 
 	<int-jms:outbound-gateway request-channel="pipeline03"
-		connection-factory="connectionFactory"
+		reply-channel="reply1"
+		connection-factory="jmsConnectionFactory"
 		reply-destination-name="pipeline03a-01"
 		correlation-key="JMSCorrelationID"
 		receive-timeout="30000"
@@ -18,22 +19,31 @@
 		<int-jms:reply-listener />
 	</int-jms:outbound-gateway>
 
+	<bean id="capture" class="org.springframework.integration.jms.request_reply.PipelineNamedReplyQueuesJmsTests.Capture" />
+
+	<int:chain input-channel="reply1">
+		<int:transformer expression="payload + 10000"/>
+		<int:service-activator ref="capture" />
+	</int:chain>
+
 	<int-jms:inbound-gateway request-channel="jmsIn"
 		request-destination-name="siOutQueue03a"
-		connection-factory="connectionFactory"
+		connection-factory="jmsConnectionFactory"
 		concurrent-consumers="10"
 		reply-timeout="10000"/>
 
 	<int:chain input-channel="jmsIn" output-channel="anotherGatewayChannel">
+		<int:service-activator ref="capture" />
 		<int:header-enricher>
 			<int:header name="delay" expression="0"/>
 		</int:header-enricher>
-		<int:delayer id="foo" default-delay="0" delay-header-name="delay"/>
+		<int:delayer id="foo" default-delay="0" expression="headers.delay"/>
 		<int:transformer expression="payload"/>
 	</int:chain>
 
 	<int-jms:outbound-gateway request-channel="anotherGatewayChannel"
-		connection-factory="connectionFactory"
+		reply-channel="reply2"
+		connection-factory="jmsConnectionFactory"
 		reply-destination-name="pipeline03a-01"
 		correlation-key="corr03a"
 		receive-timeout="30000"
@@ -41,37 +51,51 @@
 		<int-jms:reply-listener />
 	</int-jms:outbound-gateway>
 
+	<int:chain input-channel="reply2">
+		<int:transformer expression="payload + 10000"/>
+		<int:service-activator ref="capture" />
+	</int:chain>
+
 	<int-jms:inbound-gateway request-channel="anotherIn"
 		request-destination-name="anotherGatewayQueue03a"
 		correlation-key="corr03a"
-		connection-factory="connectionFactory"
+		connection-factory="jmsConnectionFactory"
 		concurrent-consumers="10"
 		reply-timeout="10000"/>
 
-	<int:transformer input-channel="anotherIn" expression="payload" output-channel="toThird" />
+	<int:chain input-channel="anotherIn" output-channel="toThird">
+		<int:transformer expression="payload + 10000" />
+		<int:service-activator ref="capture" />
+	</int:chain>
 
 	<int-jms:outbound-gateway request-channel="toThird"
 		reply-channel="add10kOnTheWayBack"
 		correlation-key="corr03a"
-		connection-factory="connectionFactory"
+		connection-factory="jmsConnectionFactory"
 		reply-destination-name="pipeline03a-01"
 		receive-timeout="30000"
 		request-destination-name="thirdGatewayQueue03a">
 		<int-jms:reply-listener />
 	</int-jms:outbound-gateway>
 
-	<int:transformer input-channel="add10kOnTheWayBack" expression="payload + 10000" />
+	<int:chain input-channel="add10kOnTheWayBack">
+		<int:transformer expression="payload + 10000" />
+		<int:service-activator ref="capture" />
+	</int:chain>
 
 	<int-jms:inbound-gateway request-channel="thirdIn"
 		request-destination-name="thirdGatewayQueue03a"
 		correlation-key="corr03a"
-		connection-factory="connectionFactory"
+		connection-factory="jmsConnectionFactory"
 		concurrent-consumers="10"
 		reply-timeout="10000"/>
 
-	<int:transformer input-channel="thirdIn" expression="payload + 10000" />
+	<int:chain input-channel="thirdIn">
+		<int:transformer expression="payload + 10000" />
+		<int:service-activator ref="capture" />
+	</int:chain>
 
-	<bean id="connectionFactory"
+	<bean id="jmsConnectionFactory"
 		class="org.springframework.jms.connection.CachingConnectionFactory">
 		<property name="targetConnectionFactory">
 			<bean class="org.apache.activemq.ActiveMQConnectionFactory">

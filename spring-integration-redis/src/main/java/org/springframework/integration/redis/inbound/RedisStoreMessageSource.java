@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -123,7 +123,7 @@ public class RedisStoreMessageSource extends IntegrationObjectSupport
 			((IntegrationResourceHolder) holder).addAttribute("store", store);
 		}
 
-		if (store instanceof Collection<?> && ((Collection<Object>)store).size() < 1){
+		if (store instanceof Collection<?> && ((Collection<Object>) store).size() < 1) {
 			return null;
 		}
 		else {
@@ -131,7 +131,7 @@ public class RedisStoreMessageSource extends IntegrationObjectSupport
 		}
 	}
 
-	private RedisStore createStoreView(String key){
+	private RedisStore createStoreView(String key) {
 		RedisCollectionFactoryBean fb = new RedisCollectionFactoryBean();
 		fb.setKey(key);
 		fb.setTemplate(this.redisTemplate);
@@ -141,13 +141,18 @@ public class RedisStoreMessageSource extends IntegrationObjectSupport
 	}
 
 	@Override
+	public String getComponentType() {
+		return "redis:store-inbound-channel-adapter";
+	}
+
+	@Override
 	protected void onInit() throws Exception {
 		this.evaluationContext =
 					ExpressionUtils.createStandardEvaluationContext(this.getBeanFactory());
 	}
 
 	public RedisStore getResource() {
-		return resourceHolder.get();
+		return this.resourceHolder.get();
 	}
 
 	public void afterCommit(Object object) {

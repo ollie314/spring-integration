@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2010 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,11 +31,11 @@ import javax.jms.Session;
 import org.junit.Test;
 
 import org.springframework.context.support.ClassPathXmlApplicationContext;
+import org.springframework.jms.core.JmsTemplate;
+import org.springframework.jms.core.MessageCreator;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageHandlingException;
 import org.springframework.messaging.PollableChannel;
-import org.springframework.jms.core.JmsTemplate;
-import org.springframework.jms.core.MessageCreator;
 import org.springframework.util.ErrorHandler;
 
 /**
@@ -46,9 +46,10 @@ public class InboundOneWayErrorTests {
 	@Test
 	public void noErrorChannel() throws Exception {
 		ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext("InboundOneWayErrorTests-context.xml", getClass());
-		JmsTemplate jmsTemplate = new JmsTemplate(context.getBean("connectionFactory", ConnectionFactory.class));
+		JmsTemplate jmsTemplate = new JmsTemplate(context.getBean("jmsConnectionFactory", ConnectionFactory.class));
 		Destination queue = context.getBean("queueA", Destination.class);
 		jmsTemplate.send(queue, new MessageCreator() {
+			@Override
 			public javax.jms.Message createMessage(Session session) throws JMSException {
 				return session.createTextMessage("test-A");
 			}
@@ -66,9 +67,10 @@ public class InboundOneWayErrorTests {
 	@Test
 	public void errorChannel() throws Exception {
 		ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext("InboundOneWayErrorTests-context.xml", getClass());
-		JmsTemplate jmsTemplate = new JmsTemplate(context.getBean("connectionFactory", ConnectionFactory.class));
+		JmsTemplate jmsTemplate = new JmsTemplate(context.getBean("jmsConnectionFactory", ConnectionFactory.class));
 		Destination queue = context.getBean("queueB", Destination.class);
 		jmsTemplate.send(queue, new MessageCreator() {
+			@Override
 			public javax.jms.Message createMessage(Session session) throws JMSException {
 				return session.createTextMessage("test-B");
 			}
@@ -96,7 +98,7 @@ public class InboundOneWayErrorTests {
 
 	@SuppressWarnings("serial")
 	private static class TestException extends RuntimeException {
-		public TestException(String message) {
+		TestException(String message) {
 			super(message);
 		}
 	}
@@ -107,6 +109,7 @@ public class InboundOneWayErrorTests {
 
 		private volatile Throwable lastError;
 
+		@Override
 		public void handleError(Throwable t) {
 			this.lastError = t;
 			this.latch.countDown();

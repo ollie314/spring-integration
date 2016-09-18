@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2014 the original author or authors.
+ * Copyright 2011-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.test.support;
 
 import org.springframework.messaging.Message;
@@ -26,12 +27,12 @@ import org.springframework.messaging.Message;
 public abstract class MessageValidator extends AbstractResponseValidator<Message<?>> {
 
     @Override
-	protected final boolean extractPayload(){
+	protected final boolean extractPayload() {
         return false;
     }
 
     @Override
-	protected final void validateResponse(Message<?> response){
+	protected final void validateResponse(Message<?> response) {
         validateMessage(response);
     }
 

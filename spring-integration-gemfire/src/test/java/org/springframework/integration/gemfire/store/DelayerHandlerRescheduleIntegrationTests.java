@@ -1,14 +1,17 @@
 /*
- * Copyright 2013 the original author or authors.
+ * Copyright 2013-2016 the original author or authors.
  *
- * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
- * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
- * specific language governing permissions and limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package org.springframework.integration.gemfire.store;
@@ -23,7 +26,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
-import org.junit.Rule;
+import org.junit.ClassRule;
 import org.junit.Test;
 
 import org.springframework.context.support.AbstractApplicationContext;
@@ -39,34 +42,44 @@ import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.PollableChannel;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
-import org.springframework.util.Assert;
 
 import com.gemstone.gemfire.cache.Cache;
+import com.gemstone.gemfire.cache.Region;
+import com.gemstone.gemfire.cache.Scope;
 
 
 /**
  * @author Artem Bilan
+ * @author Gary Russell
  * @since 3.0
  */
 public class DelayerHandlerRescheduleIntegrationTests {
 
 	public static final String DELAYER_ID = "delayerWithGemfireMS";
 
-	public static Cache cache;
+	public static Region<Object, Object> region;
 
-	@Rule
-	public LongRunningIntegrationTest longTests = new LongRunningIntegrationTest();
+	private static CacheFactoryBean cacheFactoryBean;
+
+	@ClassRule
+	public static LongRunningIntegrationTest longTests = new LongRunningIntegrationTest();
 
 	@BeforeClass
 	public static void startUp() throws Exception {
-		CacheFactoryBean cacheFactoryBean = new CacheFactoryBean();
-		cache = cacheFactoryBean.getObject();
+		cacheFactoryBean = new CacheFactoryBean();
+		cacheFactoryBean.afterPropertiesSet();
+		Cache cache = cacheFactoryBean.getObject();
+		region = cache.createRegionFactory().setScope(Scope.LOCAL).create("sig-tests");
 	}
 
 	@AfterClass
-	public static void cleanUp() {
-		cache.close();
-		Assert.isTrue(cache.isClosed(), "Cache did not close after close() call");
+	public static void cleanUp() throws Exception {
+		if (region != null) {
+			region.close();
+		}
+		if (cacheFactoryBean != null) {
+			cacheFactoryBean.destroy();
+		}
 	}
 
 	@Test
@@ -125,6 +138,10 @@ public class DelayerHandlerRescheduleIntegrationTests {
 		assertNotSame(payload1, payload2);
 
 		assertEquals(1, messageStore.getMessageGroupCount());
+		int n = 0;
+		while (n++ < 200 && messageStore.messageGroupSize(delayerMessageGroupId) > 0) {
+			Thread.sleep(50);
+		}
 		assertEquals(0, messageStore.messageGroupSize(delayerMessageGroupId));
 
 	}

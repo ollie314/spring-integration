@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,14 +13,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.file.tail;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.fail;
+import static org.mockito.Mockito.mock;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -32,14 +35,16 @@ import org.junit.Rule;
 import org.junit.Test;
 
 import org.springframework.beans.DirectFieldAccessor;
+import org.springframework.beans.factory.BeanFactory;
 import org.springframework.context.ApplicationEvent;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.messaging.Message;
 import org.springframework.integration.channel.QueueChannel;
 import org.springframework.integration.file.tail.FileTailingMessageProducerSupport.FileTailingEvent;
+import org.springframework.messaging.Message;
 
 /**
  * @author Gary Russell
+ * @author Gavin Gray
  * @since 3.0
  *
  */
@@ -88,22 +93,61 @@ public class FileTailingMessageProducerTests {
 		testGuts(adapter, "tailer");
 	}
 
+	@Test
+	@TailAvailable
+	public void canRecalculateCommandWhenFileOrOptionsChanged() throws IOException {
+		File firstFile = File.createTempFile("first", ".txt");
+		String firstOptions = "-f options";
+		File secondFile = File.createTempFile("second", ".txt");
+		String secondOptions = "-f newoptions";
+		OSDelegatingFileTailingMessageProducer adapter = new OSDelegatingFileTailingMessageProducer();
+		adapter.setFile(firstFile);
+		adapter.setOptions(firstOptions);
+
+		adapter.setOutputChannel(new QueueChannel());
+		adapter.setTailAttemptsDelay(500);
+		adapter.setBeanFactory(mock(BeanFactory.class));
+		adapter.afterPropertiesSet();
+
+		adapter.start();
+		assertEquals("tail " + firstOptions + " " + firstFile.getAbsolutePath(), adapter.getCommand());
+		adapter.stop();
+
+		adapter.setFile(secondFile);
+		adapter.start();
+		assertEquals("tail " + firstOptions + " " + secondFile.getAbsolutePath(), adapter.getCommand());
+		adapter.stop();
+
+		adapter.setOptions(secondOptions);
+		adapter.start();
+		assertEquals("tail " + secondOptions + " " + secondFile.getAbsolutePath(), adapter.getCommand());
+		adapter.stop();
+	}
+
 	private void testGuts(FileTailingMessageProducerSupport adapter, String field)
 			throws Exception {
 		this.adapter = adapter;
 		final List<FileTailingEvent> events = new ArrayList<FileTailingEvent>();
 		adapter.setApplicationEventPublisher(new ApplicationEventPublisher() {
+
 			@Override
 			public void publishEvent(ApplicationEvent event) {
 				FileTailingEvent tailEvent = (FileTailingEvent) event;
 				logger.warn(event);
 				events.add(tailEvent);
 			}
+
+			@Override
+			public void publishEvent(Object event) {
+
+			}
+
 		});
 		adapter.setFile(new File(testDir, "foo"));
 		QueueChannel outputChannel = new QueueChannel();
 		adapter.setOutputChannel(outputChannel);
 		adapter.setTailAttemptsDelay(500);
+		adapter.setBeanFactory(mock(BeanFactory.class));
 		adapter.afterPropertiesSet();
 		File file = new File(testDir, "foo");
 		File renamed = new File(testDir, "bar");
@@ -118,7 +162,7 @@ public class FileTailingMessageProducerTests {
 		foo.flush();
 		foo.close();
 		for (int i = 0; i < 50; i++) {
-			Message<?> message = outputChannel.receive(5000);
+			Message<?> message = outputChannel.receive(10000);
 			assertNotNull("expected a non-null message", message);
 			assertEquals("hello" + i, message.getPayload());
 		}

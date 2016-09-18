@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,6 +29,7 @@ import org.springframework.beans.factory.support.ManagedMap;
 import org.springframework.beans.factory.xml.AbstractSingleBeanDefinitionParser;
 import org.springframework.beans.factory.xml.ParserContext;
 import org.springframework.integration.config.xml.IntegrationNamespaceUtils;
+import org.springframework.integration.http.inbound.CrossOrigin;
 import org.springframework.integration.http.inbound.HttpRequestHandlingController;
 import org.springframework.integration.http.inbound.HttpRequestHandlingMessagingGateway;
 import org.springframework.integration.http.inbound.RequestMapping;
@@ -153,7 +154,7 @@ public class HttpInboundEndpointParser extends AbstractSingleBeanDefinitionParse
 
 		if (StringUtils.hasText(headerMapper)) {
 			if (hasMappedRequestHeaders || hasMappedResponseHeaders) {
-				parserContext.getReaderContext().error("Neither 'mappped-request-headers' or 'mapped-response-headers' " +
+				parserContext.getReaderContext().error("Neither 'mapped-request-headers' or 'mapped-response-headers' " +
 						"attributes are allowed when a 'header-mapper' has been specified.", parserContext.extractSource(element));
 			}
 			builder.addPropertyReference("headerMapper", headerMapper);
@@ -172,10 +173,38 @@ public class HttpInboundEndpointParser extends AbstractSingleBeanDefinitionParse
 			builder.addPropertyValue("headerMapper", headerMapperBuilder.getBeanDefinition());
 		}
 
-		BeanDefinition requestMappingDef = this.createRequestMapping(element);
+		BeanDefinition requestMappingDef = createRequestMapping(element);
 		builder.addPropertyValue("requestMapping", requestMappingDef);
 
+
+		Element crossOriginElement = DomUtils.getChildElementByTagName(element, "cross-origin");
+		if (crossOriginElement != null) {
+			BeanDefinitionBuilder crossOriginBuilder =
+					BeanDefinitionBuilder.genericBeanDefinition(CrossOrigin.class);
+			String[] attributes = {"origin", "allowed-headers", "exposed-headers", "max-age", "method"};
+			for (String crossOriginAttribute : attributes) {
+				IntegrationNamespaceUtils.setValueIfAttributeDefined(crossOriginBuilder, crossOriginElement,
+						crossOriginAttribute);
+			}
+			IntegrationNamespaceUtils.setValueIfAttributeDefined(crossOriginBuilder, crossOriginElement,
+					"allow-credentials", true);
+			builder.addPropertyValue("crossOrigin", crossOriginBuilder.getBeanDefinition());
+		}
+
 		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "request-payload-type", "requestPayloadType");
+
+		BeanDefinition statusCodeExpressionDef =
+				IntegrationNamespaceUtils.createExpressionDefIfAttributeDefined("status-code-expression", element);
+		if (statusCodeExpressionDef == null) {
+			statusCodeExpressionDef = IntegrationNamespaceUtils
+					.createExpressionDefIfAttributeDefined("reply-timeout-status-code-expression", element);
+		}
+		if (statusCodeExpressionDef != null) {
+			builder.addPropertyValue("statusCodeExpression", statusCodeExpressionDef);
+		}
+
+		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, IntegrationNamespaceUtils.AUTO_STARTUP);
+		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, IntegrationNamespaceUtils.PHASE);
 	}
 
 	private String getInputChannelAttributeName() {

@@ -1,17 +1,17 @@
 /*
- * Copyright 2007-2014 the original author or authors
+ * Copyright 2007-2016 the original author or authors.
  *
- *     Licensed under the Apache License, Version 2.0 (the "License");
- *     you may not use this file except in compliance with the License.
- *     You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
- *     Unless required by applicable law or agreed to in writing, software
- *     distributed under the License is distributed on an "AS IS" BASIS,
- *     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *     See the License for the specific language governing permissions and
- *     limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package org.springframework.integration.redis.outbound;
@@ -258,19 +258,19 @@ public class RedisStoreWritingMessageHandler extends AbstractMessageHandler {
 
 		Assert.state(this.initialized, "handler not initialized - afterPropertiesSet() must be called before the first use");
 		try {
-			if (collectionType == CollectionType.ZSET) {
+			if (this.collectionType == CollectionType.ZSET) {
 				this.writeToZset((RedisZSet<Object>) store, message);
 			}
-			else if (collectionType == CollectionType.SET) {
+			else if (this.collectionType == CollectionType.SET) {
 				this.writeToSet((RedisSet<Object>) store, message);
 			}
-			else if (collectionType == CollectionType.LIST) {
+			else if (this.collectionType == CollectionType.LIST) {
 				this.writeToList((RedisList<Object>) store, message);
 			}
-			else if (collectionType == CollectionType.MAP) {
+			else if (this.collectionType == CollectionType.MAP) {
 				this.writeToMap((RedisMap<Object, Object>) store, message);
 			}
-			else if (collectionType == CollectionType.PROPERTIES) {
+			else if (this.collectionType == CollectionType.PROPERTIES) {
 				this.writeToProperties((RedisProperties) store, message);
 			}
 		}
@@ -280,7 +280,7 @@ public class RedisStoreWritingMessageHandler extends AbstractMessageHandler {
 	}
 
 	@SuppressWarnings("unchecked")
-	private void writeToZset(RedisZSet<Object> zset, final Message<?> message) throws Exception{
+	private void writeToZset(RedisZSet<Object> zset, final Message<?> message) throws Exception {
 		final Object payload = message.getPayload();
 		final BoundZSetOperations<String, Object> ops =
 				(BoundZSetOperations<String, Object>) this.redisTemplate.boundZSetOps(zset.getKey());
@@ -305,7 +305,7 @@ public class RedisStoreWritingMessageHandler extends AbstractMessageHandler {
 				this.processInPipeline(new PipelineCallback() {
 					@Override
 					public void process() {
-						for (Object object : ((Collection<?>)payload)) {
+						for (Object object : ((Collection<?>) payload)) {
 							incrementOrOverwrite(ops, object, determineScore(message), zsetIncrementHeader);
 						}
 					}
@@ -320,8 +320,8 @@ public class RedisStoreWritingMessageHandler extends AbstractMessageHandler {
 		}
 	}
 
-	private boolean extractZsetIncrementHeader(Message<?> message){
-		if (message.getHeaders().containsKey(RedisHeaders.ZSET_INCREMENT_SCORE)){
+	private boolean extractZsetIncrementHeader(Message<?> message) {
+		if (message.getHeaders().containsKey(RedisHeaders.ZSET_INCREMENT_SCORE)) {
 			return this.zsetIncrementScoreExpression.getValue(this.evaluationContext, message, Boolean.class);
 		}
 		return true;
@@ -353,7 +353,7 @@ public class RedisStoreWritingMessageHandler extends AbstractMessageHandler {
 			this.processInPipeline(new PipelineCallback() {
 				@Override
 				public void process() {
-					for (Object object : ((Collection<?>)payload)) {
+					for (Object object : ((Collection<?>) payload)) {
 						ops.add(object);
 					}
 				}
@@ -400,14 +400,14 @@ public class RedisStoreWritingMessageHandler extends AbstractMessageHandler {
 
 	private void processInPipeline(PipelineCallback callback) {
 		RedisConnection connection =
-				RedisConnectionUtils.bindConnection(redisTemplate.getConnectionFactory());
+				RedisConnectionUtils.bindConnection(this.redisTemplate.getConnectionFactory());
 		try {
 			connection.openPipeline();
 			callback.process();
 		}
 		finally {
 			connection.closePipeline();
-			RedisConnectionUtils.unbindConnection(redisTemplate.getConnectionFactory());
+			RedisConnectionUtils.unbindConnection(this.redisTemplate.getConnectionFactory());
 		}
 	}
 
@@ -430,7 +430,7 @@ public class RedisStoreWritingMessageHandler extends AbstractMessageHandler {
 			this.doIncrementOrOverwrite(ops, object, score, zsetIncrementScore);
 		}
 		else {
-			logger.debug("Zset Score could not be determined. Using default score of 1");
+			this.logger.debug("Zset Score could not be determined. Using default score of 1");
 			this.doIncrementOrOverwrite(ops, object, Double.valueOf(1), zsetIncrementScore);
 		}
 	}
@@ -445,11 +445,11 @@ public class RedisStoreWritingMessageHandler extends AbstractMessageHandler {
 		}
 	}
 
-	private boolean verifyAllMapValuesOfTypeNumber(Map<?,?> map) {
+	private boolean verifyAllMapValuesOfTypeNumber(Map<?, ?> map) {
 		for (Object value : map.values()) {
 			if (!(value instanceof Number)) {
-				if (logger.isWarnEnabled()) {
-					logger.warn("failed to extract payload elements because '" +
+				if (this.logger.isWarnEnabled()) {
+					this.logger.warn("failed to extract payload elements because '" +
 							value + "' is not of type Number");
 				}
 				return false;
@@ -480,6 +480,6 @@ public class RedisStoreWritingMessageHandler extends AbstractMessageHandler {
 	}
 
 	private interface PipelineCallback {
-		public void process();
+		void process();
 	}
 }

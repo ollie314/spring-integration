@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,14 @@
 
 package org.springframework.integration.support.converter;
 
+import org.springframework.beans.BeansException;
+import org.springframework.beans.factory.BeanFactory;
+import org.springframework.beans.factory.BeanFactoryAware;
 import org.springframework.integration.mapping.InboundMessageMapper;
 import org.springframework.integration.mapping.OutboundMessageMapper;
 import org.springframework.integration.support.DefaultMessageBuilderFactory;
 import org.springframework.integration.support.MessageBuilderFactory;
+import org.springframework.integration.support.utils.IntegrationUtils;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageHeaders;
 import org.springframework.messaging.converter.MessageConversionException;
@@ -28,10 +32,11 @@ import org.springframework.messaging.converter.MessageConverter;
 /**
  * @author Mark Fisher
  * @author Gary Russell
+ * @author Artem Bilan
  * @since 2.0
  */
 @SuppressWarnings({"unchecked", "rawtypes"})
-public class SimpleMessageConverter implements MessageConverter {
+public class SimpleMessageConverter implements MessageConverter, BeanFactoryAware {
 
 	private volatile InboundMessageMapper inboundMessageMapper;
 
@@ -39,36 +44,60 @@ public class SimpleMessageConverter implements MessageConverter {
 
 	private volatile MessageBuilderFactory messageBuilderFactory = new DefaultMessageBuilderFactory();
 
+	private volatile boolean messageBuilderFactorySet;
+
+	private BeanFactory beanFactory;
+
 	public SimpleMessageConverter() {
 		this(null, null);
 	}
 
 	public SimpleMessageConverter(InboundMessageMapper<?> inboundMessageMapper) {
 		this(inboundMessageMapper,
-				(inboundMessageMapper instanceof OutboundMessageMapper ? (OutboundMessageMapper<?>) inboundMessageMapper : null));
+				(inboundMessageMapper instanceof OutboundMessageMapper
+						? (OutboundMessageMapper<?>) inboundMessageMapper
+						: null));
 	}
 
 	public SimpleMessageConverter(OutboundMessageMapper<?> outboundMessageMapper) {
-		this(outboundMessageMapper instanceof InboundMessageMapper ? (InboundMessageMapper<?>) outboundMessageMapper : null,
+		this(outboundMessageMapper instanceof InboundMessageMapper
+						? (InboundMessageMapper<?>) outboundMessageMapper
+						: null,
 				outboundMessageMapper);
 	}
 
-	public SimpleMessageConverter(InboundMessageMapper<?> inboundMessageMapper, OutboundMessageMapper<?> outboundMessageMapper) {
+	public SimpleMessageConverter(InboundMessageMapper<?> inboundMessageMapper,
+			OutboundMessageMapper<?> outboundMessageMapper) {
 		this.setInboundMessageMapper(inboundMessageMapper);
 		this.setOutboundMessageMapper(outboundMessageMapper);
 	}
 
 
-	public void setInboundMessageMapper(InboundMessageMapper<?> inboundMessageMapper) {
-		this.inboundMessageMapper = (inboundMessageMapper != null) ? inboundMessageMapper : new DefaultInboundMessageMapper();
+	public final void setInboundMessageMapper(InboundMessageMapper<?> inboundMessageMapper) {
+		this.inboundMessageMapper = (inboundMessageMapper != null)
+				? inboundMessageMapper
+				: new DefaultInboundMessageMapper();
 	}
 
-	public void setOutboundMessageMapper(OutboundMessageMapper<?> outboundMessageMapper) {
-		this.outboundMessageMapper = (outboundMessageMapper != null) ? outboundMessageMapper : new DefaultOutboundMessageMapper();
+	public final void setOutboundMessageMapper(OutboundMessageMapper<?> outboundMessageMapper) {
+		this.outboundMessageMapper = (outboundMessageMapper != null
+				? outboundMessageMapper
+				: new DefaultOutboundMessageMapper());
 	}
 
-	public final void setMessageBuilderFactory(MessageBuilderFactory messageBuilderFactory) {
-		this.messageBuilderFactory = messageBuilderFactory;
+	@Override
+	public void setBeanFactory(BeanFactory beanFactory) throws BeansException {
+		this.beanFactory = beanFactory;
+	}
+
+	protected MessageBuilderFactory getMessageBuilderFactory() {
+		if (!this.messageBuilderFactorySet) {
+			if (this.beanFactory != null) {
+				this.messageBuilderFactory = IntegrationUtils.getMessageBuilderFactory(this.beanFactory);
+			}
+			this.messageBuilderFactorySet = true;
+		}
+		return this.messageBuilderFactory;
 	}
 
 	@Override
@@ -102,8 +131,9 @@ public class SimpleMessageConverter implements MessageConverter {
 			if (object instanceof Message<?>) {
 				return (Message<?>) object;
 			}
-			return messageBuilderFactory.withPayload(object).build();
+			return getMessageBuilderFactory().withPayload(object).build();
 		}
+
 	}
 
 
@@ -113,6 +143,7 @@ public class SimpleMessageConverter implements MessageConverter {
 		public Object fromMessage(Message<?> message) throws Exception {
 			return (message != null) ? message.getPayload() : null;
 		}
+
 	}
 
 }

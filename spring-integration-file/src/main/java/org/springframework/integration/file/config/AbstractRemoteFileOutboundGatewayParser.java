@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.file.config;
 
 import org.w3c.dom.Element;
@@ -20,11 +21,11 @@ import org.w3c.dom.Element;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.support.BeanDefinitionBuilder;
 import org.springframework.beans.factory.xml.ParserContext;
-import org.springframework.integration.config.ExpressionFactoryBean;
 import org.springframework.integration.config.xml.AbstractConsumerEndpointParser;
 import org.springframework.integration.config.xml.IntegrationNamespaceUtils;
 import org.springframework.integration.file.filters.RegexPatternFileListFilter;
 import org.springframework.integration.file.filters.SimplePatternFileListFilter;
+import org.springframework.integration.file.remote.RemoteFileOperations;
 import org.springframework.util.StringUtils;
 
 /**
@@ -45,14 +46,22 @@ public abstract class AbstractRemoteFileOutboundGatewayParser extends AbstractCo
 	@Override
 	protected BeanDefinitionBuilder parseHandler(Element element, ParserContext parserContext) {
 
-		BeanDefinition templateDefinition = FileParserUtils.parseRemoteFileTemplate(element, parserContext, false);
+		BeanDefinition templateDefinition = FileParserUtils.parseRemoteFileTemplate(element, parserContext, false,
+				getTemplateClass());
 
 		BeanDefinitionBuilder builder = BeanDefinitionBuilder.genericBeanDefinition(getGatewayClassName());
 
 		builder.addConstructorArgValue(templateDefinition);
 
-		builder.addConstructorArgValue(element.getAttribute("command"));
-		builder.addConstructorArgValue(element.getAttribute(EXPRESSION_ATTRIBUTE));
+		if (element.hasAttribute("session-callback")) {
+			builder.addConstructorArgReference(element.getAttribute("session-callback"));
+		}
+		else {
+			builder.addConstructorArgValue(element.getAttribute("command"));
+			if (element.hasAttribute(EXPRESSION_ATTRIBUTE)) {
+				builder.addConstructorArgValue(element.getAttribute(EXPRESSION_ATTRIBUTE));
+			}
+		}
 		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "command-options", "options");
 		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "reply-timeout", "sendTimeout");
 		IntegrationNamespaceUtils.setReferenceIfAttributeDefined(builder, element, "reply-channel", "outputChannel");
@@ -66,16 +75,18 @@ public abstract class AbstractRemoteFileOutboundGatewayParser extends AbstractCo
 
 		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "auto-create-local-directory");
 		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "order");
-		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "rename-expression");
+		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "rename-expression",
+				"renameExpressionString");
 		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "requires-reply");
-		String localFileGeneratorExpression = element.getAttribute("local-filename-generator-expression");
-		if (StringUtils.hasText(localFileGeneratorExpression)) {
-			BeanDefinitionBuilder localFileGeneratorExpressionBuilder =
-					BeanDefinitionBuilder.genericBeanDefinition(ExpressionFactoryBean.class);
-			localFileGeneratorExpressionBuilder.addConstructorArgValue(localFileGeneratorExpression);
-			builder.addPropertyValue("localFilenameGeneratorExpression", localFileGeneratorExpressionBuilder.getBeanDefinition());
-		}
+		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "local-filename-generator-expression",
+				"localFilenameGeneratorExpressionString");
+		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "mode", "fileExistsMode");
+		postProcessBuilder(builder, element);
 		return builder;
+	}
+
+	protected void postProcessBuilder(BeanDefinitionBuilder builder, Element element) {
+		// no-op
 	}
 
 	protected void configureFilter(BeanDefinitionBuilder builder, Element element, ParserContext parserContext,
@@ -119,5 +130,7 @@ public abstract class AbstractRemoteFileOutboundGatewayParser extends AbstractCo
 	protected abstract String getSimplePatternFileListFilterClassName();
 
 	protected abstract String getGatewayClassName();
+
+	protected abstract Class<? extends RemoteFileOperations<?>> getTemplateClass();
 
 }

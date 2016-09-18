@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2014 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,6 +28,7 @@ package org.springframework.integration.config.xml;
  */
 public class IntegrationNamespaceHandler extends AbstractIntegrationNamespaceHandler {
 
+	@Override
 	public void init() {
 		registerBeanDefinitionParser("channel", new PointToPointChannelParser());
 		registerBeanDefinitionParser("publish-subscribe-channel", new PublishSubscribeChannelParser());
@@ -52,6 +53,7 @@ public class IntegrationNamespaceHandler extends AbstractIntegrationNamespaceHan
 		registerBeanDefinitionParser("json-to-object-transformer", new JsonToObjectTransformerParser());
 		registerBeanDefinitionParser("payload-serializing-transformer", new PayloadSerializingTransformerParser());
 		registerBeanDefinitionParser("payload-deserializing-transformer", new PayloadDeserializingTransformerParser());
+		registerBeanDefinitionParser("stream-transformer", new StreamTransformerParser());
 		registerBeanDefinitionParser("claim-check-in", new ClaimCheckInParser());
 		registerBeanDefinitionParser("syslog-to-map-transformer", new SyslogToMapTransformerParser());
 		registerBeanDefinitionParser("claim-check-out", new ClaimCheckOutParser());
@@ -77,6 +79,13 @@ public class IntegrationNamespaceHandler extends AbstractIntegrationNamespaceHan
 		registerBeanDefinitionParser("transaction-synchronization-factory", new TransactionSynchronizationFactoryParser());
 		registerBeanDefinitionParser("spel-function", new SpelFunctionParser());
 		registerBeanDefinitionParser("spel-property-accessors", new SpelPropertyAccessorsParser());
+		RetryAdviceParser retryParser = new RetryAdviceParser();
+		registerBeanDefinitionParser("handler-retry-advice", retryParser);
+		registerBeanDefinitionParser("retry-advice", retryParser);
+		registerBeanDefinitionParser("scatter-gather", new ScatterGatherParser());
+		registerBeanDefinitionParser("idempotent-receiver", new IdempotentReceiverInterceptorParser());
+		registerBeanDefinitionParser("management", new IntegrationManagementParser());
+		registerBeanDefinitionParser("barrier", new BarrierParser());
 	}
 
 }

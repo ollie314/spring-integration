@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package org.springframework.integration.transformer;
 
 import org.springframework.beans.factory.BeanFactoryAware;
+import org.springframework.context.Lifecycle;
 import org.springframework.integration.handler.AbstractReplyProducingMessageHandler;
 import org.springframework.integration.support.context.NamedComponent;
 import org.springframework.messaging.Message;
@@ -30,8 +31,9 @@ import org.springframework.util.Assert;
  *
  * @author Mark Fisher
  * @author Oleg Zhurakousky
+ * @author Artem Bilan
  */
-public class MessageTransformingHandler extends AbstractReplyProducingMessageHandler {
+public class MessageTransformingHandler extends AbstractReplyProducingMessageHandler implements Lifecycle {
 
 	private final Transformer transformer;
 
@@ -63,15 +65,34 @@ public class MessageTransformingHandler extends AbstractReplyProducingMessageHan
 	}
 
 	@Override
+	public void start() {
+		if (this.transformer instanceof Lifecycle) {
+			((Lifecycle) this.transformer).start();
+		}
+	}
+
+	@Override
+	public void stop() {
+		if (this.transformer instanceof Lifecycle) {
+			((Lifecycle) this.transformer).stop();
+		}
+	}
+
+	@Override
+	public boolean isRunning() {
+		return !(this.transformer instanceof Lifecycle) || ((Lifecycle) this.transformer).isRunning();
+	}
+
+	@Override
 	protected Object handleRequestMessage(Message<?> message) {
 		try {
-			return transformer.transform(message);
+			return this.transformer.transform(message);
 		}
 		catch (Exception e) {
 			if (e instanceof MessageTransformationException) {
 				throw (MessageTransformationException) e;
 			}
-			throw new MessageTransformationException(message, e);
+			throw new MessageTransformationException(message, "Failed to transform Message", e);
 		}
 	}
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 
 package org.springframework.integration.endpoint;
 
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Executor;
@@ -30,14 +32,17 @@ import org.springframework.integration.channel.MessagePublishingErrorHandler;
 import org.springframework.integration.support.channel.BeanFactoryChannelResolver;
 import org.springframework.integration.transaction.ExpressionEvaluatingTransactionSynchronizationProcessor;
 import org.springframework.integration.transaction.IntegrationResourceHolder;
+import org.springframework.integration.transaction.IntegrationResourceHolderSynchronization;
 import org.springframework.integration.transaction.TransactionSynchronizationFactory;
 import org.springframework.integration.util.ErrorHandlingTaskExecutor;
 import org.springframework.messaging.Message;
+import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.MessageHandlingException;
 import org.springframework.messaging.MessagingException;
 import org.springframework.messaging.support.ErrorMessage;
 import org.springframework.scheduling.Trigger;
 import org.springframework.scheduling.support.PeriodicTrigger;
+import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.Assert;
 import org.springframework.util.ClassUtils;
@@ -48,12 +53,15 @@ import org.springframework.util.ErrorHandler;
  * @author Mark Fisher
  * @author Oleg Zhurakousky
  * @author Gary Russell
+ * @author Artem Bilan
  */
 public abstract class AbstractPollingEndpoint extends AbstractEndpoint implements BeanClassLoaderAware {
 
 	private volatile Executor taskExecutor = new SyncTaskExecutor();
 
 	private volatile ErrorHandler errorHandler;
+
+	private volatile boolean errorHandlerIsDefault;
 
 	private volatile Trigger trigger = new PeriodicTrigger(10);
 
@@ -74,7 +82,7 @@ public abstract class AbstractPollingEndpoint extends AbstractEndpoint implement
 	private volatile TransactionSynchronizationFactory transactionSynchronizationFactory;
 
 	public AbstractPollingEndpoint() {
-		this.setPhase(Integer.MAX_VALUE);
+		this.setPhase(Integer.MAX_VALUE / 2);
 	}
 
 	public void setTaskExecutor(Executor taskExecutor) {
@@ -106,6 +114,42 @@ public abstract class AbstractPollingEndpoint extends AbstractEndpoint implement
 		this.transactionSynchronizationFactory = transactionSynchronizationFactory;
 	}
 
+	/**
+	 * Return the default error channel if the error handler is explicitly provided and
+	 * it is a {@link MessagePublishingErrorHandler}.
+	 * @return the channel or null.
+	 * @since 4.3
+	 */
+	public MessageChannel getDefaultErrorChannel() {
+		if (!this.errorHandlerIsDefault && this.errorHandler instanceof MessagePublishingErrorHandler) {
+			return ((MessagePublishingErrorHandler) this.errorHandler).getDefaultErrorChannel();
+		}
+		else {
+			return null;
+		}
+	}
+
+	protected ClassLoader getBeanClassLoader() {
+		return this.beanClassLoader;
+	}
+
+	/**
+	 * Return true if this advice should be applied only to the {@link #receiveMessage()} operation
+	 * rather than the whole poll.
+	 * @param advice The advice.
+	 * @return true to only advise the receive operation.
+	 */
+	protected boolean isReceiveOnlyAdvice(Advice advice) {
+		return false;
+	}
+
+	/**
+	 * Add the advice chain to the component that responds to {@link #receiveMessage()} calls.
+	 * @param chain the advice chain {@code Collection}.
+	 */
+	protected void applyReceiveOnlyAdviceChain(Collection<Advice> chain) {
+	}
+
 	@Override
 	protected void onInit() {
 		synchronized (this.initializationMonitor) {
@@ -113,34 +157,34 @@ public abstract class AbstractPollingEndpoint extends AbstractEndpoint implement
 				return;
 			}
 			Assert.notNull(this.trigger, "Trigger is required");
-			Executor providedExecutor = this.taskExecutor;
-			if (providedExecutor != null) {
-				this.taskExecutor = providedExecutor;
-			}
 			if (this.taskExecutor != null) {
 				if (!(this.taskExecutor instanceof ErrorHandlingTaskExecutor)) {
 					if (this.errorHandler == null) {
 						Assert.notNull(this.getBeanFactory(), "BeanFactory is required");
 						this.errorHandler = new MessagePublishingErrorHandler(
 								new BeanFactoryChannelResolver(getBeanFactory()));
+						this.errorHandlerIsDefault = true;
 					}
 					this.taskExecutor = new ErrorHandlingTaskExecutor(this.taskExecutor, this.errorHandler);
 				}
 			}
-			try {
-				this.poller = this.createPoller();
-				this.initialized = true;
-			}
-			catch (Exception e) {
-				throw new MessagingException("Failed to create Poller", e);
-			}
+			this.initialized = true;
 		}
 	}
 
 	@SuppressWarnings("unchecked")
 	private Runnable createPoller() throws Exception {
+		List<Advice> receiveOnlyAdviceChain = new ArrayList<Advice>();
+		if (!CollectionUtils.isEmpty(this.adviceChain)) {
+			for (Advice advice : this.adviceChain) {
+				if (isReceiveOnlyAdvice(advice)) {
+					receiveOnlyAdviceChain.add(advice);
+				}
+			}
+		}
 
 		Callable<Boolean> pollingTask = new Callable<Boolean>() {
+
 			@Override
 			public Boolean call() throws Exception {
 				return doPoll();
@@ -152,10 +196,15 @@ public abstract class AbstractPollingEndpoint extends AbstractEndpoint implement
 			ProxyFactory proxyFactory = new ProxyFactory(pollingTask);
 			if (!CollectionUtils.isEmpty(adviceChain)) {
 				for (Advice advice : adviceChain) {
-					proxyFactory.addAdvice(advice);
+					if (!isReceiveOnlyAdvice(advice)) {
+						proxyFactory.addAdvice(advice);
+					}
 				}
 			}
 			pollingTask = (Callable<Boolean>) proxyFactory.getProxy(this.beanClassLoader);
+		}
+		if (receiveOnlyAdviceChain.size() > 0) {
+			applyReceiveOnlyAdviceChain(receiveOnlyAdviceChain);
 		}
 		return new Poller(pollingTask);
 	}
@@ -169,6 +218,13 @@ public abstract class AbstractPollingEndpoint extends AbstractEndpoint implement
 		}
 		Assert.state(this.getTaskScheduler() != null,
 				"unable to start polling, no taskScheduler available");
+		try {
+			this.poller = createPoller();
+		}
+		catch (Exception e) {
+			this.initialized = false;
+			throw new MessagingException("Failed to create Poller", e);
+		}
 		this.runningTask = this.getTaskScheduler().schedule(this.poller, this.trigger);
 	}
 
@@ -184,16 +240,30 @@ public abstract class AbstractPollingEndpoint extends AbstractEndpoint implement
 	private boolean doPoll() {
 		IntegrationResourceHolder holder = this.bindResourceHolderIfNecessary(
 				this.getResourceKey(), this.getResourceToBind());
-		Message<?> message = this.receiveMessage();
+		Message<?> message = null;
+		try {
+			message = this.receiveMessage();
+		}
+		catch (Exception e) {
+			if (Thread.interrupted()) {
+				if (logger.isDebugEnabled()) {
+					logger.debug("Poll interrupted - during stop()? : " + e.getMessage());
+				}
+				return false;
+			}
+			else {
+				throw (RuntimeException) e;
+			}
+		}
 		boolean result;
 		if (message == null) {
-			if (this.logger.isDebugEnabled()){
+			if (this.logger.isDebugEnabled()) {
 				this.logger.debug("Received no Message during the poll, returning 'false'");
 			}
 			result = false;
 		}
 		else {
-			if (this.logger.isDebugEnabled()){
+			if (this.logger.isDebugEnabled()) {
 				this.logger.debug("Poll resulted in Message: " + message);
 			}
 			if (holder != null) {
@@ -240,42 +310,47 @@ public abstract class AbstractPollingEndpoint extends AbstractEndpoint implement
 	}
 
 	private IntegrationResourceHolder bindResourceHolderIfNecessary(String key, Object resource) {
-		IntegrationResourceHolder holder = null;
 
 		if (this.transactionSynchronizationFactory != null && resource != null) {
 			if (TransactionSynchronizationManager.isActualTransactionActive()) {
-				holder = new IntegrationResourceHolder();
-				if (key != null) {
-					holder.addAttribute(key, resource);
+				TransactionSynchronization synchronization = this.transactionSynchronizationFactory.create(resource);
+				TransactionSynchronizationManager.registerSynchronization(synchronization);
+				if (synchronization instanceof IntegrationResourceHolderSynchronization) {
+					IntegrationResourceHolder holder =
+							((IntegrationResourceHolderSynchronization) synchronization).getResourceHolder();
+					if (key != null) {
+						holder.addAttribute(key, resource);
+					}
+					return holder;
 				}
-				TransactionSynchronizationManager.bindResource(resource, holder);
-				TransactionSynchronizationManager.registerSynchronization(this.transactionSynchronizationFactory.create(resource));
 			}
 		}
-		return holder;
+		return null;
 	}
 
 	/**
 	 * Default Poller implementation
 	 */
-	private class Poller implements Runnable {
+	private final class Poller implements Runnable {
 
 		private final Callable<Boolean> pollingTask;
 
-
-		public Poller(Callable<Boolean> pollingTask) {
+		private Poller(Callable<Boolean> pollingTask) {
 			this.pollingTask = pollingTask;
 		}
 
 		@Override
 		public void run() {
-			taskExecutor.execute(new Runnable() {
+			AbstractPollingEndpoint.this.taskExecutor.execute(new Runnable() {
+
 				@Override
 				public void run() {
 					int count = 0;
-					while (initialized && (maxMessagesPerPoll <= 0 || count < maxMessagesPerPoll)) {
+					while (AbstractPollingEndpoint.this.initialized
+							&& (AbstractPollingEndpoint.this.maxMessagesPerPoll <= 0
+							|| count < AbstractPollingEndpoint.this.maxMessagesPerPoll)) {
 						try {
-							if (!pollingTask.call()) {
+							if (!Poller.this.pollingTask.call()) {
 								break;
 							}
 							count++;
@@ -290,8 +365,10 @@ public abstract class AbstractPollingEndpoint extends AbstractEndpoint implement
 						}
 					}
 				}
+
 			});
 		}
+
 	}
 
 }

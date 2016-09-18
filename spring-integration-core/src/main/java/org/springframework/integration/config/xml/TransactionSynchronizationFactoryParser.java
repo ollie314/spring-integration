@@ -1,15 +1,19 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
- * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
- * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
- * specific language governing permissions and limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
+
 package org.springframework.integration.config.xml;
 
 import org.w3c.dom.Element;
@@ -43,7 +47,7 @@ public class TransactionSynchronizationFactoryParser extends
 		Element afterCommitElement =  DomUtils.getChildElementByTagName(element, "after-commit");
 		Element afterRollbackElement =  DomUtils.getChildElementByTagName(element, "after-rollback");
 
-		if (this.elementsNotDefined(beforeCommitElement, afterCommitElement, afterRollbackElement)){
+		if (this.elementsNotDefined(beforeCommitElement, afterCommitElement, afterRollbackElement)) {
 			parserContext.getReaderContext().error("At least one sub-element " +
 					"('before-commit', 'after-commit' and/or 'after-rollback') must be defined", element);
 		}
@@ -59,21 +63,21 @@ public class TransactionSynchronizationFactoryParser extends
 		return syncFactoryBuilder.getBeanDefinition();
 	}
 
-	private void processSubElement(Element element, ParserContext parserContext, BeanDefinitionBuilder expressionProcessor, String elementPrefix){
-		if (element != null){
+	private void processSubElement(Element element, ParserContext parserContext, BeanDefinitionBuilder expressionProcessor, String elementPrefix) {
+		if (element != null) {
 			String expression = element.getAttribute("expression");
 			String channel = element.getAttribute("channel");
-			if (this.attributesNotDefined(expression, channel)){
+			if (this.attributesNotDefined(expression, channel)) {
 				parserContext.getReaderContext().error("At least one attribute " +
 						"('expression' and/or 'channel') must be defined", element);
 			}
 
-			if (StringUtils.hasText(expression)){
+			if (StringUtils.hasText(expression)) {
 				RootBeanDefinition expressionDef = new RootBeanDefinition(ExpressionFactoryBean.class);
 				expressionDef.getConstructorArgumentValues().addGenericArgumentValue(expression);
 				expressionProcessor.addPropertyValue(elementPrefix + "Expression", expressionDef);
 			}
-			if (StringUtils.hasText(channel)){
+			if (StringUtils.hasText(channel)) {
 				expressionProcessor.addPropertyReference(elementPrefix + "Channel", channel);
 			}
 			else {
@@ -82,17 +86,17 @@ public class TransactionSynchronizationFactoryParser extends
 		}
 	}
 
-	private boolean elementsNotDefined(Element... elements){
+	private boolean elementsNotDefined(Element... elements) {
 		for (Object element : elements) {
-			if (element != null){
+			if (element != null) {
 				return false;
 			}
 		}
 		return true;
 	}
-	private boolean attributesNotDefined(String... attributes){
+	private boolean attributesNotDefined(String... attributes) {
 		for (String attribute : attributes) {
-			if (StringUtils.hasText(attribute)){
+			if (StringUtils.hasText(attribute)) {
 				return false;
 			}
 		}

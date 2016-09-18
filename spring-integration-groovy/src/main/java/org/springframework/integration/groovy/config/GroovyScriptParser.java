@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,13 @@
 
 package org.springframework.integration.groovy.config;
 
-import groovy.lang.Script;
+import org.w3c.dom.Element;
+
 import org.springframework.beans.factory.support.BeanDefinitionBuilder;
 import org.springframework.beans.factory.xml.ParserContext;
+import org.springframework.integration.config.xml.IntegrationNamespaceUtils;
 import org.springframework.integration.groovy.GroovyScriptExecutingMessageProcessor;
 import org.springframework.integration.scripting.config.AbstractScriptParser;
-import org.springframework.integration.config.xml.IntegrationNamespaceUtils;
-import org.w3c.dom.Element;
 
 /**
  * Parser for the &lt;groovy:script/&gt; element.
@@ -37,23 +37,14 @@ public class GroovyScriptParser extends AbstractScriptParser {
 
 
 	@Override
-	protected String getBeanClassName(Element element) {
-		return GroovyScriptExecutingMessageProcessor.class.getName();
-	}
-
-	/* (non-Javadoc)
-	 * @see org.springframework.integration.config.xml.AbstractScriptParser#getScriptSourceClassName()
-	 */
-	@Override
-	protected String getScriptSourceClassName() {
-		return Script.class.getName();
+	protected Class<?> getBeanClass(Element element) {
+		return GroovyScriptExecutingMessageProcessor.class;
 	}
 
 	protected void postProcess(BeanDefinitionBuilder builder, Element element, ParserContext parserContext) {
 		IntegrationNamespaceUtils.setReferenceIfAttributeDefined(builder, element, "customizer");
+		IntegrationNamespaceUtils.setReferenceIfAttributeDefined(builder, element, "compiler-configuration");
+		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "compile-static");
 	}
-
-
-
 
 }

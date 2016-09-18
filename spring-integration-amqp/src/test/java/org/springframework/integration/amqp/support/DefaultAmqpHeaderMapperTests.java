@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,9 @@
 package org.springframework.integration.amqp.support;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.fail;
+import static org.mockito.Mockito.mock;
 
 import java.util.Date;
 import java.util.HashMap;
@@ -25,34 +27,40 @@ import java.util.Map;
 import java.util.Set;
 
 import org.junit.Test;
+
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.core.MessageDeliveryMode;
 import org.springframework.amqp.core.MessageProperties;
-import org.springframework.amqp.support.converter.JsonMessageConverter;
+import org.springframework.amqp.support.AmqpHeaders;
+import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
+import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.http.MediaType;
+import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.MessageHeaders;
-import org.springframework.integration.amqp.AmqpHeaders;
+import org.springframework.util.MimeType;
+import org.springframework.util.MimeTypeUtils;
 
 /**
  * @author Mark Fisher
  * @author Gary Russell
  * @author Oleg Zhurakousky
+ * @author Stephane Nicoll
  * @since 2.1
  */
 public class DefaultAmqpHeaderMapperTests {
 
-	@SuppressWarnings("deprecation")
 	@Test
 	public void fromHeaders() {
-		DefaultAmqpHeaderMapper headerMapper = new DefaultAmqpHeaderMapper();
+		DefaultAmqpHeaderMapper headerMapper = DefaultAmqpHeaderMapper.outboundMapper();
 		Map<String, Object> headerMap = new HashMap<String, Object>();
 		headerMap.put(AmqpHeaders.APP_ID, "test.appId");
 		headerMap.put(AmqpHeaders.CLUSTER_ID, "test.clusterId");
 		headerMap.put(AmqpHeaders.CONTENT_ENCODING, "test.contentEncoding");
 		headerMap.put(AmqpHeaders.CONTENT_LENGTH, 99L);
 		headerMap.put(AmqpHeaders.CONTENT_TYPE, "test.contentType");
-		byte[] testCorrelationId = new byte[] {1,2,3};
+		byte[] testCorrelationId = new byte[] { 1, 2, 3 };
 		headerMap.put(AmqpHeaders.CORRELATION_ID, testCorrelationId);
+		headerMap.put(AmqpHeaders.DELAY, 1234);
 		headerMap.put(AmqpHeaders.DELIVERY_MODE, MessageDeliveryMode.NON_PERSISTENT);
 		headerMap.put(AmqpHeaders.DELIVERY_TAG, 1234L);
 		headerMap.put(AmqpHeaders.EXPIRATION, "test.expiration");
@@ -67,12 +75,16 @@ public class DefaultAmqpHeaderMapperTests {
 		headerMap.put(AmqpHeaders.USER_ID, "test.userId");
 		headerMap.put(AmqpHeaders.SPRING_REPLY_CORRELATION, "test.correlation");
 		headerMap.put(AmqpHeaders.SPRING_REPLY_TO_STACK, "test.replyTo2");
+
+		headerMap.put(MessageHeaders.ERROR_CHANNEL, mock(MessageChannel.class));
+		headerMap.put(MessageHeaders.REPLY_CHANNEL, mock(MessageChannel.class));
+
 		MessageHeaders integrationHeaders = new MessageHeaders(headerMap);
 		MessageProperties amqpProperties = new MessageProperties();
 		headerMapper.fromHeadersToRequest(integrationHeaders, amqpProperties);
 		Set<String> headerKeys = amqpProperties.getHeaders().keySet();
 		for (String headerKey : headerKeys) {
-			if (headerKey.startsWith(AmqpHeaders.PREFIX)){
+			if (headerKey.startsWith(AmqpHeaders.PREFIX)) {
 				fail();
 			}
 		}
@@ -82,6 +94,7 @@ public class DefaultAmqpHeaderMapperTests {
 		assertEquals(99L, amqpProperties.getContentLength());
 		assertEquals("test.contentType", amqpProperties.getContentType());
 		assertEquals(testCorrelationId, amqpProperties.getCorrelationId());
+		assertEquals(Integer.valueOf(1234), amqpProperties.getDelay());
 		assertEquals(MessageDeliveryMode.NON_PERSISTENT, amqpProperties.getDeliveryMode());
 		assertEquals(1234L, amqpProperties.getDeliveryTag());
 		assertEquals("test.expiration", amqpProperties.getExpiration());
@@ -93,13 +106,14 @@ public class DefaultAmqpHeaderMapperTests {
 		assertEquals(testTimestamp, amqpProperties.getTimestamp());
 		assertEquals("test.type", amqpProperties.getType());
 		assertEquals("test.userId", amqpProperties.getUserId());
-		assertEquals("test.correlation", amqpProperties.getHeaders().get(AmqpHeaders.STACKED_CORRELATION_HEADER));
-		assertEquals("test.replyTo2", amqpProperties.getHeaders().get(AmqpHeaders.STACKED_REPLY_TO_HEADER));
+
+		assertNull(amqpProperties.getHeaders().get(MessageHeaders.ERROR_CHANNEL));
+		assertNull(amqpProperties.getHeaders().get(MessageHeaders.REPLY_CHANNEL));
 	}
 
 	@Test
 	public void fromHeadersWithContentTypeAsMediaType() {
-		DefaultAmqpHeaderMapper headerMapper = new DefaultAmqpHeaderMapper();
+		DefaultAmqpHeaderMapper headerMapper = DefaultAmqpHeaderMapper.inboundMapper();
 		Map<String, Object> headerMap = new HashMap<String, Object>();
 
 		MediaType contentType = MediaType.parseMediaType("text/html");
@@ -110,26 +124,49 @@ public class DefaultAmqpHeaderMapperTests {
 		headerMapper.fromHeadersToRequest(integrationHeaders, amqpProperties);
 
 		assertEquals("text/html", amqpProperties.getContentType());
+
+		headerMap.put(AmqpHeaders.CONTENT_TYPE, MimeTypeUtils.APPLICATION_JSON);
+		integrationHeaders = new MessageHeaders(headerMap);
+		amqpProperties = new MessageProperties();
+		headerMapper.fromHeadersToRequest(integrationHeaders, amqpProperties);
+
+		assertEquals(MimeTypeUtils.APPLICATION_JSON_VALUE, amqpProperties.getContentType());
 	}
 
-	@SuppressWarnings("deprecation")
+	@Test
+	public void fromHeadersWithContentTypeAsMimeType() {
+		DefaultAmqpHeaderMapper headerMapper = DefaultAmqpHeaderMapper.inboundMapper();
+		Map<String, Object> headerMap = new HashMap<String, Object>();
+
+		MimeType contentType = MimeType.valueOf("text/html");
+		headerMap.put(AmqpHeaders.CONTENT_TYPE, contentType);
+
+		MessageHeaders integrationHeaders = new MessageHeaders(headerMap);
+		MessageProperties amqpProperties = new MessageProperties();
+		headerMapper.fromHeadersToRequest(integrationHeaders, amqpProperties);
+
+		assertEquals("text/html", amqpProperties.getContentType());
+	}
+
+
 	@Test
 	public void toHeaders() {
-		DefaultAmqpHeaderMapper headerMapper = new DefaultAmqpHeaderMapper();
+		DefaultAmqpHeaderMapper headerMapper = DefaultAmqpHeaderMapper.inboundMapper();
 		MessageProperties amqpProperties = new MessageProperties();
 		amqpProperties.setAppId("test.appId");
 		amqpProperties.setClusterId("test.clusterId");
 		amqpProperties.setContentEncoding("test.contentEncoding");
 		amqpProperties.setContentLength(99L);
 		amqpProperties.setContentType("test.contentType");
-		byte[] testCorrelationId = new byte[] {1,2,3};
+		byte[] testCorrelationId = new byte[] { 1, 2, 3 };
 		amqpProperties.setCorrelationId(testCorrelationId);
-		amqpProperties.setDeliveryMode(MessageDeliveryMode.NON_PERSISTENT);
+		amqpProperties.setReceivedDeliveryMode(MessageDeliveryMode.NON_PERSISTENT);
 		amqpProperties.setDeliveryTag(1234L);
 		amqpProperties.setExpiration("test.expiration");
 		amqpProperties.setMessageCount(42);
 		amqpProperties.setMessageId("test.messageId");
 		amqpProperties.setPriority(22);
+		amqpProperties.setReceivedDelay(4567);
 		amqpProperties.setReceivedExchange("test.receivedExchange");
 		amqpProperties.setReceivedRoutingKey("test.receivedRoutingKey");
 		amqpProperties.setRedelivered(true);
@@ -137,9 +174,9 @@ public class DefaultAmqpHeaderMapperTests {
 		Date testTimestamp = new Date();
 		amqpProperties.setTimestamp(testTimestamp);
 		amqpProperties.setType("test.type");
-		amqpProperties.setUserId("test.userId");
-		amqpProperties.setHeader(AmqpHeaders.STACKED_CORRELATION_HEADER, "test.correlation");
-		amqpProperties.setHeader(AmqpHeaders.STACKED_REPLY_TO_HEADER, "test.replyTo2");
+		amqpProperties.setReceivedUserId("test.userId");
+		amqpProperties.setHeader(AmqpHeaders.SPRING_REPLY_CORRELATION, "test.correlation");
+		amqpProperties.setHeader(AmqpHeaders.SPRING_REPLY_TO_STACK, "test.replyTo2");
 		Map<String, Object> headerMap = headerMapper.toHeadersFromReply(amqpProperties);
 		assertEquals("test.appId", headerMap.get(AmqpHeaders.APP_ID));
 		assertEquals("test.clusterId", headerMap.get(AmqpHeaders.CLUSTER_ID));
@@ -147,47 +184,59 @@ public class DefaultAmqpHeaderMapperTests {
 		assertEquals(99L, headerMap.get(AmqpHeaders.CONTENT_LENGTH));
 		assertEquals("test.contentType", headerMap.get(AmqpHeaders.CONTENT_TYPE));
 		assertEquals(testCorrelationId, headerMap.get(AmqpHeaders.CORRELATION_ID));
-		assertEquals(MessageDeliveryMode.NON_PERSISTENT, headerMap.get(AmqpHeaders.DELIVERY_MODE));
+		assertEquals(MessageDeliveryMode.NON_PERSISTENT, headerMap.get(AmqpHeaders.RECEIVED_DELIVERY_MODE));
 		assertEquals(1234L, headerMap.get(AmqpHeaders.DELIVERY_TAG));
 		assertEquals("test.expiration", headerMap.get(AmqpHeaders.EXPIRATION));
-		assertEquals(new Integer(42), headerMap.get(AmqpHeaders.MESSAGE_COUNT));
+		assertEquals(42, headerMap.get(AmqpHeaders.MESSAGE_COUNT));
 		assertEquals("test.messageId", headerMap.get(AmqpHeaders.MESSAGE_ID));
+		assertEquals(4567, headerMap.get(AmqpHeaders.RECEIVED_DELAY));
 		assertEquals("test.receivedExchange", headerMap.get(AmqpHeaders.RECEIVED_EXCHANGE));
 		assertEquals("test.receivedRoutingKey", headerMap.get(AmqpHeaders.RECEIVED_ROUTING_KEY));
 		assertEquals("test.replyTo", headerMap.get(AmqpHeaders.REPLY_TO));
 		assertEquals(testTimestamp, headerMap.get(AmqpHeaders.TIMESTAMP));
 		assertEquals("test.type", headerMap.get(AmqpHeaders.TYPE));
-		assertEquals("test.userId", headerMap.get(AmqpHeaders.USER_ID));
+		assertEquals("test.userId", headerMap.get(AmqpHeaders.RECEIVED_USER_ID));
 		assertEquals("test.correlation", headerMap.get(AmqpHeaders.SPRING_REPLY_CORRELATION));
 		assertEquals("test.replyTo2", headerMap.get(AmqpHeaders.SPRING_REPLY_TO_STACK));
 	}
 
 	@Test
-	public void replyChannelNotMappedToAmqpProperties() {
-		DefaultAmqpHeaderMapper headerMapper = new DefaultAmqpHeaderMapper();
-		Map<String, Object> headerMap = new HashMap<String, Object>();
-		headerMap.put(MessageHeaders.REPLY_CHANNEL, "foo");
-		MessageHeaders integrationHeaders = new MessageHeaders(headerMap);
+	public void testToHeadersConsumerMetadata() {
+		DefaultAmqpHeaderMapper headerMapper = DefaultAmqpHeaderMapper.inboundMapper();
 		MessageProperties amqpProperties = new MessageProperties();
-		headerMapper.fromHeadersToRequest(integrationHeaders, amqpProperties);
-		assertEquals(null, amqpProperties.getHeaders().get(MessageHeaders.REPLY_CHANNEL));
+		amqpProperties.setConsumerTag("consumerTag");
+		amqpProperties.setConsumerQueue("consumerQueue");
+		Map<String, Object> headerMap = headerMapper.toHeadersFromRequest(amqpProperties);
+		assertEquals("consumerTag", headerMap.get(AmqpHeaders.CONSUMER_TAG));
+		assertEquals("consumerQueue", headerMap.get(AmqpHeaders.CONSUMER_QUEUE));
 	}
 
 	@Test
-	public void errorChannelNotMappedToAmqpProperties() {
-		DefaultAmqpHeaderMapper headerMapper = new DefaultAmqpHeaderMapper();
+	public void messageIdNotMappedToAmqpProperties() {
+		DefaultAmqpHeaderMapper headerMapper = DefaultAmqpHeaderMapper.inboundMapper();
 		Map<String, Object> headerMap = new HashMap<String, Object>();
-		headerMap.put(MessageHeaders.ERROR_CHANNEL, "foo");
+		headerMap.put(MessageHeaders.ID, "msg-id");
 		MessageHeaders integrationHeaders = new MessageHeaders(headerMap);
 		MessageProperties amqpProperties = new MessageProperties();
 		headerMapper.fromHeadersToRequest(integrationHeaders, amqpProperties);
-		assertEquals(null, amqpProperties.getHeaders().get(MessageHeaders.ERROR_CHANNEL));
+		assertNull(amqpProperties.getHeaders().get(MessageHeaders.ID));
+	}
+
+	@Test
+	public void messageTimestampNotMappedToAmqpProperties() {
+		DefaultAmqpHeaderMapper headerMapper = DefaultAmqpHeaderMapper.inboundMapper();
+		Map<String, Object> headerMap = new HashMap<String, Object>();
+		headerMap.put(MessageHeaders.TIMESTAMP, 1234L);
+		MessageHeaders integrationHeaders = new MessageHeaders(headerMap);
+		MessageProperties amqpProperties = new MessageProperties();
+		headerMapper.fromHeadersToRequest(integrationHeaders, amqpProperties);
+		assertNull(amqpProperties.getHeaders().get(MessageHeaders.TIMESTAMP));
 	}
 
 	@Test // INT-2090
 	public void jsonTypeIdNotOverwritten() {
-		DefaultAmqpHeaderMapper headerMapper = new DefaultAmqpHeaderMapper();
-		JsonMessageConverter converter = new JsonMessageConverter();
+		DefaultAmqpHeaderMapper headerMapper = DefaultAmqpHeaderMapper.inboundMapper();
+		MessageConverter converter = new Jackson2JsonMessageConverter();
 		MessageProperties amqpProperties = new MessageProperties();
 		converter.toMessage("123", amqpProperties);
 		Map<String, Object> headerMap = new HashMap<String, Object>();
@@ -197,6 +246,41 @@ public class DefaultAmqpHeaderMapperTests {
 		assertEquals("java.lang.String", amqpProperties.getHeaders().get("__TypeId__"));
 		Object result = converter.fromMessage(new Message("123".getBytes(), amqpProperties));
 		assertEquals(String.class, result.getClass());
+	}
+
+	@Test
+	public void inboundOutbound() {
+		DefaultAmqpHeaderMapper mapper = DefaultAmqpHeaderMapper.inboundMapper();
+		MessageProperties amqpProperties = new MessageProperties();
+		amqpProperties.setReceivedDeliveryMode(MessageDeliveryMode.NON_PERSISTENT);
+		amqpProperties.getHeaders().put("foo", "bar");
+		amqpProperties.getHeaders().put("x-foo", "bar");
+		Map<String, Object> headers = mapper.toHeadersFromRequest(amqpProperties);
+		assertNull(headers.get(AmqpHeaders.DELIVERY_MODE));
+		assertEquals(MessageDeliveryMode.NON_PERSISTENT, headers.get(AmqpHeaders.RECEIVED_DELIVERY_MODE));
+		assertEquals("bar", headers.get("foo"));
+		assertEquals("bar", headers.get("x-foo"));
+
+		amqpProperties = new MessageProperties();
+		headers.put(AmqpHeaders.DELIVERY_MODE, MessageDeliveryMode.NON_PERSISTENT);
+		mapper.fromHeadersToReply(new MessageHeaders(headers), amqpProperties);
+		assertEquals(MessageDeliveryMode.NON_PERSISTENT, amqpProperties.getDeliveryMode());
+		assertEquals("bar", amqpProperties.getHeaders().get("foo"));
+		assertNull(amqpProperties.getHeaders().get("x-foo"));
+
+		mapper = DefaultAmqpHeaderMapper.outboundMapper();
+		mapper.fromHeadersToRequest(new MessageHeaders(headers), amqpProperties);
+		assertEquals(MessageDeliveryMode.NON_PERSISTENT, amqpProperties.getDeliveryMode());
+		assertEquals("bar", amqpProperties.getHeaders().get("foo"));
+		assertNull(amqpProperties.getHeaders().get("x-foo"));
+
+		amqpProperties.setReceivedDeliveryMode(MessageDeliveryMode.NON_PERSISTENT);
+		amqpProperties.setHeader("x-death", "foo");
+		headers = mapper.toHeadersFromReply(amqpProperties);
+		assertEquals(MessageDeliveryMode.NON_PERSISTENT, headers.get(AmqpHeaders.RECEIVED_DELIVERY_MODE));
+		assertNull(headers.get(AmqpHeaders.DELIVERY_MODE));
+		assertEquals("bar", headers.get("foo"));
+		assertEquals("foo", headers.get("x-death"));
 	}
 
 }

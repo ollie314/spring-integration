@@ -1,5 +1,5 @@
 /*
- * Copyright 2001-2014 the original author or authors.
+ * Copyright 2001-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,8 +21,8 @@ import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.MulticastSocket;
-import java.net.NetworkInterface;
 
+import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageHandler;
 
 /**
@@ -42,6 +42,8 @@ public class MulticastSendingMessageHandler extends UnicastSendingMessageHandler
 	private int timeToLive = -1;
 
 	private String localAddress;
+
+	private volatile MulticastSocket multicastSocket;
 
 	/**
 	 * Constructs a MulticastSendingMessageHandler to send data to the multicast address/port.
@@ -111,31 +113,36 @@ public class MulticastSendingMessageHandler extends UnicastSendingMessageHandler
 		if (this.getTheSocket() == null) {
 			MulticastSocket socket;
 			if (this.isAcknowledge()) {
-				if (logger.isDebugEnabled()) {
-					logger.debug("Listening for acks on port: " + this.getAckPort());
+				int ackPort = this.getAckPort();
+				if (this.localAddress == null) {
+					socket = ackPort == 0 ? new MulticastSocket() : new MulticastSocket(ackPort);
 				}
-				if (localAddress == null) {
-					socket = new MulticastSocket(this.getAckPort());
-				} else {
+				else {
 					InetAddress whichNic = InetAddress.getByName(this.localAddress);
-					socket = new MulticastSocket(new InetSocketAddress(whichNic, this.getAckPort()));
+					socket = new MulticastSocket(new InetSocketAddress(whichNic, ackPort));
 				}
-				if (this.getSoReceiveBufferSize() > 0) {
+				if (getSoReceiveBufferSize() > 0) {
 					socket.setReceiveBufferSize(this.getSoReceiveBufferSize());
 				}
-			} else {
+				if (logger.isDebugEnabled()) {
+					logger.debug("Listening for acks on port: " + socket.getLocalPort());
+				}
+				setSocket(socket);
+				updateAckAddress();
+			}
+			else {
 				socket = new MulticastSocket();
+				setSocket(socket);
 			}
 			if (this.timeToLive >= 0) {
 				socket.setTimeToLive(this.timeToLive);
 			}
 			setSocketAttributes(socket);
-			if (localAddress != null) {
+			if (this.localAddress != null) {
 				InetAddress whichNic = InetAddress.getByName(this.localAddress);
-				NetworkInterface intfce = NetworkInterface.getByInetAddress(whichNic);
-				socket.setNetworkInterface(intfce);
+				socket.setInterface(whichNic);
 			}
-			this.setSocket(socket);
+			this.multicastSocket = socket;
 		}
 	}
 
@@ -161,6 +168,14 @@ public class MulticastSendingMessageHandler extends UnicastSendingMessageHandler
 	@Override
 	public void setLocalAddress(String localAddress) {
 		this.localAddress = localAddress;
+	}
+
+	@Override
+	protected void convertAndSend(Message<?> message) throws Exception {
+		super.convertAndSend(message);
+		if (logger.isDebugEnabled()) {
+			logger.debug("Sent packet to " + this.multicastSocket.getInterface());
+		}
 	}
 
 }

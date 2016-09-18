@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2014 the original author or authors.
+ * Copyright 2011-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.test.support;
 
 import org.springframework.messaging.Message;
@@ -33,10 +34,11 @@ public class RequestResponseScenario {
     private AbstractResponseValidator<?> responseValidator;
     private String name;
 
-    protected Message<? extends Object> getMessage(){
-        if (message == null){
+    protected Message<? extends Object> getMessage() {
+        if (message == null) {
             return new GenericMessage<Object>(this.payload);
-        } else {
+        }
+else {
             return message;
         }
     }
@@ -46,7 +48,7 @@ public class RequestResponseScenario {
      * @param inputChannelName the input channel name
      * @param outputChannelName the output channel name
      */
-    public RequestResponseScenario(String inputChannelName, String outputChannelName){
+    public RequestResponseScenario(String inputChannelName, String outputChannelName) {
         this.inputChannelName = inputChannelName;
         this.outputChannelName = outputChannelName;
     }
@@ -108,7 +110,7 @@ public class RequestResponseScenario {
      * @return the response validator
      * @see AbstractResponseValidator
      */
-    public AbstractResponseValidator<?> getResponseValidator(){
+    public AbstractResponseValidator<?> getResponseValidator() {
         return responseValidator;
     }
 
@@ -135,7 +137,7 @@ public class RequestResponseScenario {
     }
 
     protected void init() {
-        Assert.state(message == null || payload == null,"cannot set both message and payload");
+        Assert.state(message == null || payload == null, "cannot set both message and payload");
     }
 
 }

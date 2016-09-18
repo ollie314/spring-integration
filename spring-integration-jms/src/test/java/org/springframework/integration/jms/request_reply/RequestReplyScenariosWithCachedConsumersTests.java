@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.jms.request_reply;
 
 import static org.junit.Assert.assertEquals;
@@ -37,7 +38,6 @@ import org.springframework.integration.gateway.RequestReplyExchanger;
 import org.springframework.integration.jms.ActiveMQMultiContextTests;
 import org.springframework.integration.jms.JmsOutboundGateway;
 import org.springframework.integration.jms.config.ActiveMqTestUtils;
-import org.springframework.messaging.support.GenericMessage;
 import org.springframework.integration.test.support.LongRunningIntegrationTest;
 import org.springframework.integration.test.util.TestUtils;
 import org.springframework.jms.connection.CachingConnectionFactory;
@@ -46,6 +46,7 @@ import org.springframework.jms.core.MessageCreator;
 import org.springframework.jms.listener.DefaultMessageListenerContainer;
 import org.springframework.jms.listener.SessionAwareMessageListener;
 import org.springframework.jms.support.converter.SimpleMessageConverter;
+import org.springframework.messaging.support.GenericMessage;
 /**
  * @author Oleg Zhurakousky
  * @author Gary Russell
@@ -57,8 +58,8 @@ public class RequestReplyScenariosWithCachedConsumersTests extends ActiveMQMulti
 	@Rule
 	public LongRunningIntegrationTest longTests = new LongRunningIntegrationTest();
 
-	@Test(expected=MessageTimeoutException.class)
-	public void messageCorrelationBasedOnRequestMessageIdOptimized() throws Exception{
+	@Test(expected = MessageTimeoutException.class)
+	public void messageCorrelationBasedOnRequestMessageIdOptimized() throws Exception {
 		ActiveMqTestUtils.prepare();
 
 		ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext("producer-cached-consumers.xml", this.getClass());
@@ -72,10 +73,12 @@ public class RequestReplyScenariosWithCachedConsumersTests extends ActiveMQMulti
 			final Destination replyDestination = context.getBean("siInQueueOptimizedA", Destination.class);
 			new Thread(new Runnable() {
 
+				@Override
 				public void run() {
 					final Message requestMessage = jmsTemplate.receive(requestDestination);
 					jmsTemplate.send(replyDestination, new MessageCreator() {
 
+						@Override
 						public Message createMessage(Session session) throws JMSException {
 							TextMessage message = session.createTextMessage();
 							message.setText("bar");
@@ -88,13 +91,13 @@ public class RequestReplyScenariosWithCachedConsumersTests extends ActiveMQMulti
 			gateway.exchange(new GenericMessage<String>("foo"));
 		}
 		finally {
-			context.destroy();
+			context.close();
 		}
 
 	}
 
 	@Test
-	public void messageCorrelationBasedOnRequestMessageIdNonOptimized() throws Exception{
+	public void messageCorrelationBasedOnRequestMessageIdNonOptimized() throws Exception {
 		ActiveMqTestUtils.prepare();
 
 		ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext("producer-cached-consumers.xml", this.getClass());
@@ -108,10 +111,12 @@ public class RequestReplyScenariosWithCachedConsumersTests extends ActiveMQMulti
 			final Destination replyDestination = context.getBean("siInQueueNonOptimizedB", Destination.class);
 			new Thread(new Runnable() {
 
+				@Override
 				public void run() {
 					final Message requestMessage = jmsTemplate.receive(requestDestination);
 					jmsTemplate.send(replyDestination, new MessageCreator() {
 
+						@Override
 						public Message createMessage(Session session) throws JMSException {
 							TextMessage message = session.createTextMessage();
 							message.setText("bar");
@@ -125,12 +130,12 @@ public class RequestReplyScenariosWithCachedConsumersTests extends ActiveMQMulti
 			assertEquals("bar", siReplyMessage.getPayload());
 		}
 		finally {
-			context.destroy();
+			context.close();
 		}
 	}
 
 	@Test
-	public void messageCorrelationBasedOnRequestCorrelationIdOptimized() throws Exception{
+	public void messageCorrelationBasedOnRequestCorrelationIdOptimized() throws Exception {
 		ActiveMqTestUtils.prepare();
 		ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext("producer-cached-consumers.xml", this.getClass());
 		try {
@@ -143,10 +148,12 @@ public class RequestReplyScenariosWithCachedConsumersTests extends ActiveMQMulti
 			final Destination replyDestination = context.getBean("siInQueueOptimizedC", Destination.class);
 			new Thread(new Runnable() {
 
+				@Override
 				public void run() {
 					final Message requestMessage = jmsTemplate.receive(requestDestination);
 					jmsTemplate.send(replyDestination, new MessageCreator() {
 
+						@Override
 						public Message createMessage(Session session) throws JMSException {
 							TextMessage message = session.createTextMessage();
 							message.setText("bar");
@@ -160,12 +167,12 @@ public class RequestReplyScenariosWithCachedConsumersTests extends ActiveMQMulti
 			assertEquals("bar", siReplyMessage.getPayload());
 		}
 		finally {
-			context.destroy();
+			context.close();
 		}
 	}
 
-	@Test(expected=MessageTimeoutException.class)
-	public void messageCorrelationBasedOnRequestCorrelationIdNonOptimized() throws Exception{
+	@Test(expected = MessageTimeoutException.class)
+	public void messageCorrelationBasedOnRequestCorrelationIdNonOptimized() throws Exception {
 		ActiveMqTestUtils.prepare();
 		ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext("producer-cached-consumers.xml", this.getClass());
 		try {
@@ -178,10 +185,12 @@ public class RequestReplyScenariosWithCachedConsumersTests extends ActiveMQMulti
 			final Destination replyDestination = context.getBean("siInQueueNonOptimizedD", Destination.class);
 			new Thread(new Runnable() {
 
+				@Override
 				public void run() {
 					final Message requestMessage = jmsTemplate.receive(requestDestination);
 					jmsTemplate.send(replyDestination, new MessageCreator() {
 
+						@Override
 						public Message createMessage(Session session) throws JMSException {
 							TextMessage message = session.createTextMessage();
 							message.setText("bar");
@@ -195,40 +204,42 @@ public class RequestReplyScenariosWithCachedConsumersTests extends ActiveMQMulti
 			assertEquals("bar", siReplyMessage.getPayload());
 		}
 		finally {
-			context.destroy();
+			context.close();
 		}
 	}
 
 	@Test
-	public void messageCorrelationBasedOnRequestCorrelationIdTimedOutFirstReplyOptimized() throws Exception{
+	public void messageCorrelationBasedOnRequestCorrelationIdTimedOutFirstReplyOptimized() throws Exception {
 		ActiveMqTestUtils.prepare();
 		ClassPathXmlApplicationContext context =
 				new ClassPathXmlApplicationContext("producer-cached-consumers.xml", this.getClass());
 		try {
 			RequestReplyExchanger gateway =
 					context.getBean("correlationPropagatingConsumerWithOptimizationDelayFirstReply", RequestReplyExchanger.class);
-			final ConnectionFactory connectionFactory = context.getBean("connectionFactory", ConnectionFactory.class);
+			final ConnectionFactory connectionFactory = context.getBean("jmsConnectionFactory", ConnectionFactory.class);
 
 			final Destination requestDestination = context.getBean("siOutQueueE", Destination.class);
 			final Destination replyDestination = context.getBean("siInQueueE", Destination.class);
 
 			for (int i = 0; i < 3; i++) {
-				System.out.println("#### " + i);
 				try {
 					gateway.exchange(gateway.exchange(new GenericMessage<String>("foo")));
-				} catch (Exception e) {/*ignore*/}
+				}
+				catch (Exception e) { /*ignore*/ }
 
 			}
 
 			final CountDownLatch latch = new CountDownLatch(1);
 			new Thread(new Runnable() {
 
+				@Override
 				public void run() {
 					DefaultMessageListenerContainer dmlc = new DefaultMessageListenerContainer();
 					dmlc.setConnectionFactory(connectionFactory);
 					dmlc.setDestination(requestDestination);
 					dmlc.setMessageListener(new SessionAwareMessageListener<Message>() {
 
+						@Override
 						public void onMessage(Message message, Session session) {
 							String requestPayload = (String) extractPayload(message);
 							try {
@@ -237,7 +248,8 @@ public class RequestReplyScenariosWithCachedConsumersTests extends ActiveMQMulti
 								replyMessage.setJMSCorrelationID(message.getJMSCorrelationID());
 								MessageProducer producer = session.createProducer(replyDestination);
 								producer.send(replyMessage);
-							} catch (Exception e) {
+							}
+							catch (Exception e) {
 								// ignore. the test will fail
 							}
 						}
@@ -257,14 +269,15 @@ public class RequestReplyScenariosWithCachedConsumersTests extends ActiveMQMulti
 			assertEquals("bar", gateway.exchange(new GenericMessage<String>("bar")).getPayload());
 		}
 		finally {
-			context.destroy();
+			context.close();
 		}
 	}
 
 	private Object extractPayload(Message jmsMessage) {
 		try {
 			return converter.fromMessage(jmsMessage);
-		} catch (Exception e) {
+		}
+		catch (Exception e) {
 			e.printStackTrace();
 			fail();
 		}

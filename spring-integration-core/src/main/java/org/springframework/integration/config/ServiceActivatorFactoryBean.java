@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package org.springframework.integration.config;
 
 import org.springframework.expression.Expression;
+import org.springframework.integration.handler.AbstractMessageProducingHandler;
 import org.springframework.integration.handler.AbstractReplyProducingMessageHandler;
 import org.springframework.integration.handler.ExpressionEvaluatingMessageProcessor;
 import org.springframework.integration.handler.MessageProcessor;
@@ -30,6 +31,7 @@ import org.springframework.util.StringUtils;
  *
  * @author Mark Fisher
  * @author Gary Russell
+ * @author David Liu
  * @since 2.0
  */
 public class ServiceActivatorFactoryBean extends AbstractStandardMessageHandlerFactoryBean {
@@ -47,7 +49,7 @@ public class ServiceActivatorFactoryBean extends AbstractStandardMessageHandlerF
 	}
 
 	@Override
-	MessageHandler createMethodInvokingHandler(Object targetObject, String targetMethodName) {
+	protected MessageHandler createMethodInvokingHandler(Object targetObject, String targetMethodName) {
 		MessageHandler handler = null;
 		handler = createDirectHandlerIfPossible(targetObject, targetMethodName);
 		if (handler == null) {
@@ -61,14 +63,17 @@ public class ServiceActivatorFactoryBean extends AbstractStandardMessageHandlerF
 
 	/**
 	 * If the target object is a {@link MessageHandler} and the method is 'handleMessage', return an
-	 * {@link AbstractReplyProducingMessageHandler} that wraps it.
+	 * {@link AbstractMessageProducingHandler} that wraps it.
+	 * @param targetObject the object to check for Direct Handler requirements.
+	 * @param targetMethodName the method name to check for Direct Handler requirements.
+	 * @return the {@code targetObject} as a Direct {@link MessageHandler} or {@code null}.
 	 */
-	private MessageHandler createDirectHandlerIfPossible(final Object targetObject, String targetMethodName) {
+	protected MessageHandler createDirectHandlerIfPossible(final Object targetObject, String targetMethodName) {
 		MessageHandler handler = null;
 		if (targetObject instanceof MessageHandler
 				&& this.methodIsHandleMessageOrEmpty(targetMethodName)) {
-			if (targetObject instanceof AbstractReplyProducingMessageHandler) {
-				// should never happen but just return it if it's already an ARPMH
+			if (targetObject instanceof AbstractMessageProducingHandler) {
+				// should never happen but just return it if it's already an AMPH
 				return (MessageHandler) targetObject;
 			}
 			/*
@@ -90,39 +95,49 @@ public class ServiceActivatorFactoryBean extends AbstractStandardMessageHandlerF
 	}
 
 	@Override
-	MessageHandler createExpressionEvaluatingHandler(Expression expression) {
+	protected MessageHandler createExpressionEvaluatingHandler(Expression expression) {
 		ExpressionEvaluatingMessageProcessor<Object> processor = new ExpressionEvaluatingMessageProcessor<Object>(expression);
 		processor.setBeanFactory(this.getBeanFactory());
-		return this.configureHandler(new ServiceActivatingHandler(processor));
+		ServiceActivatingHandler handler = new ServiceActivatingHandler(processor);
+		handler.setPrimaryExpression(expression);
+		return this.configureHandler(handler);
 	}
 
 	@Override
-	<T> MessageHandler createMessageProcessingHandler(MessageProcessor<T> processor) {
+	protected <T> MessageHandler createMessageProcessingHandler(MessageProcessor<T> processor) {
 		return this.configureHandler(new ServiceActivatingHandler(processor));
 	}
 
-	private MessageHandler configureHandler(ServiceActivatingHandler handler) {
+	protected MessageHandler configureHandler(ServiceActivatingHandler handler) {
 		postProcessReplyProducer(handler);
 		return handler;
 	}
 
 
 	/**
-	 * Always returns true - any {@link AbstractReplyProducingMessageHandler} can
+	 * Always returns true - any {@link AbstractMessageProducingHandler} can
 	 * be used directly.
 	 */
 	@Override
-	protected boolean canBeUsedDirect(AbstractReplyProducingMessageHandler handler) {
+	protected boolean canBeUsedDirect(AbstractMessageProducingHandler handler) {
 		return true;
 	}
 
 	@Override
-	protected void postProcessReplyProducer(AbstractReplyProducingMessageHandler handler) {
+	protected void postProcessReplyProducer(AbstractMessageProducingHandler handler) {
 		if (this.sendTimeout != null) {
 			handler.setSendTimeout(this.sendTimeout);
 		}
 		if (this.requiresReply != null) {
-			handler.setRequiresReply(this.requiresReply);
+			if (handler instanceof AbstractReplyProducingMessageHandler) {
+				((AbstractReplyProducingMessageHandler) handler).setRequiresReply(this.requiresReply);
+			}
+			else {
+				if (this.requiresReply && logger.isDebugEnabled()) {
+					logger.debug("requires-reply can only be set to AbstractReplyProducingMessageHandler or its subclass, "
+					+ handler.getComponentName() + " doesn't support it.");
+				}
+			}
 		}
 	}
 

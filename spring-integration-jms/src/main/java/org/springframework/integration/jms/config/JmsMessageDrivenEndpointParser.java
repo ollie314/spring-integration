@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,6 +27,7 @@ import org.springframework.beans.factory.support.BeanDefinitionReaderUtils;
 import org.springframework.beans.factory.xml.AbstractSingleBeanDefinitionParser;
 import org.springframework.beans.factory.xml.ParserContext;
 import org.springframework.integration.config.xml.IntegrationNamespaceUtils;
+import org.springframework.integration.jms.ChannelPublishingJmsMessageListener;
 import org.springframework.integration.jms.JmsMessageDrivenEndpoint;
 import org.springframework.jms.listener.DefaultMessageListenerContainer;
 import org.springframework.util.StringUtils;
@@ -37,6 +38,8 @@ import org.springframework.util.StringUtils;
  *
  * @author Mark Fisher
  * @author Michael Bannister
+ * @author Gary Russell
+ * @author Artem Bilan
  */
 public class JmsMessageDrivenEndpointParser extends AbstractSingleBeanDefinitionParser {
 
@@ -56,15 +59,17 @@ public class JmsMessageDrivenEndpointParser extends AbstractSingleBeanDefinition
 
 
 	private static String[] containerAttributes = new String[] {
-		JmsAdapterParserUtils.CONNECTION_FACTORY_PROPERTY,
-		JmsAdapterParserUtils.DESTINATION_ATTRIBUTE,
-		JmsAdapterParserUtils.DESTINATION_NAME_ATTRIBUTE,
+		JmsParserUtils.CONNECTION_FACTORY_PROPERTY,
+		JmsParserUtils.DESTINATION_ATTRIBUTE,
+		JmsParserUtils.DESTINATION_NAME_ATTRIBUTE,
 		"destination-resolver", "transaction-manager",
 		"concurrent-consumers", "max-concurrent-consumers",
+		"acknowledge",
 		"max-messages-per-task", "selector",
 		"receive-timeout", "recovery-interval",
 		"idle-consumer-limit", "idle-task-execution-limit",
-		"cache-level", "subscription-durable", "durable-subscription-name",
+		"cache-level", "subscription-durable",
+		"subscription-shared", "subscription-name",
 		"client-id", "task-executor"
 	};
 
@@ -99,28 +104,34 @@ public class JmsMessageDrivenEndpointParser extends AbstractSingleBeanDefinition
 	}
 
 	@Override
-	protected boolean shouldGenerateId() {
-		return false;
-	}
-
-	@Override
 	protected boolean shouldGenerateIdAsFallback() {
 		return true;
 	}
 
 	@Override
 	protected void doParse(Element element, ParserContext parserContext, BeanDefinitionBuilder builder) {
-		String containerBeanName = this.parseMessageListenerContainer(element, parserContext);
-		String listenerBeanName = this.parseMessageListener(element, parserContext);
+		String containerBeanName = this.parseMessageListenerContainer(element, parserContext, builder.getRawBeanDefinition());
+		String listenerBeanName = this.parseMessageListener(element, parserContext, builder.getRawBeanDefinition());
 		builder.addConstructorArgReference(containerBeanName);
 		builder.addConstructorArgReference(listenerBeanName);
+		builder.addConstructorArgValue(hasExternalContainer(element));
 		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, IntegrationNamespaceUtils.AUTO_STARTUP);
 		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, IntegrationNamespaceUtils.PHASE);
+		String role = element.getAttribute(IntegrationNamespaceUtils.ROLE);
+		if (StringUtils.hasText(role)) {
+			if (!StringUtils.hasText(element.getAttribute(ID_ATTRIBUTE))) {
+				parserContext.getReaderContext().error("When using 'role', 'id' is required", element);
+			}
+			IntegrationNamespaceUtils.putLifecycleInRole(role, element.getAttribute(ID_ATTRIBUTE), parserContext);
+		}
+		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "acknowledge", "sessionAcknowledgeMode");
+
 	}
 
-	private String parseMessageListenerContainer(Element element, ParserContext parserContext) {
+	private String parseMessageListenerContainer(Element element, ParserContext parserContext,
+			BeanDefinition adapterBeanDefinition) {
 		String containerClass = element.getAttribute("container-class");
-		if (element.hasAttribute("container")) {
+		if (hasExternalContainer(element)) {
 			if (StringUtils.hasText(containerClass)) {
 				parserContext.getReaderContext().error("Cannot have both 'container' and 'container-class'", element);
 			}
@@ -147,13 +158,13 @@ public class JmsMessageDrivenEndpointParser extends AbstractSingleBeanDefinition
 		String destinationName = element.getAttribute(destinationNameAttribute);
 		boolean hasDestination = StringUtils.hasText(destination);
 		boolean hasDestinationName = StringUtils.hasText(destinationName);
-		if (!(hasDestination ^ hasDestinationName)) {
+		if (hasDestination == hasDestinationName) {
 			parserContext.getReaderContext().error(
 					"Exactly one of '" + destinationAttribute +
 					"' or '" + destinationNameAttribute + "' is required.", element);
 		}
-		builder.addPropertyReference(JmsAdapterParserUtils.CONNECTION_FACTORY_PROPERTY,
-				JmsAdapterParserUtils.determineConnectionFactoryBeanName(element, parserContext));
+		builder.addPropertyReference(JmsParserUtils.CONNECTION_FACTORY_PROPERTY,
+				JmsParserUtils.determineConnectionFactoryBeanName(element, parserContext));
 		if (hasDestination) {
 			builder.addPropertyReference("destination", destination);
 		}
@@ -161,15 +172,7 @@ public class JmsMessageDrivenEndpointParser extends AbstractSingleBeanDefinition
 			builder.addPropertyValue("destinationName", destinationName);
 			IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, pubSubDomainAttribute, "pubSubDomain");
 		}
-		Integer acknowledgeMode = JmsAdapterParserUtils.parseAcknowledgeMode(element, parserContext);
-		if (acknowledgeMode != null) {
-			if (acknowledgeMode.intValue() == JmsAdapterParserUtils.SESSION_TRANSACTED) {
-				builder.addPropertyValue("sessionTransacted", Boolean.TRUE);
-			}
-			else {
-				builder.addPropertyValue("sessionAcknowledgeMode", acknowledgeMode);
-			}
-		}
+
 		IntegrationNamespaceUtils.setReferenceIfAttributeDefined(builder, element, "destination-resolver");
 		IntegrationNamespaceUtils.setReferenceIfAttributeDefined(builder, element, "transaction-manager");
 		IntegrationNamespaceUtils.setReferenceIfAttributeDefined(builder, element, "task-executor");
@@ -183,15 +186,24 @@ public class JmsMessageDrivenEndpointParser extends AbstractSingleBeanDefinition
 		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "idle-task-execution-limit");
 		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "cache-level");
 		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "subscription-durable");
-		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "durable-subscription-name");
+		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "subscription-shared");
+		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "subscription-name");
 		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "client-id");
-		builder.addPropertyValue("autoStartup", false);
-		return BeanDefinitionReaderUtils.registerWithGeneratedName(builder.getBeanDefinition(), parserContext.getRegistry());
+		String beanName = adapterBeanNameRoot(element, parserContext, adapterBeanDefinition)
+				+ ".container";
+		parserContext.getRegistry().registerBeanDefinition(beanName, builder.getBeanDefinition());
+		return beanName;
 	}
 
-	private String parseMessageListener(Element element, ParserContext parserContext) {
-		BeanDefinitionBuilder builder = BeanDefinitionBuilder.genericBeanDefinition(
-				"org.springframework.integration.jms.ChannelPublishingJmsMessageListener");
+
+	private boolean hasExternalContainer(Element element) {
+		return element.hasAttribute("container");
+	}
+
+	private String parseMessageListener(Element element, ParserContext parserContext,
+			BeanDefinition adapterBeanDefinition) {
+		BeanDefinitionBuilder builder = BeanDefinitionBuilder
+				.genericBeanDefinition(ChannelPublishingJmsMessageListener.class);
 		builder.addPropertyValue("expectReply", this.expectReply);
 		if (this.expectReply) {
 			IntegrationNamespaceUtils.setReferenceIfAttributeDefined(builder, element, "request-channel");
@@ -237,10 +249,21 @@ public class JmsMessageDrivenEndpointParser extends AbstractSingleBeanDefinition
 		IntegrationNamespaceUtils.setReferenceIfAttributeDefined(builder, element, "error-channel");
 		IntegrationNamespaceUtils.setReferenceIfAttributeDefined(builder, element, "message-converter");
 		IntegrationNamespaceUtils.setReferenceIfAttributeDefined(builder, element, "header-mapper");
+		String alias = adapterBeanNameRoot(element, parserContext, adapterBeanDefinition)
+				+ ".listener";
 		BeanDefinition beanDefinition = builder.getBeanDefinition();
 		String beanName = BeanDefinitionReaderUtils.generateBeanName(beanDefinition, parserContext.getRegistry());
-		BeanComponentDefinition component = new BeanComponentDefinition(beanDefinition, beanName);
+		BeanComponentDefinition component = new BeanComponentDefinition(beanDefinition, beanName, new String[] { alias });
 		parserContext.registerBeanComponent(component);
+		return beanName;
+	}
+
+	private String adapterBeanNameRoot(Element element, ParserContext parserContext,
+			BeanDefinition adapterBeanDefinition) {
+		String beanName = element.getAttribute(ID_ATTRIBUTE);
+		if (!StringUtils.hasText(beanName)) {
+			beanName = BeanDefinitionReaderUtils.generateBeanName(adapterBeanDefinition, parserContext.getRegistry());
+		}
 		return beanName;
 	}
 

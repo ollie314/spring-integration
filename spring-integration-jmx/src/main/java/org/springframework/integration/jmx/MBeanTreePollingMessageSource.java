@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2014 the original author or authors.
+ * Copyright 2013-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.jmx;
 
 import java.util.HashMap;
@@ -34,6 +35,7 @@ import org.springframework.util.Assert;
  * A {@link MessageSource} implementation that retrieves a snapshot of a filtered subset of the MBean tree.
  *
  * @author Stuart Williams
+ * @author Gary Russell
  * @since 3.0
  *
  */
@@ -54,6 +56,11 @@ public class MBeanTreePollingMessageSource extends AbstractMessageSource<Object>
 		this.converter = converter;
 	}
 
+	@Override
+	public String getComponentType() {
+		return "jmx:tree-polling-channel-adapter";
+	}
+
 	/**
 	 * Provides the mapped tree object
 	 */
@@ -63,10 +70,10 @@ public class MBeanTreePollingMessageSource extends AbstractMessageSource<Object>
 
 		try {
 			Map<String, Object> beans = new HashMap<String, Object>();
-			Set<ObjectInstance> results = server.queryMBeans(queryName, queryExpression);
+			Set<ObjectInstance> results = this.server.queryMBeans(this.queryName, this.queryExpression);
 
 			for (ObjectInstance instance : results) {
-				Object result = converter.convert(server, instance);
+				Object result = this.converter.convert(this.server, instance);
 				beans.put(instance.getObjectName().getCanonicalName(), result);
 			}
 

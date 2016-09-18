@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.jpa.core;
 
 import java.util.ArrayList;
@@ -68,7 +69,8 @@ public class DefaultJpaOperations extends AbstractJpaOperations {
 		for (Object object : entities) {
 			if (entityClass == null) {
 				entityClass = object.getClass();
-			} else {
+			}
+			else {
 				if (entityClass != object.getClass()) {
 					throw new IllegalArgumentException("entities must be of the same type.");
 				}
@@ -121,10 +123,10 @@ public class DefaultJpaOperations extends AbstractJpaOperations {
 
 		final String entityName = JpaUtils.getEntityName(entityManager, entityClass);
 		final Query query = entityManager.createQuery("select x from " + entityName + " x", entityClass);
-		if(firstResult > 0) {
+		if (firstResult > 0) {
 			query.setFirstResult(firstResult);
 		}
-		if(maxNumberOfResults > 0) {
+		if (maxNumberOfResults > 0) {
 			query.setMaxResults(maxNumberOfResults);
 		}
 
@@ -139,10 +141,10 @@ public class DefaultJpaOperations extends AbstractJpaOperations {
 		final Query query = entityManager.createNamedQuery(selectNamedQuery);
 		setParametersIfRequired(selectNamedQuery, parameterSource, query);
 
-		if(firstResult > 0) {
+		if (firstResult > 0) {
 			query.setFirstResult(firstResult);
 		}
-		if(maxNumberOfResults > 0) {
+		if (maxNumberOfResults > 0) {
 			query.setMaxResults(maxNumberOfResults);
 		}
 
@@ -158,16 +160,17 @@ public class DefaultJpaOperations extends AbstractJpaOperations {
 
 		if (entityClass == null) {
 			query = entityManager.createNativeQuery(selectQuery);
-		} else {
+		}
+		else {
 			query = entityManager.createNativeQuery(selectQuery, entityClass);
 		}
 
 		setParametersIfRequired(selectQuery, parameterSource, query);
 
-		if(firstResult > 0) {
+		if (firstResult > 0) {
 			query.setFirstResult(firstResult);
 		}
-		if(maxNumberOfResults > 0) {
+		if (maxNumberOfResults > 0) {
 			query.setMaxResults(maxNumberOfResults);
 		}
 
@@ -176,19 +179,19 @@ public class DefaultJpaOperations extends AbstractJpaOperations {
 
 	@Override
 	public List<?> getResultListForQuery(String query, ParameterSource source) {
-			return getResultListForQuery(query,source, 0, 0);
+			return getResultListForQuery(query, source, 0, 0);
 	}
 
 	@Override
 	public List<?> getResultListForQuery(String queryString, ParameterSource source,
 			int firstResult, int maxNumberOfResults) {
 
-		Query query = getQuery(queryString,source);
+		Query query = getQuery(queryString, source);
 
-		if(firstResult > 0) {
+		if (firstResult > 0) {
 			query.setFirstResult(firstResult);
 		}
-		if(maxNumberOfResults > 0) {
+		if (maxNumberOfResults > 0) {
 			query.setMaxResults(maxNumberOfResults);
 		}
 
@@ -197,7 +200,7 @@ public class DefaultJpaOperations extends AbstractJpaOperations {
 
 	@Override
 	public Object getSingleResultForQuery(String queryString, ParameterSource source) {
-		Query query = getQuery(queryString,source);
+		Query query = getQuery(queryString, source);
 		return query.getSingleResult();
 	}
 
@@ -293,9 +296,9 @@ public class DefaultJpaOperations extends AbstractJpaOperations {
 	private void setParametersIfRequired(String queryString, ParameterSource source, Query query) {
 		Set<Parameter<?>> parameters = query.getParameters();
 
-		if(parameters != null && !parameters.isEmpty()) {
-			if(source != null) {
-				for(Parameter<?> param:parameters) {
+		if (parameters != null && !parameters.isEmpty()) {
+			if (source != null) {
+				for (Parameter<?> param:parameters) {
 					String  paramName = param.getName();
 					Integer position = param.getPosition();
 
@@ -306,27 +309,29 @@ public class DefaultJpaOperations extends AbstractJpaOperations {
 						if (source instanceof PositionSupportingParameterSource) {
 							paramValue = ((PositionSupportingParameterSource) source).getValueByPosition(position - 1);
 							query.setParameter(position, paramValue);
-						} else {
+						}
+						else {
 							throw new JpaOperationFailedException("Positional Parameters are only support "
-									+ "for PositionSupportingParameterSources.")
-							.withOffendingJPAQl(queryString);
+									+ "for PositionSupportingParameterSources.", queryString);
 						}
 
-					} else {
+					}
+					else {
 
-						if(StringUtils.hasText(paramName)) {
+						if (StringUtils.hasText(paramName)) {
 							paramValue = source.getValue(paramName);
 							query.setParameter(paramName, paramValue);
-						} else {
+						}
+						else {
 							throw new JpaOperationFailedException(
 									"This parameter does not contain a parameter name. " +
-									"Additionally it is not a postitional parameter, neither.")
-							.withOffendingJPAQl(queryString);
+									"Additionally it is not a postitional parameter, neither.", queryString);
 						}
 					}
 
 				}
-			} else {
+			}
+			else {
 				throw new IllegalArgumentException("Query has parameters but no parameter source provided");
 			}
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2008 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -74,7 +74,7 @@ public class PayloadDeserializingTransformerTests {
 	@Test
 	public void customDeserializer() {
 		PayloadDeserializingTransformer transformer = new PayloadDeserializingTransformer();
-		transformer.setConverter(new Converter<byte[], Object>(){
+		transformer.setConverter(new Converter<byte[], Object>() {
 			public Object convert(byte[] source) {
 				return "Converted";
 			}
@@ -87,8 +87,8 @@ public class PayloadDeserializingTransformerTests {
 	private static class TestBean implements Serializable {
 
 		private String name;
-		
-		public TestBean(String name) {
+
+		TestBean(String name) {
 			this.name = name;
 		}
 	}

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,32 +17,48 @@
 package org.springframework.integration.file;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.FileSystems;
+import java.nio.file.FileVisitResult;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.StandardWatchEventKinds;
+import java.nio.file.WatchEvent;
+import java.nio.file.WatchKey;
+import java.nio.file.WatchService;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Queue;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.PriorityBlockingQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
+import org.springframework.context.Lifecycle;
 import org.springframework.integration.aggregator.ResequencingMessageGroupProcessor;
 import org.springframework.integration.context.IntegrationObjectSupport;
 import org.springframework.integration.core.MessageSource;
 import org.springframework.integration.file.filters.AcceptOnceFileListFilter;
 import org.springframework.integration.file.filters.FileListFilter;
+import org.springframework.integration.file.filters.ResettableFileListFilter;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessagingException;
 import org.springframework.util.Assert;
 
 /**
- * {@link MessageSource} that creates messages from a file system directory. To
- * prevent messages for certain files, you may supply a
- * {@link FileListFilter}. By
- * default, an
- * {@link AcceptOnceFileListFilter}
- * is used. It ensures files are picked up only once from the directory.
+ * {@link MessageSource} that creates messages from a file system directory.
+ * To prevent messages for certain files, you may supply a {@link FileListFilter}.
+ * By default, an {@link AcceptOnceFileListFilter} is used.
+ * It ensures files are picked up only once from the directory.
  * <p>
  * A common problem with reading files is that a file may be detected before it
  * is ready. The default {@link AcceptOnceFileListFilter}
@@ -64,19 +80,15 @@ import org.springframework.util.Assert;
  * @author Mark Fisher
  * @author Oleg Zhurakousky
  * @author Gary Russell
+ * @author Artem Bilan
  */
-public class FileReadingMessageSource extends IntegrationObjectSupport implements MessageSource<File> {
+public class FileReadingMessageSource extends IntegrationObjectSupport implements MessageSource<File>, Lifecycle {
 
 	private static final int DEFAULT_INTERNAL_QUEUE_CAPACITY = 5;
 
 	private static final Log logger = LogFactory.getLog(FileReadingMessageSource.class);
 
-
-	private volatile File directory;
-
-	private volatile DirectoryScanner scanner = new DefaultDirectoryScanner();
-
-	private volatile boolean autoCreateDirectory = true;
+	private final AtomicBoolean running = new AtomicBoolean();
 
 	/*
 	 * {@link PriorityBlockingQueue#iterator()} throws
@@ -85,9 +97,23 @@ public class FileReadingMessageSource extends IntegrationObjectSupport implement
 	 */
 	private final Queue<File> toBeReceived;
 
+	private volatile File directory;
+
+	private volatile DirectoryScanner scanner = new DefaultDirectoryScanner();
+
+	private volatile boolean scannerExplicitlySet;
+
+	private volatile boolean autoCreateDirectory = true;
+
 	private volatile boolean scanEachPoll = false;
 
-	private final ThreadLocal<FileMessageHolder> resources = new ThreadLocal<FileMessageHolder>();
+	private FileListFilter<File> filter;
+
+	private FileLocker locker;
+
+	private boolean useWatchService;
+
+	private WatchEventType[] watchEvents = new WatchEventType[] { WatchEventType.CREATE };
 
 	/**
 	 * Creates a FileReadingMessageSource with a naturally ordered queue of unbounded capacity.
@@ -114,7 +140,7 @@ public class FileReadingMessageSource extends IntegrationObjectSupport implement
 		this(null);
 		Assert.isTrue(internalQueueCapacity > 0,
 				"Cannot create a queue with non positive capacity");
-		this.setScanner(new HeadDirectoryScanner(internalQueueCapacity));
+		this.scanner = new HeadDirectoryScanner(internalQueueCapacity);
 	}
 
 	/**
@@ -149,12 +175,25 @@ public class FileReadingMessageSource extends IntegrationObjectSupport implement
 
 	/**
 	 * Optionally specify a custom scanner, for example the
-	 * {@link org.springframework.integration.file.RecursiveLeafOnlyDirectoryScanner}
+	 * {@link WatchServiceDirectoryScanner}
 	 *
 	 * @param scanner scanner implementation
 	 */
 	public void setScanner(DirectoryScanner scanner) {
+		Assert.notNull(scanner, "'scanner' must not be null.");
 		this.scanner = scanner;
+		this.scannerExplicitlySet = true;
+	}
+
+	/**
+	 * The {@link #scanner} property accessor to allow to modify its options
+	 * ({@code filter}, {@code locker} etc.) at runtime using the
+	 * {@link FileReadingMessageSource} bean.
+	 * @return the {@link DirectoryScanner} of this {@link FileReadingMessageSource}.
+	 * @since 4.2
+	 */
+	public DirectoryScanner getScanner() {
+		return this.scanner;
 	}
 
 	/**
@@ -173,21 +212,20 @@ public class FileReadingMessageSource extends IntegrationObjectSupport implement
 	}
 
 	/**
-	 * Sets a {@link FileListFilter}. By default a
-	 * {@link org.springframework.integration.file.filters.AbstractFileListFilter}
+	 * Sets a {@link FileListFilter}.
+	 * By default a {@link org.springframework.integration.file.filters.AcceptOnceFileListFilter}
 	 * with no bounds is used. In most cases a customized {@link FileListFilter} will
-	 * be needed to deal with modification and duplication concerns. If multiple
-	 * filters are required a
+	 * be needed to deal with modification and duplication concerns.
+	 * If multiple filters are required a
 	 * {@link org.springframework.integration.file.filters.CompositeFileListFilter}
 	 * can be used to group them together.
 	 * <p>
 	 * <b>The supplied filter must be thread safe.</b>.
-	 *
 	 * @param filter a filter
 	 */
 	public void setFilter(FileListFilter<File> filter) {
 		Assert.notNull(filter, "'filter' must not be null");
-		this.scanner.setFilter(filter);
+		this.filter = filter;
 	}
 
 	/**
@@ -195,12 +233,11 @@ public class FileReadingMessageSource extends IntegrationObjectSupport implement
 	 * duplicate processing.
 	 * <p>
 	 * <b>The supplied FileLocker must be thread safe</b>
-	 *
 	 * @param locker a locker
 	 */
 	public void setLocker(FileLocker locker) {
 		Assert.notNull(locker, "'fileLocker' must not be null.");
-		this.scanner.setLocker(locker);
+		this.locker = locker;
 	}
 
 	/**
@@ -223,39 +260,104 @@ public class FileReadingMessageSource extends IntegrationObjectSupport implement
 		this.scanEachPoll = scanEachPoll;
 	}
 
+	/**
+	 * Switch this {@link FileReadingMessageSource} to use its internal
+	 * {@link FileReadingMessageSource.WatchServiceDirectoryScanner}.
+	 * @param useWatchService the {@code boolean} flag to switch to
+	 * {@link FileReadingMessageSource.WatchServiceDirectoryScanner} on {@code true}.
+	 * @since 4.3
+	 * @see #setWatchEvents
+	 */
+	public void setUseWatchService(boolean useWatchService) {
+		this.useWatchService = useWatchService;
+	}
+
+	/**
+	 * The {@link WatchService} event types.
+	 * If {@link #setUseWatchService} isn't {@code true}, this option is ignored.
+	 * @param watchEvents the set of {@link WatchEventType}.
+	 * @since 4.3
+	 * @see #setUseWatchService
+	 */
+	public void setWatchEvents(WatchEventType... watchEvents) {
+		Assert.notEmpty(watchEvents, "'watchEvents' must not be empty.");
+		Assert.noNullElements(watchEvents, "'watchEvents' must not contain null elements.");
+		Assert.state(!this.running.get(), "Cannot change watch events while running.");
+
+		this.watchEvents = Arrays.copyOf(watchEvents, watchEvents.length);
+	}
+
 	@Override
 	public String getComponentType() {
 		return "file:inbound-channel-adapter";
 	}
 
 	@Override
+	public void start() {
+		if (!this.running.getAndSet(true) && this.scanner instanceof Lifecycle) {
+			((Lifecycle) this.scanner).start();
+		}
+	}
+
+	@Override
+	public void stop() {
+		if (this.running.getAndSet(false) && this.scanner instanceof Lifecycle) {
+			((Lifecycle) this.scanner).stop();
+		}
+	}
+
+	@Override
+	public boolean isRunning() {
+		return this.running.get();
+	}
+
+	@Override
 	protected void onInit() {
-		Assert.notNull(directory, "'directory' must not be null");
+		Assert.notNull(this.directory, "'directory' must not be null");
 		if (!this.directory.exists() && this.autoCreateDirectory) {
 			this.directory.mkdirs();
 		}
 		Assert.isTrue(this.directory.exists(),
-				"Source directory [" + directory + "] does not exist.");
+				"Source directory [" + this.directory + "] does not exist.");
 		Assert.isTrue(this.directory.isDirectory(),
 				"Source path [" + this.directory + "] does not point to a directory.");
 		Assert.isTrue(this.directory.canRead(),
 				"Source directory [" + this.directory + "] is not readable.");
+
+		Assert.state(!(this.scannerExplicitlySet && this.useWatchService),
+				"The 'scanner' and 'useWatchService' options are mutually exclusive: " + this.scanner);
+
+		if (this.useWatchService) {
+			this.scanner = new WatchServiceDirectoryScanner();
+		}
+
+		Assert.state(!(this.scannerExplicitlySet && (this.filter != null || this.locker != null)),
+				"The 'filter' and 'locker' options must be present on the provided external 'scanner': "
+						+ this.scanner);
+		if (this.filter != null) {
+			this.scanner.setFilter(this.filter);
+		}
+		if (this.locker != null) {
+			this.scanner.setLocker(this.locker);
+		}
+
 	}
 
+	@Override
 	public Message<File> receive() throws MessagingException {
 		Message<File> message = null;
 
 		// rescan only if needed or explicitly configured
-		if (scanEachPoll || toBeReceived.isEmpty()) {
+		if (this.scanEachPoll || this.toBeReceived.isEmpty()) {
 			scanInputDirectory();
 		}
 
-		File file = toBeReceived.poll();
+		File file = this.toBeReceived.poll();
 
 		// file == null means the queue was empty
 		// we can't rely on isEmpty for concurrency reasons
-		while ((file != null) && !scanner.tryClaim(file)) {
-			file = toBeReceived.poll();
+		while ((file != null) && !this.scanner.tryClaim(file)) {
+			file = this.toBeReceived.poll();
 		}
 
 		if (file != null) {
@@ -263,20 +365,15 @@ public class FileReadingMessageSource extends IntegrationObjectSupport implement
 			if (logger.isInfoEnabled()) {
 				logger.info("Created message: [" + message + "]");
 			}
-			FileMessageHolder resource = this.resources.get();
-			if (resource == null) {
-				this.resources.set(new FileMessageHolder());
-			}
-			this.resources.get().setMessage(message);
 		}
 		return message;
 	}
 
 	private void scanInputDirectory() {
-		List<File> filteredFiles = scanner.listFiles(directory);
+		List<File> filteredFiles = this.scanner.listFiles(this.directory);
 		Set<File> freshFiles = new LinkedHashSet<File>(filteredFiles);
 		if (!freshFiles.isEmpty()) {
-			toBeReceived.addAll(freshFiles);
+			this.toBeReceived.addAll(freshFiles);
 			if (logger.isDebugEnabled()) {
 				logger.debug("Added to queue: " + freshFiles);
 			}
@@ -285,28 +382,199 @@ public class FileReadingMessageSource extends IntegrationObjectSupport implement
 
 	/**
 	 * Adds the failed message back to the 'toBeReceived' queue if there is room.
-	 *
-	 * @param failedMessage
-	 *            the {@link org.springframework.messaging.Message} that failed
+	 * @param failedMessage the {@link Message} that failed
 	 */
 	public void onFailure(Message<File> failedMessage) {
 		if (logger.isWarnEnabled()) {
 			logger.warn("Failed to send: " + failedMessage);
 		}
-		toBeReceived.offer(failedMessage.getPayload());
+		this.toBeReceived.offer(failedMessage.getPayload());
 	}
 
-	/**
-	 * The message is just logged. It was already removed from the queue during
-	 * the call to <code>receive()</code>
-	 *
-	 * @param sentMessage
-	 *            the message that was successfully delivered
-	 */
-	public void onSend(Message<File> sentMessage) {
-		if (logger.isDebugEnabled()) {
-			logger.debug("Sent: " + sentMessage);
+
+	public enum WatchEventType {
+
+		CREATE(StandardWatchEventKinds.ENTRY_CREATE),
+
+		MODIFY(StandardWatchEventKinds.ENTRY_MODIFY),
+
+		DELETE(StandardWatchEventKinds.ENTRY_DELETE);
+
+		private final WatchEvent.Kind<Path> kind;
+
+		WatchEventType(WatchEvent.Kind<Path> kind) {
+			this.kind = kind;
 		}
+
+	}
+
+	private class WatchServiceDirectoryScanner extends DefaultDirectoryScanner implements Lifecycle {
+
+		private final ConcurrentMap<Path, WatchKey> pathKeys = new ConcurrentHashMap<Path, WatchKey>();
+
+		private WatchService watcher;
+
+		private Collection<File> initialFiles;
+
+		private WatchEvent.Kind<?>[] kinds;
+
+		@Override
+		public void start() {
+			try {
+				this.watcher = FileSystems.getDefault().newWatchService();
+			}
+			catch (IOException e) {
+				logger.error("Failed to create watcher for " + FileReadingMessageSource.this.directory, e);
+			}
+
+			this.kinds = new WatchEvent.Kind<?>[FileReadingMessageSource.this.watchEvents.length];
+
+			for (int i = 0; i < FileReadingMessageSource.this.watchEvents.length; i++) {
+				this.kinds[i] = FileReadingMessageSource.this.watchEvents[i].kind;
+			}
+
+			final Set<File> initialFiles = walkDirectory(FileReadingMessageSource.this.directory.toPath(), null);
+			initialFiles.addAll(filesFromEvents());
+			this.initialFiles = initialFiles;
+		}
+
+		@Override
+		public void stop() {
+			try {
+				this.watcher.close();
+				this.watcher = null;
+				this.pathKeys.clear();
+			}
+			catch (IOException e) {
+				logger.error("Failed to close watcher for " + FileReadingMessageSource.this.directory, e);
+			}
+		}
+
+		@Override
+		public boolean isRunning() {
+			return true;
+		}
+
+		@Override
+		protected File[] listEligibleFiles(File directory) {
+			Assert.state(this.watcher != null, "The WatchService has'nt been started");
+			if (this.initialFiles != null) {
+				File[] initial = this.initialFiles.toArray(new File[this.initialFiles.size()]);
+				this.initialFiles = null;
+				return initial;
+			}
+			Collection<File> files = filesFromEvents();
+			return files.toArray(new File[files.size()]);
+		}
+
+		private Set<File> filesFromEvents() {
+			WatchKey key = this.watcher.poll();
+			Set<File> files = new LinkedHashSet<File>();
+			while (key != null) {
+				File parentDir = ((Path) key.watchable()).toAbsolutePath().toFile();
+				for (WatchEvent<?> event : key.pollEvents()) {
+					if (event.kind() == StandardWatchEventKinds.ENTRY_CREATE ||
+							event.kind() == StandardWatchEventKinds.ENTRY_MODIFY ||
+							event.kind() == StandardWatchEventKinds.ENTRY_DELETE) {
+						Path item = (Path) event.context();
+						File file = new File(parentDir, item.toFile().getName());
+						if (logger.isDebugEnabled()) {
+							logger.debug("Watch event [" + event.kind() + "] for file [" + file + "]");
+						}
+
+						if (event.kind() == StandardWatchEventKinds.ENTRY_DELETE) {
+							if (FileReadingMessageSource.this.filter instanceof ResettableFileListFilter) {
+								((ResettableFileListFilter<File>) FileReadingMessageSource.this.filter).remove(file);
+							}
+							boolean fileRemoved = files.remove(file);
+							if (fileRemoved && logger.isDebugEnabled()) {
+								logger.debug("The file [" + file +
+										"] has been removed from the queue because of DELETE event.");
+							}
+						}
+						else {
+							if (file.exists()) {
+								if (file.isDirectory()) {
+									files.addAll(walkDirectory(file.toPath(), event.kind()));
+								}
+								else {
+									files.remove(file);
+									files.add(file);
+								}
+							}
+							else {
+								if (logger.isDebugEnabled()) {
+									logger.debug("A file [" + file + "] for the event [" + event.kind() +
+											"] doesn't exist. Ignored.");
+								}
+							}
+						}
+					}
+					else if (event.kind() == StandardWatchEventKinds.OVERFLOW) {
+						if (logger.isDebugEnabled()) {
+							logger.debug("Watch event [" + StandardWatchEventKinds.OVERFLOW +
+									"] with context [" + event.context() + "]");
+						}
+
+						for (WatchKey watchKey : this.pathKeys.values()) {
+							watchKey.cancel();
+						}
+						this.pathKeys.clear();
+
+						if (event.context() != null && event.context() instanceof Path) {
+							files.addAll(walkDirectory((Path) event.context(), event.kind()));
+						}
+						else {
+							files.addAll(walkDirectory(FileReadingMessageSource.this.directory.toPath(), event.kind()));
+						}
+					}
+				}
+				key.reset();
+				key = this.watcher.poll();
+			}
+			return files;
+		}
+
+		private Set<File> walkDirectory(Path directory, final WatchEvent.Kind<?> kind) {
+			final Set<File> walkedFiles = new LinkedHashSet<File>();
+			try {
+				registerWatch(directory);
+				Files.walkFileTree(directory, new SimpleFileVisitor<Path>() {
+
+					@Override
+					public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
+						FileVisitResult fileVisitResult = super.preVisitDirectory(dir, attrs);
+						registerWatch(dir);
+						return fileVisitResult;
+					}
+
+					@Override
+					public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+						FileVisitResult fileVisitResult = super.visitFile(file, attrs);
+						if (!StandardWatchEventKinds.ENTRY_MODIFY.equals(kind)) {
+							walkedFiles.add(file.toFile());
+						}
+						return fileVisitResult;
+					}
+
+				});
+			}
+			catch (IOException e) {
+				logger.error("Failed to walk directory: " + directory.toString(), e);
+			}
+			return walkedFiles;
+		}
+
+		private void registerWatch(Path dir) throws IOException {
+			if (!this.pathKeys.containsKey(dir)) {
+				if (logger.isDebugEnabled()) {
+					logger.debug("registering: " + dir + " for file events");
+				}
+				WatchKey watchKey = dir.register(this.watcher, this.kinds);
+				this.pathKeys.putIfAbsent(dir, watchKey);
+			}
+		}
+
 	}
 
 }

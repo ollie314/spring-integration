@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2010 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.config.xml;
 
 import static org.junit.Assert.assertEquals;
@@ -34,16 +35,16 @@ import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 
 /**
  * @author Oleg Zhurakousky
- *
+ * @author Artem Bilan
  */
 @ContextConfiguration
 @RunWith(SpringJUnit4ClassRunner.class)
 public class ConverterParserTests {
-	
+
 	@Autowired
 	@Qualifier("serviceActivatorChannel")
 	private MessageChannel serviceActivatorChannel;
-	
+
 	@Autowired
 	@Qualifier("serviceActivatorChannel3")
 	private MessageChannel serviceActivatorChannel3;
@@ -77,7 +78,7 @@ public class ConverterParserTests {
 		assertEquals(TestBean2.class, result.getPayload().getClass());
 		assertEquals("SERVICE-TEST", ((TestBean2) result.getPayload()).text);
 	}
-	
+
 	@Test
 	public void serviceActivatorUsingInnerConverterDefinition() {
 		QueueChannel replyChannel = new QueueChannel();
@@ -140,15 +141,15 @@ public class ConverterParserTests {
 		assertEquals(TestBean1.class, result.getPayload().getClass());
 		assertEquals("router-test", ((TestBean1) result.getPayload()).text);
 	}
-	
+
 
 	@SuppressWarnings("unused")
-	private static class TestService {
+	public static class TestService {
 
 		public Object test(TestBean2 bean) {
 			return bean;
 		}
-		
+
 		public Object test3(TestBean3 bean) {
 			return bean;
 		}
@@ -156,19 +157,21 @@ public class ConverterParserTests {
 		public boolean filter(TestBean2 bean) {
 			return true;
 		}
+
 	}
-	
-	private static class TestBean1  {
+
+	public static class TestBean1  {
 
 		private String text;
 
 		public TestBean1(String text) {
 			this.text = text;
 		}
+
 	}
 
 
-	private static class TestBean2 {
+	public static class TestBean2 {
 
 		private String text;
 
@@ -180,12 +183,14 @@ public class ConverterParserTests {
 		public String toString() {
 			return this.text.replace("-TEST", "_TARGET_CHANNEL");
 		}
+
 	}
+
 	private static class TestBean3 {
 
 		private String text;
 
-		public TestBean3(String text) {
+		TestBean3(String text) {
 			this.text = text;
 		}
 
@@ -193,20 +198,25 @@ public class ConverterParserTests {
 		public String toString() {
 			return this.text.replace("-TEST", "_TARGET_CHANNEL");
 		}
+
 	}
-	
+
 	@SuppressWarnings("unused")
 	private static class TestConverter implements Converter<TestBean1, TestBean2> {
 
 		public TestBean2 convert(TestBean1 source) {
 			return new TestBean2(source.text.toUpperCase());
 		}
+
 	}
+
 	@SuppressWarnings("unused")
 	private static class TestConverter3 implements Converter<TestBean1, TestBean3> {
 
 		public TestBean3 convert(TestBean1 source) {
 			return new TestBean3(source.text.toUpperCase());
 		}
+
 	}
+
 }

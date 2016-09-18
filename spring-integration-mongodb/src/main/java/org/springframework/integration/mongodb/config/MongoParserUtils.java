@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,14 +13,16 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.mongodb.config;
+
+import org.w3c.dom.Element;
 
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.support.BeanDefinitionBuilder;
 import org.springframework.beans.factory.xml.ParserContext;
 import org.springframework.integration.config.xml.IntegrationNamespaceUtils;
 import org.springframework.util.StringUtils;
-import org.w3c.dom.Element;
 /**
  * Utility class used by mongo parsers
  *
@@ -28,7 +30,11 @@ import org.w3c.dom.Element;
  * @author Gary Russell
  * @since 2.2
  */
-class MongoParserUtils {
+final class MongoParserUtils {
+
+	private MongoParserUtils() {
+		super();
+	}
 
 	/**
 	 * Will parse and validate
@@ -38,16 +44,16 @@ class MongoParserUtils {
 	 * @param parserContext
 	 * @param builder
 	 */
-	public static void processCommonAttributes(Element element, ParserContext parserContext, BeanDefinitionBuilder builder){
+	public static void processCommonAttributes(Element element, ParserContext parserContext, BeanDefinitionBuilder builder) {
 		String mongoDbTemplate = element.getAttribute("mongo-template");
 		String mongoDbFactory = element.getAttribute("mongodb-factory");
 
-		if (StringUtils.hasText(mongoDbTemplate) && StringUtils.hasText(mongoDbFactory)){
+		if (StringUtils.hasText(mongoDbTemplate) && StringUtils.hasText(mongoDbFactory)) {
 			parserContext.getReaderContext().error("Only one of '" + mongoDbTemplate + "' or '"
 					+ mongoDbFactory + "' is allowed", element);
 		}
 
-		if (StringUtils.hasText(mongoDbTemplate)){
+		if (StringUtils.hasText(mongoDbTemplate)) {
 			builder.addConstructorArgReference(mongoDbTemplate);
 			if (StringUtils.hasText(element.getAttribute("mongo-converter"))) {
 				parserContext.getReaderContext().error("'mongo-converter' is not allowed with 'mongo-template'",
@@ -67,7 +73,7 @@ class MongoParserUtils {
 						parserContext, element, false);
 
 
-		if (collectionNameExpressionDef != null){
+		if (collectionNameExpressionDef != null) {
 			builder.addPropertyValue("collectionNameExpression", collectionNameExpressionDef);
 		}
 

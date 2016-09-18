@@ -81,7 +81,7 @@
 	</bean>
 
 	<int:outbound-channel-adapter channel="second" expression="@successfulLatch.countDown()">
-		<int:poller fixed-delay="1000">
+		<int:poller fixed-delay="100">
 			<int:transactional transaction-manager="transactionManager"/>
 		</int:poller>
 	</int:outbound-channel-adapter>
@@ -92,6 +92,14 @@
 						   expression="@errorAtomicInteger.incrementAndGet()">
 		<int:poller fixed-delay="1000"/>
 	</int:service-activator>
+
+	<bean id="priorityMessageStore" parent="messageStore">
+		<property name="priorityEnabled" value="true"/>
+	</bean>
+
+	<int:channel id="priorityChannel">
+		<int:priority-queue message-store="priorityMessageStore"/>
+	</int:channel>
 
 </beans>
 

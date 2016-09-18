@@ -1,14 +1,17 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
- * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
- * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
- * specific language governing permissions and limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package org.springframework.integration.aggregator.integration;
@@ -43,7 +46,7 @@ public class AggregatorSupportedUseCasesTests {
 	private AggregatingMessageHandler defaultHandler = new AggregatingMessageHandler(processor, store);
 
 	@Test
-	public void waitForAllDefaultReleaseStrategyWithLateArrivals(){
+	public void waitForAllDefaultReleaseStrategyWithLateArrivals() {
 		QueueChannel outputChannel = new QueueChannel();
 		QueueChannel discardChannel = new QueueChannel();
 		defaultHandler.setOutputChannel(outputChannel);
@@ -52,7 +55,7 @@ public class AggregatorSupportedUseCasesTests {
 		for (int i = 0; i < 5; i++) {
 			defaultHandler.handleMessage(MessageBuilder.withPayload(i).setSequenceSize(5).setCorrelationId("A").setSequenceNumber(i).build());
 		}
-		assertEquals(5, ((List<?>)outputChannel.receive(0).getPayload()).size());
+		assertEquals(5, ((List<?>) outputChannel.receive(0).getPayload()).size());
 		assertNull(discardChannel.receive(0));
 		assertEquals(0, store.getMessageGroup("A").getMessages().size());
 
@@ -68,7 +71,7 @@ public class AggregatorSupportedUseCasesTests {
 	}
 
 	@Test
-	public void waitForAllCustomReleaseStrategyWithLateArrivals(){
+	public void waitForAllCustomReleaseStrategyWithLateArrivals() {
 		QueueChannel outputChannel = new QueueChannel();
 		QueueChannel discardChannel = new QueueChannel();
 		defaultHandler.setOutputChannel(outputChannel);
@@ -78,7 +81,7 @@ public class AggregatorSupportedUseCasesTests {
 		for (int i = 0; i < 5; i++) {
 			defaultHandler.handleMessage(MessageBuilder.withPayload(i).setCorrelationId("A").build());
 		}
-		assertEquals(5, ((List<?>)outputChannel.receive(0).getPayload()).size());
+		assertEquals(5, ((List<?>) outputChannel.receive(0).getPayload()).size());
 		assertNull(discardChannel.receive(0));
 		assertEquals(0, store.getMessageGroup("A").getMessages().size());
 
@@ -94,7 +97,7 @@ public class AggregatorSupportedUseCasesTests {
 	}
 
 	@Test
-	public void firstBest(){
+	public void firstBest() {
 		QueueChannel outputChannel = new QueueChannel();
 		QueueChannel discardChannel = new QueueChannel();
 		defaultHandler.setOutputChannel(outputChannel);
@@ -104,7 +107,7 @@ public class AggregatorSupportedUseCasesTests {
 		for (int i = 0; i < 5; i++) {
 			defaultHandler.handleMessage(MessageBuilder.withPayload(i).setCorrelationId("A").build());
 		}
-		assertEquals(1, ((List<?>)outputChannel.receive(0).getPayload()).size());
+		assertEquals(1, ((List<?>) outputChannel.receive(0).getPayload()).size());
 		assertNotNull(discardChannel.receive(0));
 		assertNotNull(discardChannel.receive(0));
 		assertNotNull(discardChannel.receive(0));
@@ -112,7 +115,7 @@ public class AggregatorSupportedUseCasesTests {
 	}
 
 	@Test
-	public void batchingWithoutLeftovers(){
+	public void batchingWithoutLeftovers() {
 		QueueChannel outputChannel = new QueueChannel();
 		QueueChannel discardChannel = new QueueChannel();
 		defaultHandler.setOutputChannel(outputChannel);
@@ -123,13 +126,13 @@ public class AggregatorSupportedUseCasesTests {
 		for (int i = 0; i < 10; i++) {
 			defaultHandler.handleMessage(MessageBuilder.withPayload(i).setCorrelationId("A").build());
 		}
-		assertEquals(5, ((List<?>)outputChannel.receive(0).getPayload()).size());
-		assertEquals(5, ((List<?>)outputChannel.receive(0).getPayload()).size());
+		assertEquals(5, ((List<?>) outputChannel.receive(0).getPayload()).size());
+		assertEquals(5, ((List<?>) outputChannel.receive(0).getPayload()).size());
 		assertNull(discardChannel.receive(0));
 	}
 
 	@Test
-	public void batchingWithLeftovers(){
+	public void batchingWithLeftovers() {
 		QueueChannel outputChannel = new QueueChannel();
 		QueueChannel discardChannel = new QueueChannel();
 		defaultHandler.setOutputChannel(outputChannel);
@@ -140,8 +143,8 @@ public class AggregatorSupportedUseCasesTests {
 		for (int i = 0; i < 12; i++) {
 			defaultHandler.handleMessage(MessageBuilder.withPayload(i).setCorrelationId("A").build());
 		}
-		assertEquals(5, ((List<?>)outputChannel.receive(0).getPayload()).size());
-		assertEquals(5, ((List<?>)outputChannel.receive(0).getPayload()).size());
+		assertEquals(5, ((List<?>) outputChannel.receive(0).getPayload()).size());
+		assertEquals(5, ((List<?>) outputChannel.receive(0).getPayload()).size());
 		assertNull(discardChannel.receive(0));
 		assertEquals(2, store.getMessageGroup("A").getMessages().size());
 	}

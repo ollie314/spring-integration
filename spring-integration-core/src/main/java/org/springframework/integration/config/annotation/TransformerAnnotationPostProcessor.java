@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2009 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,35 +16,55 @@
 
 package org.springframework.integration.config.annotation;
 
+import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
+import java.util.Arrays;
+import java.util.List;
 
-import org.springframework.beans.factory.ListableBeanFactory;
+import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
+import org.springframework.context.annotation.Bean;
+import org.springframework.core.annotation.AnnotatedElementUtils;
 import org.springframework.integration.annotation.Transformer;
-import org.springframework.messaging.MessageHandler;
+import org.springframework.integration.handler.AbstractReplyProducingMessageHandler;
 import org.springframework.integration.transformer.MessageTransformingHandler;
 import org.springframework.integration.transformer.MethodInvokingTransformer;
-import org.springframework.util.StringUtils;
+import org.springframework.messaging.MessageHandler;
 
 /**
  * Post-processor for Methods annotated with {@link Transformer @Transformer}.
  *
  * @author Mark Fisher
+ * @author Gary Russell
+ * @author Artem Bilan
  */
 public class TransformerAnnotationPostProcessor extends AbstractMethodAnnotationPostProcessor<Transformer> {
 
-	public TransformerAnnotationPostProcessor(ListableBeanFactory beanFactory) {
+	public TransformerAnnotationPostProcessor(ConfigurableListableBeanFactory beanFactory) {
 		super(beanFactory);
+		this.messageHandlerAttributes.addAll(Arrays.<String>asList("outputChannel", "adviceChain"));
 	}
 
-
 	@Override
-	protected MessageHandler createHandler(Object bean, Method method, Transformer annotation) {
-		MethodInvokingTransformer transformer = new MethodInvokingTransformer(bean, method);
-		MessageTransformingHandler handler = new MessageTransformingHandler(transformer);
-		String outputChannelName = annotation.outputChannel();
-		if (StringUtils.hasText(outputChannelName)) {
-			handler.setOutputChannel(this.channelResolver.resolveDestination(outputChannelName));
+	protected MessageHandler createHandler(Object bean, Method method, List<Annotation> annotations) {
+		org.springframework.integration.transformer.Transformer transformer;
+		if (AnnotatedElementUtils.isAnnotated(method, Bean.class.getName())) {
+			Object target = this.resolveTargetBeanFromMethodWithBeanAnnotation(method);
+			transformer = this.extractTypeIfPossible(target,
+					org.springframework.integration.transformer.Transformer.class);
+			if (transformer == null) {
+				if (this.extractTypeIfPossible(target, AbstractReplyProducingMessageHandler.class) != null) {
+					checkMessageHandlerAttributes(resolveTargetBeanName(method), annotations);
+					return (MessageHandler) target;
+				}
+				transformer = new MethodInvokingTransformer(target);
+			}
 		}
+		else {
+			transformer = new MethodInvokingTransformer(bean, method);
+		}
+
+		MessageTransformingHandler handler = new MessageTransformingHandler(transformer);
+		this.setOutputChannelIfPresent(annotations, handler);
 		return handler;
 	}
 

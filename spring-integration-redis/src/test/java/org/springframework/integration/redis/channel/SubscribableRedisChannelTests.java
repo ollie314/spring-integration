@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,10 +13,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.redis.channel;
 
-import static org.junit.Assert.assertEquals;
+import static org.hamcrest.Matchers.containsString;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.mockito.Mockito.mock;
@@ -60,7 +62,8 @@ public class SubscribableRedisChannelTests extends RedisAvailableTests {
 		channel.afterPropertiesSet();
 		channel.start();
 
-		this.awaitContainerSubscribed(TestUtils.getPropertyValue(channel, "container", RedisMessageListenerContainer.class));
+		this.awaitContainerSubscribed(TestUtils.getPropertyValue(channel, "container",
+				RedisMessageListenerContainer.class));
 
 		final CountDownLatch latch = new CountDownLatch(3);
 		MessageHandler handler = new MessageHandler() {
@@ -75,12 +78,12 @@ public class SubscribableRedisChannelTests extends RedisAvailableTests {
 		channel.send(new GenericMessage<String>("1"));
 		channel.send(new GenericMessage<String>("2"));
 		channel.send(new GenericMessage<String>("3"));
-		assertTrue(latch.await(5, TimeUnit.SECONDS));
+		assertTrue(latch.await(20, TimeUnit.SECONDS));
 	}
 
 	@Test
 	@RedisAvailable
-	public void dispatcherHasNoSubscribersTest() throws Exception{
+	public void dispatcherHasNoSubscribersTest() throws Exception {
 		RedisConnectionFactory connectionFactory = this.getConnectionFactoryForTest();
 
 		SubscribableRedisChannel channel = new SubscribableRedisChannel(connectionFactory, "si.test.channel.no.subs");
@@ -96,13 +99,15 @@ public class SubscribableRedisChannelTests extends RedisAvailableTests {
 		MessageListenerAdapter listener = channelMapping.entrySet().iterator().next().getValue().iterator().next();
 		Object delegate = TestUtils.getPropertyValue(listener, "delegate");
 		try {
-			ReflectionUtils.findMethod(delegate.getClass(), "handleMessage", String.class).invoke(delegate, "Hello, world!");
+			ReflectionUtils.findMethod(delegate.getClass(), "handleMessage", Object.class).invoke(delegate,
+					"Hello, world!");
 			fail("Exception expected");
 		}
 		catch (InvocationTargetException e) {
 			Throwable cause = e.getCause();
 			assertNotNull(cause);
-			assertEquals("Dispatcher has no subscribers for redis-channel 'si.test.channel.no.subs' (dhnsChannel).", cause.getMessage());
+			assertThat(cause.getMessage(),
+					containsString("Dispatcher has no subscribers for redis-channel 'si.test.channel.no.subs' (dhnsChannel)."));
 		}
 
 	}

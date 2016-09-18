@@ -1,18 +1,22 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
- * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
- * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
- * specific language governing permissions and limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package org.springframework.integration.store;
 
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.LinkedHashSet;
 
@@ -21,25 +25,32 @@ import org.apache.commons.logging.LogFactory;
 
 import org.springframework.beans.factory.BeanFactory;
 import org.springframework.beans.factory.BeanFactoryAware;
-import org.springframework.integration.context.IntegrationContextUtils;
 import org.springframework.integration.support.DefaultMessageBuilderFactory;
 import org.springframework.integration.support.MessageBuilderFactory;
+import org.springframework.integration.support.utils.IntegrationUtils;
 import org.springframework.jmx.export.annotation.ManagedAttribute;
+import org.springframework.jmx.export.annotation.ManagedOperation;
+import org.springframework.jmx.export.annotation.ManagedResource;
+import org.springframework.messaging.Message;
 
 /**
  * @author Dave Syer
  * @author Oleg Zhurakousky
  * @author Gary Russell
+ * @author Artem Bilan
  *
  * @since 2.0
- *
  */
-public abstract class AbstractMessageGroupStore implements MessageGroupStore, Iterable<MessageGroup>,
-		BeanFactoryAware {
+@ManagedResource
+public abstract class AbstractMessageGroupStore extends AbstractBatchingMessageGroupStore
+		implements MessageGroupStore, Iterable<MessageGroup>, BeanFactoryAware {
 
 	protected final Log logger = LogFactory.getLog(getClass());
 
 	private final Collection<MessageGroupCallback> expiryCallbacks = new LinkedHashSet<MessageGroupCallback>();
+
+	private final MessageGroupFactory persistentMessageGroupFactory =
+			new SimpleMessageGroupFactory(SimpleMessageGroupFactory.GroupType.PERSISTENT);
 
 	private volatile boolean timeoutOnIdle;
 
@@ -47,18 +58,42 @@ public abstract class AbstractMessageGroupStore implements MessageGroupStore, It
 
 	private volatile MessageBuilderFactory messageBuilderFactory = new DefaultMessageBuilderFactory();
 
-	public AbstractMessageGroupStore() {
+	private volatile boolean messageBuilderFactorySet;
+
+	private boolean lazyLoadMessageGroups = true;
+
+	protected AbstractMessageGroupStore() {
 		super();
+	}
+
+	protected AbstractMessageGroupStore(boolean lazyLoadMessageGroups) {
+		this.lazyLoadMessageGroups = lazyLoadMessageGroups;
 	}
 
 	@Override
 	public final void setBeanFactory(BeanFactory beanFactory) {
 		this.beanFactory = beanFactory;
-		this.messageBuilderFactory = IntegrationContextUtils.getMessageBuilderFactory(this.beanFactory);
+
 	}
 
 	protected MessageBuilderFactory getMessageBuilderFactory() {
-		return messageBuilderFactory;
+		if (!this.messageBuilderFactorySet) {
+			if (this.beanFactory != null) {
+				this.messageBuilderFactory = IntegrationUtils.getMessageBuilderFactory(this.beanFactory);
+			}
+			this.messageBuilderFactorySet = true;
+		}
+		return this.messageBuilderFactory;
+	}
+
+	@Override
+	protected MessageGroupFactory getMessageGroupFactory() {
+		if (this.lazyLoadMessageGroups) {
+			return this.persistentMessageGroupFactory;
+		}
+		else {
+			return super.getMessageGroupFactory();
+		}
 	}
 
 	/**
@@ -74,7 +109,7 @@ public abstract class AbstractMessageGroupStore implements MessageGroupStore, It
 	}
 
 	public boolean isTimeoutOnIdle() {
-		return timeoutOnIdle;
+		return this.timeoutOnIdle;
 	}
 
 	/**
@@ -82,35 +117,61 @@ public abstract class AbstractMessageGroupStore implements MessageGroupStore, It
 	 * the {@link MessageGroup} was created. If you want the timeout to be based on the time
 	 * the {@link MessageGroup} was idling (e.g., inactive from the last update) invoke this method with 'true'.
 	 * Default is 'false'.
-	 *
 	 * @param timeoutOnIdle The boolean.
 	 */
 	public void setTimeoutOnIdle(boolean timeoutOnIdle) {
 		this.timeoutOnIdle = timeoutOnIdle;
 	}
 
-	@Override
-	public void registerMessageGroupExpiryCallback(MessageGroupCallback callback) {
-		expiryCallbacks.add(callback);
+	/**
+	 * Specify if the result of the {@link #getMessageGroup(Object)} should be wrapped
+	 * to the {@link PersistentMessageGroup} - a lazy-load proxy for messages in group
+	 * Defaults to {@code true}.
+	 * <p> The target logic is based on the {@link SimpleMessageGroupFactory.GroupType#PERSISTENT}.
+	 * @param lazyLoadMessageGroups the {@code boolean} flag to use.
+	 * @since 4.3
+	 */
+	public void setLazyLoadMessageGroups(boolean lazyLoadMessageGroups) {
+		this.lazyLoadMessageGroups = lazyLoadMessageGroups;
 	}
 
 	@Override
-	public int expireMessageGroups(long timeout) {
+	public void registerMessageGroupExpiryCallback(MessageGroupCallback callback) {
+		this.expiryCallbacks.add(callback);
+	}
+
+	@Override
+	@ManagedOperation
+	public synchronized int expireMessageGroups(long timeout) {
 		int count = 0;
 		long threshold = System.currentTimeMillis() - timeout;
 		for (MessageGroup group : this) {
 
 			long timestamp = group.getTimestamp();
 			if (this.isTimeoutOnIdle() && group.getLastModified() > 0) {
-			    timestamp = group.getLastModified();
+				timestamp = group.getLastModified();
 			}
 
 			if (timestamp <= threshold) {
 				count++;
-				expire(group);
+				expire(copy(group));
 			}
 		}
 		return count;
+	}
+
+	/**
+	 * Used by expireMessageGroups. We need to return a snapshot of the group
+	 * at the time the reaper runs, so we can properly detect if the
+	 * group changed between now and the attempt to expire the group.
+	 * Not necessary for persistent stores, so the default behavior is
+	 * to just return the group.
+	 * @param group The group.
+	 * @return The group, or a copy.
+	 * @since 4.0.1
+	 */
+	protected MessageGroup copy(MessageGroup group) {
+		return group;
 	}
 
 	@Override
@@ -128,23 +189,40 @@ public abstract class AbstractMessageGroupStore implements MessageGroupStore, It
 	public int getMessageGroupCount() {
 		int count = 0;
 		for (@SuppressWarnings("unused") MessageGroup group : this) {
-			count ++;
+			count++;
 		}
 		return count;
+	}
+
+	@Override
+	public MessageGroupMetadata getGroupMetadata(Object groupId) {
+		throw new UnsupportedOperationException("Not yet implemented for this store");
+	}
+
+	@Override
+	public void removeMessagesFromGroup(Object key, Message<?>... messages) {
+		removeMessagesFromGroup(key, Arrays.asList(messages));
+	}
+
+	@Override
+	public MessageGroup addMessageToGroup(Object groupId, Message<?> message) {
+		addMessagesToGroup(groupId, message);
+		return getMessageGroup(groupId);
 	}
 
 	private void expire(MessageGroup group) {
 
 		RuntimeException exception = null;
 
-		for (MessageGroupCallback callback : expiryCallbacks) {
+		for (MessageGroupCallback callback : this.expiryCallbacks) {
 			try {
 				callback.execute(this, group);
-			} catch (RuntimeException e) {
+			}
+			catch (RuntimeException e) {
 				if (exception == null) {
 					exception = e;
 				}
-				logger.error("Exception in expiry callback", e);
+				this.logger.error("Exception in expiry callback", e);
 			}
 		}
 

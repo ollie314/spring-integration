@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.transformer;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -23,22 +28,15 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import org.codehaus.jackson.JsonGenerationException;
-import org.codehaus.jackson.JsonParseException;
-import org.codehaus.jackson.map.JsonMappingException;
 import org.junit.Test;
+
 import org.springframework.context.expression.MapAccessor;
 import org.springframework.expression.Expression;
 import org.springframework.expression.ExpressionParser;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.expression.spel.support.StandardEvaluationContext;
-import org.springframework.messaging.Message;
 import org.springframework.integration.support.MessageBuilder;
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-
-import static org.junit.Assert.assertNull;
+import org.springframework.messaging.Message;
 
 /**
  *
@@ -47,9 +45,10 @@ import static org.junit.Assert.assertNull;
  * @since 2.0
  */
 public class ObjectToMapTransformerTests {
+
 	@SuppressWarnings("unchecked")
 	@Test
-	public void testObjectToSpelMapTransformer() throws JsonParseException, JsonMappingException, JsonGenerationException, IOException{
+	public void testObjectToSpelMapTransformer() throws IOException {
 		Employee employee = this.buildEmployee();
 		StandardEvaluationContext context = new StandardEvaluationContext();
 		context.addPropertyAccessor(new MapAccessor());
@@ -143,8 +142,8 @@ public class ObjectToMapTransformerTests {
 		assertEquals(valueFromTheMap, valueFromExpression);
 	}
 
-	@Test(expected=MessageTransformationException.class)
-	public void testObjectToSpelMapTransformerWithCycle(){
+	@Test(expected = MessageTransformationException.class)
+	public void testObjectToSpelMapTransformerWithCycle() {
 		Employee employee = this.buildEmployee();
 		Child child = new Child();
 		Person parent = employee.getPerson();
@@ -156,15 +155,15 @@ public class ObjectToMapTransformerTests {
 	}
 
 	@SuppressWarnings({ "unchecked", "rawtypes" })
-	public Employee buildEmployee(){
+	public Employee buildEmployee() {
 		Address companyAddress = new Address();
 		companyAddress.setCity("Philadelphia");
 		companyAddress.setStreet("1123 Main");
 		companyAddress.setZip("12345");
 
 		Map<String, Long[]> coordinates = new HashMap<String, Long[]>();
-		coordinates.put("latitude", new Long[]{(long)1, (long)5, (long)13});
-		coordinates.put("longitude", new Long[]{(long)156});
+		coordinates.put("latitude", new Long[]{(long) 1, (long) 5, (long) 13});
+		coordinates.put("longitude", new Long[]{(long) 156});
 		companyAddress.setCoordinates(coordinates);
 
 		List<Date> datesA = new ArrayList<Date>();
@@ -210,7 +209,7 @@ public class ObjectToMapTransformerTests {
 		remarksA.put("foo", "foo");
 		remarksA.put("bar", "bar");
 		remarksB.put("baz", "baz");
-		List<Map<String, Object>> remarks = new ArrayList<Map<String,Object>>();
+		List<Map<String, Object>> remarks = new ArrayList<Map<String, Object>>();
 		remarks.add(remarksA);
 		remarks.add(remarksB);
 		person.setRemarks(remarks);
@@ -231,7 +230,7 @@ public class ObjectToMapTransformerTests {
 		return employee;
 	}
 
-	public static class Employee{
+	public static class Employee {
 		private List<String> departments;
 		private List<List<Date>> listOfDates;
 		private String companyName;
@@ -277,7 +276,7 @@ public class ObjectToMapTransformerTests {
 		}
 	}
 
-	public static class Person{
+	public static class Person {
 		private String fname;
 		private String lname;
 		private String[] akaNames;
@@ -340,7 +339,7 @@ public class ObjectToMapTransformerTests {
 		}
 	}
 
-	public static class Address{
+	public static class Address {
 		private String street;
 		private String city;
 		private String zip;

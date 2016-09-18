@@ -1,5 +1,5 @@
 /*
- * Copyright 2013-2014 the original author or authors.
+ * Copyright 2013-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,14 +29,22 @@ import org.springframework.integration.mapping.support.JsonHeaders;
 import org.springframework.util.Assert;
 
 import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.MapperFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * Jackson 2 JSON-processor (@link https://github.com/FasterXML) {@linkplain JsonObjectMapper} implementation.
  * Delegates <code>toJson</code> and <code>fromJson</code>
  * to the {@linkplain com.fasterxml.jackson.databind.ObjectMapper}
+ * <p>
+ * It customizes Jackson's default properties with the following ones:
+ * <ul>
+ * <li>{@link MapperFeature#DEFAULT_VIEW_INCLUSION} is disabled</li>
+ * <li>{@link DeserializationFeature#FAIL_ON_UNKNOWN_PROPERTIES} is disabled</li>
+ * </ul>
  *
  * @author Artem Bilan
  * @since 3.0
@@ -47,6 +55,8 @@ public class Jackson2JsonObjectMapper extends AbstractJacksonJsonObjectMapper<Js
 
 	public Jackson2JsonObjectMapper() {
 		this.objectMapper = new ObjectMapper();
+		this.objectMapper.configure(MapperFeature.DEFAULT_VIEW_INCLUSION, false);
+		this.objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 	}
 
 	public Jackson2JsonObjectMapper(ObjectMapper objectMapper) {
@@ -74,7 +84,7 @@ public class Jackson2JsonObjectMapper extends AbstractJacksonJsonObjectMapper<Js
 		if (json instanceof String) {
 			return this.objectMapper.readValue((String) json, type);
 		}
-		else if(json instanceof byte[]) {
+		else if (json instanceof byte[]) {
 			return this.objectMapper.readValue((byte[]) json, type);
 		}
 		else if (json instanceof File) {
@@ -90,27 +100,14 @@ public class Jackson2JsonObjectMapper extends AbstractJacksonJsonObjectMapper<Js
 			return this.objectMapper.readValue((Reader) json, type);
 		}
 		else {
-			throw new IllegalArgumentException("'json' argument must be an instance of: " + supportedJsonTypes);
+			throw new IllegalArgumentException("'json' argument must be an instance of: " + supportedJsonTypes
+					+ " , but gotten: " + json.getClass());
 		}
 	}
 
 	@Override
 	public <T> T fromJson(JsonParser parser, Type valueType) throws Exception {
-		return this.objectMapper.readValue(parser, this.constructType(valueType));
-	}
-
-	@Override
-	public void populateJavaTypes(Map<String, Object> map, Class<?> sourceClass) {
-		JavaType javaType = this.objectMapper.constructType(sourceClass);
-		map.put(JsonHeaders.TYPE_ID, javaType.getRawClass());
-
-		if (javaType.isContainerType() && !javaType.isArrayType()) {
-			map.put(JsonHeaders.CONTENT_TYPE_ID, javaType.getContentType().getRawClass());
-		}
-
-		if (javaType.getKeyType() != null) {
-			map.put(JsonHeaders.KEY_TYPE_ID, javaType.getKeyType().getRawClass());
-		}
+		return this.objectMapper.readValue(parser, constructType(valueType));
 	}
 
 	@Override

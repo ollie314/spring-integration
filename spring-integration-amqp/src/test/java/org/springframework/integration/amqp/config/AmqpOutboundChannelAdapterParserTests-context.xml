@@ -23,6 +23,8 @@
 
 	<amqp:outbound-channel-adapter id="withHeaderMapperCustomHeaders" channel="requestChannel"
 								   exchange-name="outboundchanneladapter.test.1"
+								   default-delivery-mode="NON_PERSISTENT"
+								   lazy-connect="false"
 								   mapped-request-headers="foo*"/>
 
 	<bean id="customHeaderMapper" class="org.mockito.Mockito" factory-method="mock">
@@ -39,26 +41,19 @@
 		<amqp:outbound-channel-adapter exchange-name="outboundchanneladapter.test.1"/>
 	</int:chain>
 
+	<rabbit:template id="amqpTemplateConfirms" connection-factory="connectionFactory"/>
+
 	<amqp:outbound-channel-adapter id="withPublisherConfirms" channel="pcRequestChannel"
 								   exchange-name="outboundchanneladapter.test.1"
 								   mapped-request-headers="foo*"
+								   auto-startup="false"
+								   amqp-template="amqpTemplateConfirms"
 								   confirm-correlation-expression="headers['amqp_confirmCorrelationData']"
 								   confirm-ack-channel="ackChannel"/>
 
 	<int:channel id="pcRequestChannel"/>
 
 	<int:channel id="ackChannel">
-		<int:queue/>
-	</int:channel>
-
-	<amqp:outbound-channel-adapter id="withReturns" channel="returnRequestChannel"
-								   exchange-name="outboundchanneladapter.test.1"
-								   mapped-request-headers="foo*"
-								   return-channel="returnChannel"/>
-
-	<int:channel id="returnRequestChannel"/>
-
-	<int:channel id="returnChannel">
 		<int:queue/>
 	</int:channel>
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,13 @@
 
 package org.springframework.integration.aggregator;
 
+import static org.hamcrest.CoreMatchers.is;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertThat;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+import static org.mockito.Mockito.when;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -28,36 +35,28 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mock;
 import org.mockito.runners.MockitoJUnitRunner;
+
 import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.core.convert.support.DefaultConversionService;
 import org.springframework.core.convert.support.GenericConversionService;
-import org.springframework.messaging.Message;
 import org.springframework.integration.annotation.Aggregator;
-import org.springframework.integration.annotation.Header;
-import org.springframework.integration.annotation.Headers;
 import org.springframework.integration.annotation.Payloads;
 import org.springframework.integration.channel.DirectChannel;
 import org.springframework.integration.channel.QueueChannel;
 import org.springframework.integration.endpoint.EventDrivenConsumer;
-import org.springframework.messaging.support.GenericMessage;
 import org.springframework.integration.store.MessageGroup;
 import org.springframework.integration.store.SimpleMessageGroup;
 import org.springframework.integration.support.MessageBuilder;
-
-import static org.junit.Assert.assertTrue;
-import static org.hamcrest.CoreMatchers.is;
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertThat;
-import static org.junit.Assert.fail;
-
-import static org.mockito.Mockito.when;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.handler.annotation.Header;
+import org.springframework.messaging.handler.annotation.Headers;
+import org.springframework.messaging.support.GenericMessage;
 
 @RunWith(MockitoJUnitRunner.class)
 public class MethodInvokingMessageGroupProcessorTests {
 
-	private List<Message<?>> messagesUpForProcessing = new ArrayList<Message<?>>(3);
+	private final List<Message<?>> messagesUpForProcessing = new ArrayList<Message<?>>(3);
 
 	@Mock
 	private MessageGroup messageGroupMock;
@@ -138,11 +137,37 @@ public class MethodInvokingMessageGroupProcessorTests {
 	}
 
 	@Test
-	public void shouldFindAnnotatedPayloads() throws Exception {
+	public void shouldFindListPayloads() throws Exception {
 
 		@SuppressWarnings("unused")
 		class SimpleAggregator {
-			public String and(@Payloads List<Integer> flags, @Header("foo") List<Integer> header) {
+			public String and(List<Integer> flags, @Header("foo") List<Integer> header) {
+				List<Integer> result = new ArrayList<Integer>();
+				for (int flag : flags) {
+					result.add(flag);
+				}
+				for (int flag : header) {
+					result.add(flag);
+				}
+				return result.toString();
+			}
+		}
+
+		MessageGroupProcessor processor = new MethodInvokingMessageGroupProcessor(new SimpleAggregator());
+		messagesUpForProcessing.add(MessageBuilder.withPayload(3).setHeader("foo", Arrays.asList(101, 102)).build());
+		when(messageGroupMock.getMessages()).thenReturn(messagesUpForProcessing);
+		Object result = processor.processMessageGroup(messageGroupMock);
+		assertThat((String) ((Message<?>) result).getPayload(), is("[1, 2, 4, 3, 101, 102]"));
+	}
+
+	@Test
+	public void shouldFindAnnotatedPayloadsWithNoType() throws Exception {
+
+		@SuppressWarnings("unused")
+		class SimpleAggregator {
+			public String and(@Payloads List<?> rawFlags, @Header("foo") List<Integer> header) {
+				@SuppressWarnings("unchecked")
+				List<Integer> flags = (List<Integer>) rawFlags;
 				List<Integer> result = new ArrayList<Integer>();
 				for (int flag : flags) {
 					result.add(flag);
@@ -243,6 +268,7 @@ public class MethodInvokingMessageGroupProcessorTests {
 		MethodInvokingMessageGroupProcessor processor = new MethodInvokingMessageGroupProcessor(new SimpleAggregator());
 		GenericConversionService conversionService = new DefaultConversionService();
 		conversionService.addConverter(new Converter<ArrayList<?>, Iterator<?>>() {
+			@Override
 			public Iterator<?> convert(ArrayList<?> source) {
 				return source.iterator();
 			}
@@ -305,13 +331,15 @@ public class MethodInvokingMessageGroupProcessorTests {
 		MessageGroupProcessor processor = new MethodInvokingMessageGroupProcessor(new UnannotatedAggregator());
 		when(messageGroupMock.getMessages()).thenReturn(messagesUpForProcessing);
 		Object result = processor.processMessageGroup(messageGroupMock);
-		assertTrue(((Message<?>)result).getPayload() instanceof Iterator<?>);
+		assertTrue(((Message<?>) result).getPayload() instanceof Iterator<?>);
 	}
 
 	@Test
 	public void testTwoMethodsWithSameParameterTypesAmbiguous() {
 
 		class AnnotatedParametersAggregator {
+
+			@SuppressWarnings("unused")
 			public Integer and(List<Integer> flags) {
 				int result = 0;
 				for (Integer flag : flags) {
@@ -320,6 +348,7 @@ public class MethodInvokingMessageGroupProcessorTests {
 				return result;
 			}
 
+			@SuppressWarnings("unused")
 			public String listHeaderShouldBeIgnored(@Header List<Integer> flags) {
 				fail("this method should not be invoked");
 				return "";
@@ -524,6 +553,7 @@ public class MethodInvokingMessageGroupProcessorTests {
 			this.greeting = greeting;
 		}
 
+		@Override
 		@Aggregator
 		public String sayHello(List<String> names) {
 			return greeting + " " + names.get(0);

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,9 +22,9 @@ import javax.jms.Destination;
 
 import org.springframework.integration.context.IntegrationObjectSupport;
 import org.springframework.integration.core.MessageSource;
+import org.springframework.integration.jms.util.JmsAdapterUtils;
 import org.springframework.integration.support.AbstractIntegrationMessageBuilder;
 import org.springframework.jms.core.JmsTemplate;
-import org.springframework.jms.support.converter.MessageConverter;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessagingException;
 import org.springframework.util.Assert;
@@ -40,6 +40,7 @@ import org.springframework.util.Assert;
  */
 public class JmsDestinationPollingSource extends IntegrationObjectSupport implements MessageSource<Object> {
 
+
 	private final JmsTemplate jmsTemplate;
 
 	private volatile Destination destination;
@@ -50,11 +51,13 @@ public class JmsDestinationPollingSource extends IntegrationObjectSupport implem
 
 	private volatile JmsHeaderMapper headerMapper = new DefaultJmsHeaderMapper();
 
+	private volatile String sessionAcknowledgeMode;
+
+	private volatile boolean extractPayload = true;
 
 	public JmsDestinationPollingSource(JmsTemplate jmsTemplate) {
 		this.jmsTemplate = jmsTemplate;
 	}
-
 
 	public void setDestination(Destination destination) {
 		Assert.isNull(this.destinationName, "The 'destination' and 'destinationName' properties are mutually exclusive.");
@@ -66,6 +69,16 @@ public class JmsDestinationPollingSource extends IntegrationObjectSupport implem
 		this.destinationName = destinationName;
 	}
 
+	/**
+	 * The flag to indicate if we should extract {@code body} from JMS Message,
+	 * or use the received JMS Message as {@link Message} {@code payload}.
+	 * @param extractPayload the boolean flag. Defaults to {@code true}.
+	 * @since 3.0.7
+	 */
+	public void setExtractPayload(boolean extractPayload) {
+		this.extractPayload = extractPayload;
+	}
+
 	@Override
 	public String getComponentType() {
 		return "jms:inbound-channel-adapter";
@@ -73,7 +86,6 @@ public class JmsDestinationPollingSource extends IntegrationObjectSupport implem
 
 	/**
 	 * Specify a JMS Message Selector expression to use when receiving Messages.
-	 *
 	 * @param messageSelector The message selector.
 	 */
 	public void setMessageSelector(String messageSelector) {
@@ -84,6 +96,10 @@ public class JmsDestinationPollingSource extends IntegrationObjectSupport implem
 		this.headerMapper = headerMapper;
 	}
 
+	public void setSessionAcknowledgeMode(String sessionAcknowledgeMode) {
+		this.sessionAcknowledgeMode = sessionAcknowledgeMode;
+	}
+
 	/**
 	 * Will receive a JMS {@link javax.jms.Message} converting and returning it as
 	 * a Spring Integration {@link Message}. This method will also use the current
@@ -92,25 +108,25 @@ public class JmsDestinationPollingSource extends IntegrationObjectSupport implem
 	@Override
 	@SuppressWarnings("unchecked")
 	public Message<Object> receive() {
-		Message<Object> convertedMessage = null;
-		javax.jms.Message jmsMessage = this.doReceiveJmsMessage();
+		javax.jms.Message jmsMessage = doReceiveJmsMessage();
 		if (jmsMessage == null) {
 			return null;
 		}
 		try {
 			// Map headers
 			Map<String, Object> mappedHeaders = this.headerMapper.toHeaders(jmsMessage);
-			MessageConverter converter = this.jmsTemplate.getMessageConverter();
-			Object convertedObject = converter.fromMessage(jmsMessage);
-			AbstractIntegrationMessageBuilder<Object> builder = (convertedObject instanceof Message) ?
-					this.getMessageBuilderFactory().fromMessage((Message<Object>) convertedObject) :
-					this.getMessageBuilderFactory().withPayload(convertedObject);
-			convertedMessage = builder.copyHeadersIfAbsent(mappedHeaders).build();
+			Object object = jmsMessage;
+			if (this.extractPayload) {
+				object = this.jmsTemplate.getMessageConverter().fromMessage(jmsMessage);
+			}
+			AbstractIntegrationMessageBuilder<Object> builder = (object instanceof Message) ?
+					getMessageBuilderFactory().fromMessage((Message<Object>) object) :
+					getMessageBuilderFactory().withPayload(object);
+			return builder.copyHeadersIfAbsent(mappedHeaders).build();
 		}
 		catch (Exception e) {
 			throw new MessagingException(e.getMessage(), e);
 		}
-		return convertedMessage;
 	}
 
 	private javax.jms.Message doReceiveJmsMessage() {
@@ -125,6 +141,21 @@ public class JmsDestinationPollingSource extends IntegrationObjectSupport implem
 			jmsMessage = this.jmsTemplate.receiveSelected(this.messageSelector);
 		}
 		return jmsMessage;
+	}
+
+	@Override
+	protected void onInit() {
+		if (this.sessionAcknowledgeMode != null) {
+			Integer acknowledgeMode = JmsAdapterUtils.parseAcknowledgeMode(this.sessionAcknowledgeMode);
+			if (acknowledgeMode != null) {
+				if (JmsAdapterUtils.SESSION_TRANSACTED == acknowledgeMode) {
+					this.jmsTemplate.setSessionTransacted(true);
+				}
+				else {
+					this.jmsTemplate.setSessionAcknowledgeMode(acknowledgeMode);
+				}
+			}
+		}
 	}
 
 }

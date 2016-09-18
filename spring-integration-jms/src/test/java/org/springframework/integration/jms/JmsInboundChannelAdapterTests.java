@@ -1,5 +1,5 @@
 /*
- * Copyright 2014 the original author or authors.
+ * Copyright 2014-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,10 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.jms;
 
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
 
 import javax.jms.ConnectionFactory;
 
@@ -39,7 +39,7 @@ import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
  * @since 4.0
  *
  */
-@ContextConfiguration(classes=CFConfig.class)
+@ContextConfiguration(classes = CFConfig.class)
 @RunWith(SpringJUnit4ClassRunner.class)
 @DirtiesContext
 public class JmsInboundChannelAdapterTests extends ActiveMQMultiContextTests {
@@ -50,13 +50,12 @@ public class JmsInboundChannelAdapterTests extends ActiveMQMultiContextTests {
 	@Test
 	public void testTransactionalReceive() {
 		JmsTemplate template = new JmsTemplate(connectionFactory);
-		template.convertAndSend("foo", "bar");
+		template.convertAndSend("incatQ", "bar");
 		assertNotNull(out.receive(20000));
 		/*
 		 *  INT-3288 - previously acknowledge="transacted"
 		 *  Caused by: javax.jms.JMSException: acknowledgeMode SESSION_TRANSACTED cannot be used for an non-transacted Session
 		 */
-		assertNull(out.receive(1000));
 	}
 
 	@Configuration
@@ -64,7 +63,7 @@ public class JmsInboundChannelAdapterTests extends ActiveMQMultiContextTests {
 	public static class CFConfig {
 
 		@Bean
-		public ConnectionFactory connectionFactory() {
+		public ConnectionFactory jmsConnectionFactory() {
 			return amqFactory;
 		}
 	}

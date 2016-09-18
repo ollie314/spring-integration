@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,26 +29,27 @@ import javax.sql.DataSource;
 
 import org.apache.log4j.Logger;
 import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.mockito.Mockito;
-import org.powermock.api.mockito.PowerMockito;
-import org.powermock.core.classloader.annotations.PowerMockIgnore;
-import org.powermock.core.classloader.annotations.PrepareForTest;
-import org.powermock.modules.junit4.PowerMockRunner;
 
+import org.springframework.beans.DirectFieldAccessor;
 import org.springframework.beans.factory.BeanFactory;
 import org.springframework.expression.Expression;
 import org.springframework.integration.config.ExpressionFactoryBean;
 import org.springframework.integration.jdbc.storedproc.ProcedureParameter;
 import org.springframework.integration.support.MessageBuilder;
+import org.springframework.integration.test.util.TestUtils;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.SqlParameter;
+import org.springframework.jdbc.core.simple.SimpleJdbcCall;
+import org.springframework.jdbc.core.simple.SimpleJdbcCallOperations;
 
+import com.google.common.cache.CacheLoader;
 import com.google.common.cache.CacheStats;
 
-@RunWith(PowerMockRunner.class)
-@PrepareForTest({StoredProcExecutor.class})
-@PowerMockIgnore ({"org.apache.log4j.*"})
+/**
+ * @author Gunnar Hillert
+ * @author Artem Bilan
+ * @author Gary Russell
+ */
 public class StoredProcExecutorTests {
 
 	private static final Logger LOGGER = Logger.getLogger(StoredProcExecutorTests.class);
@@ -58,7 +59,8 @@ public class StoredProcExecutorTests {
 
 		try {
 		    new StoredProcExecutor(null);
-		} catch (IllegalArgumentException e) {
+		}
+		catch (IllegalArgumentException e) {
 			assertEquals("dataSource must not be null.", e.getMessage());
 			return;
 		}
@@ -75,7 +77,8 @@ public class StoredProcExecutorTests {
 			StoredProcExecutor storedProcExecutor = new StoredProcExecutor(datasource);
 			storedProcExecutor.setBeanFactory(mock(BeanFactory.class));
 			storedProcExecutor.afterPropertiesSet();
-		} catch (IllegalArgumentException e) {
+		}
+		catch (IllegalArgumentException e) {
 			assertEquals("You must either provide a "
 						+ "Stored Procedure Name or a Stored Procedure Name Expression.", e.getMessage());
 			return;
@@ -92,7 +95,8 @@ public class StoredProcExecutorTests {
 
 		try {
 			storedProcExecutor.setStoredProcedureName("      ");
-		} catch (IllegalArgumentException e) {
+		}
+		catch (IllegalArgumentException e) {
 			assertEquals("storedProcedureName must not be null and cannot be empty.", e.getMessage());
 			return;
 		}
@@ -139,7 +143,8 @@ public class StoredProcExecutorTests {
 
 		try {
 			storedProcExecutor.setReturningResultSetRowMappers(null);
-		} catch (IllegalArgumentException e) {
+		}
+		catch (IllegalArgumentException e) {
 			assertEquals("returningResultSetRowMappers must not be null.", e.getMessage());
 			return;
 		}
@@ -159,7 +164,8 @@ public class StoredProcExecutorTests {
 
 		try {
 			storedProcExecutor.setReturningResultSetRowMappers(rowmappers);
-		} catch (IllegalArgumentException e) {
+		}
+		catch (IllegalArgumentException e) {
 			assertEquals("The provided map cannot contain null values.", e.getMessage());
 			return;
 		}
@@ -189,7 +195,8 @@ public class StoredProcExecutorTests {
 
 		try {
 			storedProcExecutor.setSqlParameterSourceFactory(null);
-		} catch (IllegalArgumentException e) {
+		}
+		catch (IllegalArgumentException e) {
 			assertEquals("sqlParameterSourceFactory must not be null.", e.getMessage());
 			return;
 		}
@@ -209,7 +216,8 @@ public class StoredProcExecutorTests {
 
 		try {
 			storedProcExecutor.setSqlParameters(sqlParameters);
-		} catch (IllegalArgumentException e) {
+		}
+		catch (IllegalArgumentException e) {
 			assertEquals("The provided list (sqlParameters) cannot contain null values.", e.getMessage());
 			return;
 		}
@@ -228,7 +236,8 @@ public class StoredProcExecutorTests {
 
 		try {
 			storedProcExecutor.setSqlParameters(sqlParameters);
-		} catch (IllegalArgumentException e) {
+		}
+		catch (IllegalArgumentException e) {
 			assertEquals("sqlParameters must not be null or empty.", e.getMessage());
 			return;
 		}
@@ -245,7 +254,8 @@ public class StoredProcExecutorTests {
 
 		try {
 			storedProcExecutor.setSqlParameters(null);
-		} catch (IllegalArgumentException e) {
+		}
+		catch (IllegalArgumentException e) {
 			assertEquals("sqlParameters must not be null or empty.", e.getMessage());
 			return;
 		}
@@ -265,7 +275,8 @@ public class StoredProcExecutorTests {
 
 		try {
 			storedProcExecutor.setProcedureParameters(procedureParameters);
-		} catch (IllegalArgumentException e) {
+		}
+		catch (IllegalArgumentException e) {
 			assertEquals("The provided list (procedureParameters) cannot contain null values.", e.getMessage());
 			return;
 		}
@@ -284,7 +295,8 @@ public class StoredProcExecutorTests {
 
 		try {
 			storedProcExecutor.setProcedureParameters(procedureParameters);
-		} catch (IllegalArgumentException e) {
+		}
+		catch (IllegalArgumentException e) {
 			assertEquals("procedureParameters must not be null or empty.", e.getMessage());
 			return;
 		}
@@ -301,7 +313,8 @@ public class StoredProcExecutorTests {
 
 		try {
 			storedProcExecutor.setProcedureParameters(null);
-		} catch (IllegalArgumentException e) {
+		}
+		catch (IllegalArgumentException e) {
 			assertEquals("procedureParameters must not be null or empty.", e.getMessage());
 			return;
 		}
@@ -315,11 +328,6 @@ public class StoredProcExecutorTests {
 
 		final DataSource datasource = mock(DataSource.class);
 
-		PowerMockito.mockStatic(StoredProcExecutor.class);
-
-		PowerMockito.spy(StoredProcExecutor.class);
-		PowerMockito.doReturn(null).when(StoredProcExecutor.class, "executeStoredProcedure", Mockito.any(), Mockito.any());
-
 		final StoredProcExecutor storedProcExecutor = new StoredProcExecutor(datasource);
 
 		final ExpressionFactoryBean efb = new ExpressionFactoryBean("headers['stored_procedure_name']");
@@ -330,6 +338,8 @@ public class StoredProcExecutorTests {
 		storedProcExecutor.setBeanFactory(mock(BeanFactory.class));
 
 		storedProcExecutor.afterPropertiesSet();
+
+		this.mockTheOperationsCache(storedProcExecutor);
 
 		//This should work
 
@@ -345,7 +355,8 @@ public class StoredProcExecutorTests {
 					MessageBuilder.withPayload("test")
 						.setHeader("some_other_header", "123")
 						.build());
-		} catch (IllegalArgumentException e) {
+		}
+		catch (IllegalArgumentException e) {
 			assertEquals("Unable to resolve Stored Procedure/Function name for the provided Expression 'headers['stored_procedure_name']'.", e.getMessage());
 			return;
 		}
@@ -359,11 +370,6 @@ public class StoredProcExecutorTests {
 
 		final DataSource datasource = mock(DataSource.class);
 
-		PowerMockito.mockStatic(StoredProcExecutor.class);
-
-		PowerMockito.spy(StoredProcExecutor.class);
-		PowerMockito.doReturn(null).when(StoredProcExecutor.class, "executeStoredProcedure", Mockito.any(), Mockito.any());
-
 		final StoredProcExecutor storedProcExecutor = new StoredProcExecutor(datasource);
 
 		final ExpressionFactoryBean efb = new ExpressionFactoryBean("headers['stored_procedure_name']");
@@ -375,6 +381,8 @@ public class StoredProcExecutorTests {
 
 		storedProcExecutor.afterPropertiesSet();
 
+		this.mockTheOperationsCache(storedProcExecutor);
+
 		for (int i = 1; i <= 3; i++) {
 			storedProcExecutor.executeStoredProcedure(
 					MessageBuilder.withPayload("test")
@@ -382,7 +390,7 @@ public class StoredProcExecutorTests {
 						.build());
 		}
 
-		final CacheStats stats = storedProcExecutor.getJdbcCallOperationsCacheStatistics();
+		final CacheStats stats = (CacheStats) storedProcExecutor.getJdbcCallOperationsCacheStatistics();
 		LOGGER.info(stats);
 		LOGGER.info(stats.totalLoadTime() / 1000 / 1000);
 
@@ -397,12 +405,8 @@ public class StoredProcExecutorTests {
 
 		final DataSource datasource = mock(DataSource.class);
 
-		PowerMockito.mockStatic(StoredProcExecutor.class);
-
-		PowerMockito.spy(StoredProcExecutor.class);
-		PowerMockito.doReturn(null).when(StoredProcExecutor.class, "executeStoredProcedure", Mockito.any(), Mockito.any());
-
 		final StoredProcExecutor storedProcExecutor = new StoredProcExecutor(datasource);
+
 		storedProcExecutor.setJdbcCallOperationsCacheSize(0);
 
 		final ExpressionFactoryBean efb = new ExpressionFactoryBean("headers['stored_procedure_name']");
@@ -414,6 +418,8 @@ public class StoredProcExecutorTests {
 
 		storedProcExecutor.afterPropertiesSet();
 
+		this.mockTheOperationsCache(storedProcExecutor);
+
 		for (int i = 1; i <= 10; i++) {
 			storedProcExecutor.executeStoredProcedure(
 					MessageBuilder.withPayload("test")
@@ -421,10 +427,22 @@ public class StoredProcExecutorTests {
 						.build());
 		}
 
-		final CacheStats stats = storedProcExecutor.getJdbcCallOperationsCacheStatistics();
+		final CacheStats stats = (CacheStats) storedProcExecutor.getJdbcCallOperationsCacheStatistics();
 		LOGGER.info(stats);
 		assertEquals("Expected a cache misscount of 10", 10, stats.missCount());
 
+	}
+
+	private void mockTheOperationsCache(final StoredProcExecutor storedProcExecutor) {
+		Object cache = TestUtils.getPropertyValue(storedProcExecutor,
+				"guavaCacheWrapper.jdbcCallOperationsCache.localCache");
+		new DirectFieldAccessor(cache)
+				.setPropertyValue("defaultLoader", new CacheLoader<String, SimpleJdbcCallOperations>() {
+					@Override
+					public SimpleJdbcCall load(String storedProcedureName) {
+						return mock(SimpleJdbcCall.class);
+					}
+				});
 	}
 
 }

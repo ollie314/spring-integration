@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2014 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,29 +16,25 @@
 
 package org.springframework.integration.transformer;
 
-import java.lang.reflect.Constructor;
-import java.security.AccessController;
-import java.security.PrivilegedExceptionAction;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+
 import java.util.HashMap;
 import java.util.Map;
 
 import org.junit.Test;
-import org.springframework.beans.BeanUtils;
+
 import org.springframework.beans.factory.BeanFactory;
-import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
+import org.springframework.beans.factory.support.RootBeanDefinition;
 import org.springframework.context.support.GenericApplicationContext;
 import org.springframework.context.support.StaticApplicationContext;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.core.convert.converter.ConverterRegistry;
-import org.springframework.messaging.Message;
-import org.springframework.integration.context.IntegrationContextUtils;
 import org.springframework.integration.support.MessageBuilder;
+import org.springframework.integration.support.utils.IntegrationUtils;
 import org.springframework.integration.test.util.TestUtils;
-import org.springframework.util.ClassUtils;
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
+import org.springframework.messaging.Message;
 
 
 /**
@@ -94,6 +90,7 @@ public class MapToObjectTransformerTests {
 		assertNull(person.getSsn());
 		assertNotNull(person.getAddress());
 		assertEquals("1123 Main st", person.getAddress().getStreet());
+		ac.close();
 	}
 
 	@Test
@@ -108,7 +105,7 @@ public class MapToObjectTransformerTests {
 		MapToObjectTransformer transformer = new MapToObjectTransformer(Person.class);
 		BeanFactory beanFactory = this.getBeanFactory();
 		ConverterRegistry conversionService =
-				beanFactory.getBean(IntegrationContextUtils.INTEGRATION_CONVERSION_SERVICE_BEAN_NAME, ConverterRegistry.class);
+				beanFactory.getBean(IntegrationUtils.INTEGRATION_CONVERSION_SERVICE_BEAN_NAME, ConverterRegistry.class);
 		conversionService.addConverter(new StringToAddressConverter());
 		transformer.setBeanFactory(beanFactory);
 
@@ -123,22 +120,8 @@ public class MapToObjectTransformerTests {
 
 	private BeanFactory getBeanFactory() {
 		GenericApplicationContext ctx = TestUtils.createTestApplicationContext();
-		Constructor<?> constructorToUse = null;
-		try {
-			// Add the integrationConversionService (reflection needed because of package protection)
-			final Class<?> conversionServiceCreatorClass = ClassUtils.forName("org.springframework.integration.context.ConversionServiceCreator",
-					ClassUtils.getDefaultClassLoader());
-			constructorToUse = AccessController.doPrivileged(new PrivilegedExceptionAction<Constructor<?>>() {
-				public Constructor<?> run() throws Exception {
-					return conversionServiceCreatorClass.getDeclaredConstructor((Class[]) null);
-				}
-			});
-		}
-		catch (Exception e) {
-			throw new RuntimeException("Unexpected Privilege Exception: ", e);
-		}
-
-		ctx.addBeanFactoryPostProcessor((BeanFactoryPostProcessor) BeanUtils.instantiateClass(constructorToUse));
+		ctx.registerBeanDefinition(IntegrationUtils.INTEGRATION_CONVERSION_SERVICE_BEAN_NAME,
+				new RootBeanDefinition("org.springframework.integration.context.CustomConversionServiceFactoryBean"));
 		ctx.refresh();
 		return ctx;
 	}
@@ -201,6 +184,7 @@ public class MapToObjectTransformerTests {
 
 	public class StringToAddressConverter implements Converter<String, Address> {
 
+		@Override
 		public Address convert(String source) {
 			Address address = new Address();
 			address.setStreet(source);

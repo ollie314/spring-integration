@@ -16,7 +16,6 @@
 
 package org.springframework.integration.xml.config;
 
-import org.springframework.integration.xml.selector.XmlValidatingMessageSelector;
 import org.w3c.dom.Element;
 
 import org.springframework.beans.factory.BeanDefinitionStoreException;
@@ -25,6 +24,7 @@ import org.springframework.beans.factory.xml.ParserContext;
 import org.springframework.integration.config.FilterFactoryBean;
 import org.springframework.integration.config.xml.AbstractConsumerEndpointParser;
 import org.springframework.integration.config.xml.IntegrationNamespaceUtils;
+import org.springframework.integration.xml.selector.XmlValidatingMessageSelector;
 import org.springframework.util.StringUtils;
 
 /**
@@ -33,12 +33,6 @@ import org.springframework.util.StringUtils;
  * @author Artem Bilan
  */
 public class XmlPayloadValidatingFilterParser extends AbstractConsumerEndpointParser {
-
-	/** Constant that defines a W3C XML Schema. */
-	public static final String SCHEMA_W3C_XML = "http://www.w3.org/2001/XMLSchema";
-
-	/** Constant that defines a RELAX NG Schema. */
-	public static final String SCHEMA_RELAX_NG = "http://relaxng.org/ns/structure/1.0";
 
 	@Override
 	protected BeanDefinitionBuilder parseHandler(Element element, ParserContext parserContext) {
@@ -58,7 +52,7 @@ public class XmlPayloadValidatingFilterParser extends AbstractConsumerEndpointPa
 			selectorBuilder.addConstructorArgValue(schemaLocation);
 			// it is a restriction with the default value of 'xml-schema' which
 			// corresponds to 'http://www.w3.org/2001/XMLSchema'
-			String schemaType = "xml-schema".equals(element.getAttribute("schema-type")) ? SCHEMA_W3C_XML : SCHEMA_RELAX_NG;
+			String schemaType = element.getAttribute("schema-type");
 			selectorBuilder.addConstructorArgValue(schemaType);
 		}
 		else {
@@ -66,6 +60,7 @@ public class XmlPayloadValidatingFilterParser extends AbstractConsumerEndpointPa
 		}
 		IntegrationNamespaceUtils.setValueIfAttributeDefined(selectorBuilder, element, "throw-exception-on-rejection");
 		filterBuilder.addPropertyValue("targetObject", selectorBuilder.getBeanDefinition());
+		IntegrationNamespaceUtils.setValueIfAttributeDefined(filterBuilder, element, "send-timeout");
 		return filterBuilder;
 	}
 

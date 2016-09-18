@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.jpa.test.entity;
 
 import java.util.EnumSet;
@@ -27,12 +28,12 @@ import java.util.Map;
  */
 public enum Gender {
 
-	MALE("M"),FEMALE("F");
+	MALE("M"), FEMALE("F");
 
 	private String identifier;
 	private static Map<String, Gender> identifierMap;
 
-	private Gender(String identifier) {
+	Gender(String identifier) {
 		this.identifier = identifier;
 	}
 
@@ -43,7 +44,7 @@ public enum Gender {
 	static {
 		EnumSet<Gender> all = EnumSet.allOf(Gender.class);
 		identifierMap = new HashMap<String, Gender>();
-		for(Gender gender:all) {
+		for (Gender gender:all) {
 			identifierMap.put(gender.getIdentifier(), gender);
 		}
 	}

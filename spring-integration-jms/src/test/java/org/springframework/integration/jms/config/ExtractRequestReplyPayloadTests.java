@@ -1,231 +1,297 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
- * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
- * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
- * specific language governing permissions and limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
+
 package org.springframework.integration.jms.config;
 
+import static org.hamcrest.Matchers.instanceOf;
+import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
-import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
+import static org.junit.Assert.fail;
 
-import org.junit.After;
-import org.junit.Before;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+import javax.jms.JMSException;
+
+import org.junit.Rule;
 import org.junit.Test;
-import org.mockito.Mockito;
-import org.springframework.beans.DirectFieldAccessor;
-import org.springframework.context.support.ClassPathXmlApplicationContext;
-import org.springframework.integration.MessageTimeoutException;
+import org.junit.rules.TestName;
+import org.junit.runner.RunWith;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationContext;
+import org.springframework.integration.core.MessagingTemplate;
 import org.springframework.integration.jms.ChannelPublishingJmsMessageListener;
 import org.springframework.integration.jms.JmsOutboundGateway;
-import org.springframework.messaging.support.GenericMessage;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.MessageHandler;
 import org.springframework.messaging.MessagingException;
 import org.springframework.messaging.PollableChannel;
 import org.springframework.messaging.SubscribableChannel;
-import org.springframework.integration.core.MessagingTemplate;
+import org.springframework.messaging.support.GenericMessage;
+import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.ContextConfiguration;
+import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 
 /**
  * @author ozhurakousky
  * @author Gunnar Hillert
- *
+ * @author Gary Russell
  */
+@ContextConfiguration
+@RunWith(SpringJUnit4ClassRunner.class)
+@DirtiesContext
 public class ExtractRequestReplyPayloadTests {
-	ClassPathXmlApplicationContext applicationContext;
+
+	@Rule
+	public TestName testName = new TestName();
+
+	@Autowired
+	ApplicationContext applicationContext;
+
+	@Autowired
 	MessageChannel outboundChannel;
+
+	@Autowired
 	SubscribableChannel jmsInputChannel;
+
+	@Autowired
 	PollableChannel replyChannel;
-	@Before
-	public void prepare(){
-		ActiveMqTestUtils.prepare();
-		applicationContext = new ClassPathXmlApplicationContext("ExtractRequestReplyPayloadTests-context.xml", this.getClass());
-		outboundChannel = applicationContext.getBean("outboundChannel", MessageChannel.class);
-		jmsInputChannel = applicationContext.getBean("jmsInputChannel", SubscribableChannel.class);
-		replyChannel = applicationContext.getBean("replyChannel", PollableChannel.class);
-	}
-	@After
-	public void cleanup(){
-		applicationContext.destroy();
-	}
+
+	@Autowired
+	JmsOutboundGateway outboundGateway;
+
+	@Autowired
+	ChannelPublishingJmsMessageListener inboundGateway;
 
 	@Test
-	public void testOutboundInboundDefault(){
-		jmsInputChannel.subscribe(new MessageHandler() {
-			public void handleMessage(Message<?> message) throws MessagingException {
-				assertTrue(message.getPayload() instanceof String);
-				MessagingTemplate template = new MessagingTemplate();
-				template.setDefaultDestination((MessageChannel) message.getHeaders().getReplyChannel());
-				template.send(message);
-			}
-		});
-		outboundChannel.send(new GenericMessage<String>("Hello"));
+	public void testOutboundInboundDefault() {
+		this.outboundGateway.setExtractRequestPayload(true);
+		this.outboundGateway.setExtractReplyPayload(true);
 
-		Message<?> replyMessage = replyChannel.receive(1000);
+		this.inboundGateway.setExtractReplyPayload(true);
+		this.inboundGateway.setExtractRequestPayload(true);
+
+		MessageHandler handler = echoInboundStringHandler();
+		this.jmsInputChannel.subscribe(handler);
+		this.outboundChannel.send(new GenericMessage<String>("Hello " + this.testName.getMethodName()));
+
+		Message<?> replyMessage = this.replyChannel.receive(10000);
 		assertTrue(replyMessage.getPayload() instanceof String);
+		this.jmsInputChannel.unsubscribe(handler);
 	}
 
 	@Test
-	public void testOutboundBothFalseInboundDefault(){
+	public void testOutboundInboundDefaultIsTx() {
+		this.outboundGateway.setExtractRequestPayload(true);
+		this.outboundGateway.setExtractReplyPayload(true);
 
-		JmsOutboundGateway outboundGateway =
-			(JmsOutboundGateway) new DirectFieldAccessor(applicationContext.getBean("outboundGateway")).getPropertyValue("handler");
-		outboundGateway.setExtractRequestPayload(false);
-		outboundGateway.setExtractReplyPayload(false);
+		this.inboundGateway.setExtractReplyPayload(true);
+		this.inboundGateway.setExtractRequestPayload(true);
 
-		jmsInputChannel.subscribe(new MessageHandler() {
+		final AtomicBoolean failOnce = new AtomicBoolean();
+		MessageHandler handler = new MessageHandler() {
+
+			@Override
 			public void handleMessage(Message<?> message) throws MessagingException {
 				assertTrue(message.getPayload() instanceof String);
+				if (failOnce.compareAndSet(false, true)) {
+					throw new RuntimeException("test tx");
+				}
 				MessagingTemplate template = new MessagingTemplate();
 				template.setDefaultDestination((MessageChannel) message.getHeaders().getReplyChannel());
 				template.send(message);
 			}
-		});
-		outboundChannel.send(new GenericMessage<String>("Hello"));
 
-		Message<?> replyMessage = replyChannel.receive(1000);
+		};
+		this.jmsInputChannel.subscribe(handler);
+		this.outboundChannel.send(new GenericMessage<String>("Hello " + this.testName.getMethodName()));
+
+		Message<?> replyMessage = this.replyChannel.receive(10000);
+		assertTrue(replyMessage.getPayload() instanceof String);
+		this.jmsInputChannel.unsubscribe(handler);
+	}
+
+	@Test
+	public void testOutboundBothFalseInboundDefault() {
+		this.outboundGateway.setExtractRequestPayload(false);
+		this.outboundGateway.setExtractReplyPayload(false);
+
+		this.inboundGateway.setExtractReplyPayload(true);
+		this.inboundGateway.setExtractRequestPayload(true);
+
+		MessageHandler handler = echoInboundStringHandler();
+		this.jmsInputChannel.subscribe(handler);
+		this.outboundChannel.send(new GenericMessage<String>("Hello " + this.testName.getMethodName()));
+
+		Message<?> replyMessage = this.replyChannel.receive(10000);
+		assertThat(replyMessage.getPayload(), instanceOf(javax.jms.TextMessage.class));
+		this.jmsInputChannel.unsubscribe(handler);
+	}
+
+	@Test
+	public void testOutboundDefaultInboundBothFalse() throws Exception {
+		this.outboundGateway.setExtractRequestPayload(true);
+		this.outboundGateway.setExtractReplyPayload(true);
+
+		this.inboundGateway.setExtractReplyPayload(false);
+		this.inboundGateway.setExtractRequestPayload(false);
+
+		MessageHandler handler = unwrapTextMessageAndEchoHandler();
+		this.jmsInputChannel.subscribe(handler);
+		this.outboundChannel.send(new GenericMessage<String>("Hello " + this.testName.getMethodName()));
+		Message<?> replyMessage = this.replyChannel.receive(10000);
+		assertThat(replyMessage.getPayload(), instanceOf(String.class));
+		this.jmsInputChannel.unsubscribe(handler);
+	}
+
+	@Test
+	public void testOutboundDefaultInboundReplyTrueRequestFalse() {
+		this.outboundGateway.setExtractRequestPayload(true);
+		this.outboundGateway.setExtractReplyPayload(true);
+
+		this.inboundGateway.setExtractReplyPayload(true);
+		this.inboundGateway.setExtractRequestPayload(false);
+
+		MessageHandler handler = unwrapTextMessageAndEchoHandler();
+		this.jmsInputChannel.subscribe(handler);
+		this.outboundChannel.send(new GenericMessage<String>("Hello " + this.testName.getMethodName()));
+		Message<?> replyMessage = this.replyChannel.receive(10000);
+		assertThat(replyMessage.getPayload(), instanceOf(String.class));
+		this.jmsInputChannel.unsubscribe(handler);
+	}
+
+	@Test
+	public void testOutboundDefaultInboundReplyFalseRequestTrue() {
+		this.outboundGateway.setExtractRequestPayload(true);
+		this.outboundGateway.setExtractReplyPayload(true);
+
+		this.inboundGateway.setExtractReplyPayload(false);
+		this.inboundGateway.setExtractRequestPayload(true);
+
+		MessageHandler handler = echoInboundStringHandler();
+		this.jmsInputChannel.subscribe(handler);
+		this.outboundChannel.send(new GenericMessage<String>("Hello " + this.testName.getMethodName()));
+		Message<?> replyMessage = this.replyChannel.receive(10000);
+		assertTrue(replyMessage.getPayload() instanceof String);
+		this.jmsInputChannel.unsubscribe(handler);
+	}
+
+	@Test
+	public void testOutboundRequestTrueReplyFalseInboundDefault() {
+		this.outboundGateway.setExtractRequestPayload(true);
+		this.outboundGateway.setExtractReplyPayload(false);
+
+		this.inboundGateway.setExtractReplyPayload(true);
+		this.inboundGateway.setExtractRequestPayload(true);
+
+		MessageHandler handler = echoInboundStringHandler();
+		this.jmsInputChannel.subscribe(handler);
+		this.outboundChannel.send(new GenericMessage<String>("Hello " + this.testName.getMethodName()));
+		Message<?> replyMessage = this.replyChannel.receive(10000);
 		assertTrue(replyMessage.getPayload() instanceof javax.jms.Message);
+		this.jmsInputChannel.unsubscribe(handler);
 	}
-	@Test(expected=MessageTimeoutException.class)
-	public void testOutboundDefaultInboundBothTrue(){
 
-		ChannelPublishingJmsMessageListener inboundGateway =
-			(ChannelPublishingJmsMessageListener)new DirectFieldAccessor(applicationContext.getBean("inboundGateway")).
-																	getPropertyValue("listener");
-		inboundGateway.setExtractReplyPayload(false);
-		inboundGateway.setExtractRequestPayload(false);
-
-		MessageHandler handler = new MessageHandler() {
-			public void handleMessage(Message<?> message) throws MessagingException {
-				assertTrue(message.getPayload() instanceof javax.jms.Message);
-				MessagingTemplate template = new MessagingTemplate();
-				template.setDefaultDestination((MessageChannel) message.getHeaders().getReplyChannel());
-				template.send(message);
-			}
-		};
-		handler = spy(handler);
-		jmsInputChannel.subscribe(handler);
-		outboundChannel.send(new GenericMessage<String>("Hello"));
-		verify(handler, times(1)).handleMessage(Mockito.any(Message.class));
-		replyChannel.receive(1000);
-	}
 	@Test
-	public void testOutboundDefaultInboundReplyTrueRequestFalse(){
+	public void testOutboundRequestFalseReplyTrueInboundDefault() {
+		this.outboundGateway.setExtractRequestPayload(false);
+		this.outboundGateway.setExtractReplyPayload(true);
 
-		ChannelPublishingJmsMessageListener inboundGateway =
-			(ChannelPublishingJmsMessageListener)new DirectFieldAccessor(applicationContext.getBean("inboundGateway")).
-																	getPropertyValue("listener");
-		inboundGateway.setExtractReplyPayload(true);
-		inboundGateway.setExtractRequestPayload(false);
+		this.inboundGateway.setExtractReplyPayload(true);
+		this.inboundGateway.setExtractRequestPayload(true);
 
-		MessageHandler handler = new MessageHandler() {
-			public void handleMessage(Message<?> message) throws MessagingException {
-				assertTrue(message.getPayload() instanceof javax.jms.Message);
-				MessagingTemplate template = new MessagingTemplate();
-				template.setDefaultDestination((MessageChannel) message.getHeaders().getReplyChannel());
-				template.send(message);
-			}
-		};
-		jmsInputChannel.subscribe(handler);
-		outboundChannel.send(new GenericMessage<String>("Hello"));
-		Message<?> replyMessage = replyChannel.receive(1000);
-		assertTrue(replyMessage.getPayload() instanceof String);
+		MessageHandler handler = echoInboundStringHandler();
+		this.jmsInputChannel.subscribe(handler);
+		this.outboundChannel.send(new GenericMessage<String>("Hello " + this.testName.getMethodName()));
+		Message<?> replyMessage = this.replyChannel.receive(10000);
+		assertThat(replyMessage.getPayload(), instanceOf(String.class));
+		this.jmsInputChannel.unsubscribe(handler);
 	}
+
 	@Test
-	public void testOutboundDefaultInboundReplyFalseRequestTrue(){
+	public void testAllFalse() throws Exception {
+		this.outboundGateway.setExtractRequestPayload(false);
+		this.outboundGateway.setExtractReplyPayload(false);
 
-		ChannelPublishingJmsMessageListener inboundGateway =
-			(ChannelPublishingJmsMessageListener)new DirectFieldAccessor(applicationContext.getBean("inboundGateway")).
-																	getPropertyValue("listener");
-		inboundGateway.setExtractReplyPayload(false);
-		inboundGateway.setExtractRequestPayload(true);
+		this.inboundGateway.setExtractReplyPayload(false);
+		this.inboundGateway.setExtractRequestPayload(false);
 
-		MessageHandler handler = new MessageHandler() {
+		MessageHandler handler = unwrapObjectMessageAndEchoHandler();
+		this.jmsInputChannel.subscribe(handler);
+		this.outboundChannel.send(new GenericMessage<String>("Hello " + this.testName.getMethodName()));
+		Message<?> replyMessage = this.replyChannel.receive(10000);
+		assertThat(replyMessage.getPayload(), instanceOf(javax.jms.Message.class));
+		this.jmsInputChannel.unsubscribe(handler);
+	}
+
+	private MessageHandler echoInboundStringHandler() {
+		return new MessageHandler() {
+
+			@Override
 			public void handleMessage(Message<?> message) throws MessagingException {
 				assertTrue(message.getPayload() instanceof String);
 				MessagingTemplate template = new MessagingTemplate();
 				template.setDefaultDestination((MessageChannel) message.getHeaders().getReplyChannel());
 				template.send(message);
 			}
-		};
-		jmsInputChannel.subscribe(handler);
-		outboundChannel.send(new GenericMessage<String>("Hello"));
-		Message<?> replyMessage = replyChannel.receive(1000);
-		assertTrue(replyMessage.getPayload() instanceof String);
-	}
-	@Test
-	public void testOutboundRequestTrueReplyFalseInboundDefault(){
-		JmsOutboundGateway outboundGateway =
-			(JmsOutboundGateway) new DirectFieldAccessor(applicationContext.getBean("outboundGateway")).getPropertyValue("handler");
-		outboundGateway.setExtractRequestPayload(true);
-		outboundGateway.setExtractReplyPayload(false);
 
-		MessageHandler handler = new MessageHandler() {
+		};
+	}
+
+	private MessageHandler unwrapObjectMessageAndEchoHandler() {
+		return new MessageHandler() {
+
+			@Override
 			public void handleMessage(Message<?> message) throws MessagingException {
-				assertTrue(message.getPayload() instanceof String);
+				assertThat(message.getPayload(), instanceOf(javax.jms.ObjectMessage.class));
 				MessagingTemplate template = new MessagingTemplate();
 				template.setDefaultDestination((MessageChannel) message.getHeaders().getReplyChannel());
-				template.send(message);
+				Message<?> origMessage = null;
+				try {
+					origMessage = (Message<?>) ((javax.jms.ObjectMessage) message.getPayload()).getObject();
+				}
+				catch (JMSException e) {
+					fail("failed to deserialize message");
+				}
+				template.send(origMessage);
 			}
-		};
-		jmsInputChannel.subscribe(handler);
-		outboundChannel.send(new GenericMessage<String>("Hello"));
-		Message<?> replyMessage = replyChannel.receive(1000);
-		assertTrue(replyMessage.getPayload() instanceof javax.jms.Message);
-	}
-	@Test
-	public void testOutboundRequestFalseReplyTrueInboundDefault(){
-		JmsOutboundGateway outboundGateway =
-			(JmsOutboundGateway) new DirectFieldAccessor(applicationContext.getBean("outboundGateway")).getPropertyValue("handler");
-		outboundGateway.setExtractRequestPayload(false);
-		outboundGateway.setExtractReplyPayload(true);
 
-		MessageHandler handler = new MessageHandler() {
+		};
+	}
+
+	private MessageHandler unwrapTextMessageAndEchoHandler() {
+		return new MessageHandler() {
+
+			@Override
 			public void handleMessage(Message<?> message) throws MessagingException {
-				assertTrue(message.getPayload() instanceof String);
+				assertThat(message.getPayload(), instanceOf(javax.jms.TextMessage.class));
 				MessagingTemplate template = new MessagingTemplate();
 				template.setDefaultDestination((MessageChannel) message.getHeaders().getReplyChannel());
-				template.send(message);
+				String payload = null;
+				try {
+					payload = ((javax.jms.TextMessage) message.getPayload()).getText();
+				}
+				catch (JMSException e) {
+					fail("failed to deserialize message");
+				}
+				template.send(new GenericMessage<String>(payload));
 			}
-		};
-		jmsInputChannel.subscribe(handler);
-		outboundChannel.send(new GenericMessage<String>("Hello"));
-		Message<?> replyMessage = replyChannel.receive(1000);
-		assertTrue(replyMessage.getPayload() instanceof String);
-	}
-	@Test(expected=MessageTimeoutException.class)
-	public void testAllFalse(){
-		JmsOutboundGateway outboundGateway =
-			(JmsOutboundGateway) new DirectFieldAccessor(applicationContext.getBean("outboundGateway")).getPropertyValue("handler");
-		outboundGateway.setExtractRequestPayload(false);
-		outboundGateway.setExtractReplyPayload(false);
 
-		ChannelPublishingJmsMessageListener inboundGateway =
-			(ChannelPublishingJmsMessageListener)new DirectFieldAccessor(applicationContext.getBean("inboundGateway")).
-																	getPropertyValue("listener");
-		inboundGateway.setExtractReplyPayload(false);
-		inboundGateway.setExtractRequestPayload(false);
-
-		MessageHandler handler = new MessageHandler() {
-			public void handleMessage(Message<?> message) throws MessagingException {
-				assertTrue(message.getPayload() instanceof javax.jms.Message);
-				MessagingTemplate template = new MessagingTemplate();
-				template.setDefaultDestination((MessageChannel) message.getHeaders().getReplyChannel());
-				template.send(message);
-			}
 		};
-		jmsInputChannel.subscribe(handler);
-		outboundChannel.send(new GenericMessage<String>("Hello"));
-		Message<?> replyMessage = replyChannel.receive(1000);
-		assertTrue(replyMessage.getPayload() instanceof String);
 	}
+
 }

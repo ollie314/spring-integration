@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,18 +13,19 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.sftp.config;
+
+import static org.junit.Assert.assertTrue;
 
 import java.io.File;
 
 import org.junit.Ignore;
 import org.junit.Test;
-import org.springframework.context.ApplicationContext;
+
 import org.springframework.context.support.ClassPathXmlApplicationContext;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.support.GenericMessage;
-
-import static org.junit.Assert.assertTrue;
 
 /**
  * @author Oleg Zhurakousy
@@ -36,36 +37,38 @@ public class SftpInboundOutboundSanitySample {
 
 	@Test
 	@Ignore
-	public void testInbound() throws Exception{
+	public void testInbound() throws Exception {
 		File fileA = new File("local-test-dir/a.test");
-		if (fileA.exists()){
+		if (fileA.exists()) {
 			fileA.delete();
 		}
 		File fileB = new File("local-test-dir/b.test");
-		if (fileB.exists()){
+		if (fileB.exists()) {
 			fileB.delete();
 		}
 		fileA = new File("remote-target-dir/a.test-foo");
-		if (fileA.exists()){
+		if (fileA.exists()) {
 			fileA.delete();
 		}
 		fileB = new File("remote-target-dir/b.test-foo");
-		if (fileB.exists()){
+		if (fileB.exists()) {
 			fileB.delete();
 		}
 
-		new ClassPathXmlApplicationContext("SftpInboundReceiveSample-ignored.xml", this.getClass());
+		ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext(
+				"SftpInboundReceiveSample-ignored.xml", this.getClass());
 		Thread.sleep(5000);
 		fileA = new File("local-test-dir/a.test");
 		fileB = new File("local-test-dir/b.test");
 		assertTrue(fileA.exists());
 		assertTrue(fileB.exists());
+		context.close();
 	}
 
 	@Test
 	@Ignore
-	public void testOutbound() throws Exception{
-		ApplicationContext ac =
+	public void testOutbound() throws Exception {
+		ClassPathXmlApplicationContext ac =
 			new ClassPathXmlApplicationContext("SftpOutboundTransferSample-ignored.xml", this.getClass());
 		File fileA = new File("local-test-dir/a.test");
 		File fileB = new File("local-test-dir/b.test");
@@ -77,5 +80,7 @@ public class SftpInboundOutboundSanitySample {
 		fileB = new File("remote-target-dir/b.test-foo");
 		assertTrue(fileA.exists());
 		assertTrue(fileB.exists());
+		ac.close();
 	}
+
 }

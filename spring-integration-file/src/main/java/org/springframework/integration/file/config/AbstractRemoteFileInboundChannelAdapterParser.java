@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,11 +19,14 @@ package org.springframework.integration.file.config;
 import org.w3c.dom.Element;
 
 import org.springframework.beans.BeanMetadataElement;
+import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.support.BeanDefinitionBuilder;
 import org.springframework.beans.factory.xml.ParserContext;
 import org.springframework.integration.config.ExpressionFactoryBean;
 import org.springframework.integration.config.xml.AbstractPollingInboundChannelAdapterParser;
 import org.springframework.integration.config.xml.IntegrationNamespaceUtils;
+import org.springframework.integration.file.filters.FileListFilter;
+import org.springframework.integration.file.remote.synchronizer.InboundFileSynchronizer;
 import org.springframework.util.StringUtils;
 
 /**
@@ -32,6 +35,7 @@ import org.springframework.util.StringUtils;
  * @author Oleg Zhurakousky
  * @author Mark Fisher
  * @author Gary Russell
+ * @author Artem Bilan
  * @since 2.0
  */
 public abstract class AbstractRemoteFileInboundChannelAdapterParser extends AbstractPollingInboundChannelAdapterParser {
@@ -39,22 +43,28 @@ public abstract class AbstractRemoteFileInboundChannelAdapterParser extends Abst
 	@Override
 	protected final BeanMetadataElement parseSource(Element element, ParserContext parserContext) {
 		BeanDefinitionBuilder synchronizerBuilder = BeanDefinitionBuilder.genericBeanDefinition(
-				this.getInboundFileSynchronizerClassname());
+				this.getInboundFileSynchronizerClass());
 
 		synchronizerBuilder.addConstructorArgReference(element.getAttribute("session-factory"));
 
 		// configure the InboundFileSynchronizer properties
-		IntegrationNamespaceUtils.setValueIfAttributeDefined(synchronizerBuilder, element, "remote-directory");
+		BeanDefinition expressionDef = IntegrationNamespaceUtils.createExpressionDefinitionFromValueOrExpression(
+				"remote-directory", "remote-directory-expression", parserContext, element, false);
+		if (expressionDef != null) {
+			synchronizerBuilder.addPropertyValue("remoteDirectoryExpression", expressionDef);
+		}
 		IntegrationNamespaceUtils.setValueIfAttributeDefined(synchronizerBuilder, element, "delete-remote-files");
 		IntegrationNamespaceUtils.setValueIfAttributeDefined(synchronizerBuilder, element, "preserve-timestamp");
 
 		String remoteFileSeparator = element.getAttribute("remote-file-separator");
 		synchronizerBuilder.addPropertyValue("remoteFileSeparator", remoteFileSeparator);
 		IntegrationNamespaceUtils.setValueIfAttributeDefined(synchronizerBuilder, element, "temporary-file-suffix");
-		this.configureFilter(synchronizerBuilder, element, parserContext);
+		FileParserUtils.configureFilter(synchronizerBuilder, element, parserContext,
+				getSimplePatternFileListFilterClass(), getRegexPatternFileListFilterClass());
 
 		// build the MessageSource
-		BeanDefinitionBuilder messageSourceBuilder = BeanDefinitionBuilder.genericBeanDefinition(this.getMessageSourceClassname());
+		BeanDefinitionBuilder messageSourceBuilder =
+				BeanDefinitionBuilder.genericBeanDefinition(getMessageSourceClassname());
 		messageSourceBuilder.addConstructorArgValue(synchronizerBuilder.getBeanDefinition());
 		String comparator = element.getAttribute("comparator");
 		if (StringUtils.hasText(comparator)) {
@@ -62,62 +72,26 @@ public abstract class AbstractRemoteFileInboundChannelAdapterParser extends Abst
 		}
 		IntegrationNamespaceUtils.setReferenceIfAttributeDefined(messageSourceBuilder, element, "local-filter");
 		IntegrationNamespaceUtils.setValueIfAttributeDefined(messageSourceBuilder, element, "local-directory");
-		IntegrationNamespaceUtils.setValueIfAttributeDefined(messageSourceBuilder, element, "auto-create-local-directory");
+		IntegrationNamespaceUtils.setValueIfAttributeDefined(messageSourceBuilder, element,
+				"auto-create-local-directory");
 		String localFileGeneratorExpression = element.getAttribute("local-filename-generator-expression");
 		if (StringUtils.hasText(localFileGeneratorExpression)) {
-			BeanDefinitionBuilder localFileGeneratorExpressionBuilder = BeanDefinitionBuilder.genericBeanDefinition(ExpressionFactoryBean.class);
+			BeanDefinitionBuilder localFileGeneratorExpressionBuilder =
+					BeanDefinitionBuilder.genericBeanDefinition(ExpressionFactoryBean.class);
 			localFileGeneratorExpressionBuilder.addConstructorArgValue(localFileGeneratorExpression);
-			synchronizerBuilder.addPropertyValue("localFilenameGeneratorExpression", localFileGeneratorExpressionBuilder.getBeanDefinition());
+			synchronizerBuilder.addPropertyValue("localFilenameGeneratorExpression",
+					localFileGeneratorExpressionBuilder.getBeanDefinition());
 		}
+		IntegrationNamespaceUtils.setValueIfAttributeDefined(messageSourceBuilder, element, "max-fetch-size");
 		return messageSourceBuilder.getBeanDefinition();
-	}
-
-	private void configureFilter(BeanDefinitionBuilder synchronizerBuilder, Element element, ParserContext parserContext) {
-		String filter = element.getAttribute("filter");
-		String fileNamePattern = element.getAttribute("filename-pattern");
-		String fileNameRegex = element.getAttribute("filename-regex");
-		boolean hasFilter = StringUtils.hasText(filter);
-		boolean hasFileNamePattern = StringUtils.hasText(fileNamePattern);
-		boolean hasFileNameRegex = StringUtils.hasText(fileNameRegex);
-		if (hasFilter || hasFileNamePattern || hasFileNameRegex) {
-			int count = 0;
-			if (hasFilter) {
-				count++;
-			}
-			if (hasFileNamePattern) {
-				count++;
-			}
-			if (hasFileNameRegex) {
-				count++;
-			}
-			if (count != 1) {
-				parserContext.getReaderContext().error("at most one of 'filename-pattern', " +
-						"'filename-regex', or 'filter' is allowed on remote file inbound adapter", element);
-			}
-			if (hasFilter) {
-				synchronizerBuilder.addPropertyReference("filter", filter);
-			}
-			else if (hasFileNamePattern) {
-				BeanDefinitionBuilder filterBuilder = BeanDefinitionBuilder.genericBeanDefinition(
-						this.getSimplePatternFileListFilterClassname());
-				filterBuilder.addConstructorArgValue(fileNamePattern);
-				synchronizerBuilder.addPropertyValue("filter", filterBuilder.getBeanDefinition());
-			}
-			else if (hasFileNameRegex) {
-				BeanDefinitionBuilder filterBuilder = BeanDefinitionBuilder.genericBeanDefinition(
-						this.getRegexPatternFileListFilterClassname());
-				filterBuilder.addConstructorArgValue(fileNameRegex);
-				synchronizerBuilder.addPropertyValue("filter", filterBuilder.getBeanDefinition());
-			}
-		}
 	}
 
 	protected abstract String getMessageSourceClassname();
 
-	protected abstract String getInboundFileSynchronizerClassname();
+	protected abstract Class<? extends InboundFileSynchronizer> getInboundFileSynchronizerClass();
 
-	protected abstract String getSimplePatternFileListFilterClassname();
+	protected abstract Class<? extends FileListFilter<?>> getSimplePatternFileListFilterClass();
 
-	protected abstract String getRegexPatternFileListFilterClassname();
+	protected abstract Class<? extends FileListFilter<?>> getRegexPatternFileListFilterClass();
 
 }

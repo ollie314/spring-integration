@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2010 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.twitter.ignored;
 
 import java.util.concurrent.CountDownLatch;
@@ -20,10 +21,13 @@ import java.util.concurrent.TimeUnit;
 
 import org.junit.Ignore;
 import org.junit.Test;
+
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
 
 /**
  * @author Oleg Zhurakousky
+ * @author Gary Russell
  *
  */
 public class TestReceivingUsingNamespace {
@@ -31,13 +35,13 @@ public class TestReceivingUsingNamespace {
 	@Test
 	@Ignore
 	/*
-	 * In order to run this test you need to provide values to the twitter.properties file
+	 * In order to run this test you need to provide oauth properties in sample.properties on the classpath.
 	 */
-	public void testUpdatesWithRealTwitter() throws Exception{
+	public void testUpdatesWithRealTwitter() throws Exception {
 		CountDownLatch latch = new CountDownLatch(1);
-		new ClassPathXmlApplicationContext("TestReceivingUsingNamespace-context.xml", this.getClass());
-		System.out.println("done");
+		ConfigurableApplicationContext ctx =
+				new ClassPathXmlApplicationContext("TestReceivingUsingNamespace-context.xml", this.getClass());
 		latch.await(10000, TimeUnit.SECONDS);
-		
+		ctx.close();
 	}
 }

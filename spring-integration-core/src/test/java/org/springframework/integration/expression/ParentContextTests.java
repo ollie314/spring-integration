@@ -1,5 +1,5 @@
 /*
- * Copyright 2013 the original author or authors.
+ * Copyright 2013-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.expression;
 
 import static org.hamcrest.Matchers.instanceOf;
@@ -30,10 +31,15 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.hamcrest.Matchers;
 import org.junit.Test;
 
+import org.springframework.beans.BeansException;
+import org.springframework.beans.factory.BeanFactory;
+import org.springframework.beans.factory.BeanFactoryAware;
+import org.springframework.beans.factory.InitializingBean;
 import org.springframework.context.support.AbstractApplicationContext;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
 import org.springframework.expression.EvaluationContext;
@@ -42,10 +48,12 @@ import org.springframework.integration.channel.QueueChannel;
 import org.springframework.integration.config.IntegrationEvaluationContextFactoryBean;
 import org.springframework.integration.context.IntegrationContextUtils;
 import org.springframework.integration.json.JsonPathUtils;
-import org.springframework.integration.message.MutableMessage;
+import org.springframework.integration.json.TestPerson;
+import org.springframework.integration.support.MutableMessageBuilder;
 import org.springframework.integration.test.util.TestUtils;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
+import org.springframework.messaging.PollableChannel;
 import org.springframework.messaging.support.GenericMessage;
 
 /**
@@ -66,15 +74,20 @@ public class ParentContextTests {
 	 * and the parent's ones are last in the propertyAccessors list of EvaluationContext.
 	 * Verifies that SpEL functions are inherited from parent context and overridden with the same 'id'.
 	 * Verifies that child and parent contexts can have different message builders.
+	 * <p>
+	 * Only single test method is allowed for 'ParentContext-context.xml',
+	 * since it relies on static 'evalContexts' variable.
 	 */
 	@Test
 	@SuppressWarnings("unchecked")
 	public void testSpelBeanReferencesInChildAndParent() throws Exception {
-		AbstractApplicationContext parent = new ClassPathXmlApplicationContext("ParentContext-context.xml", this.getClass());
+		AbstractApplicationContext parent = new ClassPathXmlApplicationContext("ParentContext-context.xml",
+				this.getClass());
 
 		Object parentEvaluationContextFactoryBean = parent.getBean(IntegrationEvaluationContextFactoryBean.class);
-		Map<?, ?> parentFunctions = TestUtils.getPropertyValue(parentEvaluationContextFactoryBean, "functions", Map.class);
-		assertEquals(3, parentFunctions.size());
+		Map<?, ?> parentFunctions = TestUtils.getPropertyValue(parentEvaluationContextFactoryBean, "functions",
+				Map.class);
+		assertEquals(4, parentFunctions.size());
 		Object jsonPath = parentFunctions.get("jsonPath");
 		assertNotNull(jsonPath);
 		assertThat((Method) jsonPath, Matchers.isOneOf(JsonPathUtils.class.getMethods()));
@@ -84,9 +97,11 @@ public class ParentContextTests {
 		child.refresh();
 
 		Object childEvaluationContextFactoryBean = child.getBean(IntegrationEvaluationContextFactoryBean.class);
-		Map<?, ?> childFunctions = TestUtils.getPropertyValue(childEvaluationContextFactoryBean, "functions", Map.class);
-		assertEquals(4, childFunctions.size());
+		Map<?, ?> childFunctions = TestUtils.getPropertyValue(childEvaluationContextFactoryBean, "functions",
+				Map.class);
+		assertEquals(5, childFunctions.size());
 		assertTrue(childFunctions.containsKey("barParent"));
+		assertTrue(childFunctions.containsKey("fooFunc"));
 		jsonPath = childFunctions.get("jsonPath");
 		assertNotNull(jsonPath);
 		assertThat((Method) jsonPath, Matchers.not(Matchers.isOneOf(JsonPathUtils.class.getMethods())));
@@ -101,10 +116,12 @@ public class ParentContextTests {
 		assertTrue(propertyAccessors.contains(parentPropertyAccessor));
 		assertTrue(propertyAccessors.indexOf(parentPropertyAccessorOverride) > propertyAccessors.indexOf(parentPropertyAccessor));
 
-		Map<String, Object> variables = (Map<String, Object>) TestUtils.getPropertyValue(evalContexts.get(0), "variables");
-		assertEquals(3, variables.size());
+		Map<String, Object> variables = (Map<String, Object>) TestUtils.getPropertyValue(evalContexts.get(0),
+				"variables");
+		assertEquals(4, variables.size());
 		assertTrue(variables.containsKey("bar"));
 		assertTrue(variables.containsKey("barParent"));
+		assertTrue(variables.containsKey("fooFunc"));
 		assertTrue(variables.containsKey("jsonPath"));
 
 		assertNotSame(evalContexts.get(1).getBeanResolver(), evalContexts.get(2).getBeanResolver());
@@ -113,9 +130,10 @@ public class ParentContextTests {
 		assertTrue(propertyAccessors.contains(parentPropertyAccessorOverride));
 
 		variables = (Map<String, Object>) TestUtils.getPropertyValue(evalContexts.get(1), "variables");
-		assertEquals(3, variables.size());
+		assertEquals(4, variables.size());
 		assertTrue(variables.containsKey("bar"));
 		assertTrue(variables.containsKey("barParent"));
+		assertTrue(variables.containsKey("fooFunc"));
 		assertTrue(variables.containsKey("jsonPath"));
 
 		propertyAccessors = evalContexts.get(2).getPropertyAccessors();
@@ -127,9 +145,10 @@ public class ParentContextTests {
 		assertTrue(propertyAccessors.indexOf(childPropertyAccessor) < propertyAccessors.indexOf(parentPropertyAccessor));
 
 		variables = (Map<String, Object>) TestUtils.getPropertyValue(evalContexts.get(2), "variables");
-		assertEquals(4, variables.size());
+		assertEquals(5, variables.size());
 		assertTrue(variables.containsKey("bar"));
 		assertTrue(variables.containsKey("barParent"));
+		assertTrue(variables.containsKey("fooFunc"));
 		assertTrue(variables.containsKey("barChild"));
 		assertTrue(variables.containsKey("jsonPath"));
 
@@ -138,7 +157,7 @@ public class ParentContextTests {
 		Message<?> out = child.getBean("output", QueueChannel.class).receive(0);
 		assertNotNull(out);
 		assertEquals("foobar", out.getPayload());
-		child.getBean("parentIn", MessageChannel.class).send(new MutableMessage<String>("bar"));
+		child.getBean("parentIn", MessageChannel.class).send(MutableMessageBuilder.withPayload("bar").build());
 		out = child.getBean("parentOut", QueueChannel.class).receive(0);
 		assertNotNull(out);
 		assertThat(out, instanceOf(GenericMessage.class));
@@ -158,18 +177,56 @@ public class ParentContextTests {
 		parent.getBean("fromParentToChild", MessageChannel.class).send(new GenericMessage<String>("foo"));
 		out = child.getBean("output", QueueChannel.class).receive(0);
 		assertNotNull(out);
-		assertThat(out, instanceOf(MutableMessage.class));
+		assertEquals("org.springframework.integration.support.MutableMessage", out.getClass().getName());
 		assertEquals("FOO", out.getPayload());
+
+		assertTrue(parent
+				.containsBean(IntegrationContextUtils.TO_STRING_FRIENDLY_JSON_NODE_TO_STRING_CONVERTER_BEAN_NAME));
+
+		assertTrue(child
+				.containsBean(IntegrationContextUtils.TO_STRING_FRIENDLY_JSON_NODE_TO_STRING_CONVERTER_BEAN_NAME));
+
+		Object converterRegistrar = parent.getBean(IntegrationContextUtils.CONVERTER_REGISTRAR_BEAN_NAME);
+		assertNotNull(converterRegistrar);
+		Set<?> converters = TestUtils.getPropertyValue(converterRegistrar, "converters", Set.class);
+		boolean toStringFriendlyJsonNodeToStringConverterPresent = false;
+		for (Object converter : converters) {
+			if ("ToStringFriendlyJsonNodeToStringConverter".equals(converter.getClass().getSimpleName())) {
+				toStringFriendlyJsonNodeToStringConverterPresent = true;
+				break;
+			}
+		}
+
+		assertTrue(toStringFriendlyJsonNodeToStringConverterPresent);
+
+		MessageChannel input = parent.getBean("testJsonNodeToStringConverterInputChannel", MessageChannel.class);
+		PollableChannel output = parent.getBean("testJsonNodeToStringConverterOutputChannel", PollableChannel.class);
+
+		TestPerson person = new TestPerson();
+		person.setFirstName("John");
+
+		input.send(new GenericMessage<Object>(person));
+
+		Message<?> result = output.receive(1000);
+		assertNotNull(result);
+		assertEquals("JOHN", result.getPayload());
 
 		child.close();
 		parent.close();
 	}
 
-	public static class Foo implements IntegrationEvaluationContextAware {
+	public static class Foo implements BeanFactoryAware, InitializingBean {
+
+		private BeanFactory beanFactory;
 
 		@Override
-		public void setIntegrationEvaluationContext(EvaluationContext evaluationContext) {
-			evalContexts.add(evaluationContext);
+		public void setBeanFactory(BeanFactory beanFactory) throws BeansException {
+			this.beanFactory = beanFactory;
+		}
+
+		@Override
+		public void afterPropertiesSet() throws Exception {
+			evalContexts.add(ExpressionUtils.createStandardEvaluationContext(this.beanFactory));
 		}
 
 	}
@@ -180,5 +237,10 @@ public class ParentContextTests {
 			return o;
 		}
 
+		public String testJsonNodeToStringConverter(String payload) {
+			return payload.toUpperCase();
+		}
+
 	}
+
 }

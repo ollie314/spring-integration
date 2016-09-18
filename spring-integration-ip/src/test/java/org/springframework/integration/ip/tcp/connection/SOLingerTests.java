@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2010 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,10 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.ip.tcp.connection;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.io.IOException;
@@ -26,12 +26,12 @@ import java.net.SocketException;
 
 import javax.net.SocketFactory;
 
-import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.integration.ip.util.TestingUtilities;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 
@@ -42,6 +42,7 @@ import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
  */
 @RunWith(SpringJUnit4ClassRunner.class)
 @ContextConfiguration
+@DirtiesContext
 public class SOLingerTests {
 
 	@Autowired
@@ -63,16 +64,16 @@ public class SOLingerTests {
 	private AbstractServerConnectionFactory inCFNioLinger;
 
 	@Test
-	public void configOk() {}
+	public void configOk() { }
 
 	@Test
 	public void finReceivedNet() {
-		finReceived(inCFNet);
+		finReceived(inCFNet, false);
 	}
 
 	@Test
 	public void finReceivedNio() {
-		finReceived(inCFNio);
+		finReceived(inCFNio, false);
 	}
 
 	@Test
@@ -87,30 +88,44 @@ public class SOLingerTests {
 
 	@Test
 	public void finReceivedNetLinger() {
-		finReceived(inCFNetLinger);
+		finReceived(inCFNetLinger, true);
 	}
 
 	@Test
-	@Ignore
 	public void finReceivedNioLinger() {
-		finReceived(inCFNioLinger);
+		finReceived(inCFNioLinger, true);
 	}
 
-	private void finReceived(AbstractServerConnectionFactory inCF) {
-		int port = inCF.getPort();
+	private void finReceived(AbstractServerConnectionFactory inCF, boolean hasLinger) {
+		/*
+		 * Default (no linger) means the OS may still deliver everything before the
+		 * FIN, but it's not guaranteed.
+		 */
 		TestingUtilities.waitListening(inCF, null);
+		int port = inCF.getPort();
 		try {
 			Socket socket = SocketFactory.getDefault().createSocket("localhost", port);
 			socket.setSoTimeout(10000);
 			String test = "Test\r\n";
 			socket.getOutputStream().write(test.getBytes());
 			byte[] buff = new byte[test.length() + 5];
-			readFully(socket.getInputStream(), buff);
-			assertEquals("echo:" + test, new String(buff));
+			try {
+				readFully(socket.getInputStream(), buff);
+				assertEquals("echo:" + test, new String(buff));
+			}
+			catch (SocketException se) {
+				if (hasLinger) {
+					fail("SocketException not expected with SO_LINGER");
+				}
+				else {
+					return;
+				}
+			}
 			int n = socket.getInputStream().read();
 			// we expect an orderly close
 			assertEquals(-1, n);
-		} catch (Exception e) {
+		}
+		catch (Exception e) {
 			e.printStackTrace();
 			fail("Unexpected Exception  " + e.getMessage());
 		}
@@ -118,23 +133,27 @@ public class SOLingerTests {
 	}
 
 	private void rstReceived(AbstractServerConnectionFactory inCF) {
-		int port = inCF.getPort();
 		TestingUtilities.waitListening(inCF, null);
+		int port = inCF.getPort();
 		try {
 			Socket socket = SocketFactory.getDefault().createSocket("localhost", port);
 			socket.setSoTimeout(10000);
 			String test = "Test\r\n";
 			socket.getOutputStream().write(test.getBytes());
 			byte[] buff = new byte[test.length() + 5];
-			readFully(socket.getInputStream(), buff);
-			assertEquals("echo:" + test, new String(buff));
 			try {
+				// with SO_LINGER=0 we may, or may not, get the data
+				// if we do, verify it is as expected, if not, the RST
+				// arrived before the final data.
+				readFully(socket.getInputStream(), buff);
+				assertEquals("echo:" + test, new String(buff));
 				socket.getInputStream().read();
-				fail("Expected IOException");
-			} catch (IOException ioe) {
-				assertTrue(ioe instanceof SocketException);
+				fail("Expected SocketException");
 			}
-		} catch (Exception e) {
+			catch (SocketException se) {
+			}
+		}
+		catch (Exception e) {
 			e.printStackTrace();
 			fail("Unexpected Exception  " + e.getMessage());
 		}

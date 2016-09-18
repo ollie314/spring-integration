@@ -1,4 +1,5 @@
-/* Copyright 2002-2009 the original author or authors.
+/*
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,24 +16,26 @@
 
 package org.springframework.integration.dispatcher;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.fail;
+import static org.mockito.Mockito.atLeast;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+
+import java.util.concurrent.atomic.AtomicInteger;
+
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.Mock;
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.fail;
-import static org.mockito.Mockito.doThrow;
 import org.mockito.runners.MockitoJUnitRunner;
+
 import org.springframework.beans.DirectFieldAccessor;
-import org.springframework.messaging.Message;
-import org.springframework.messaging.MessagingException;
-import org.springframework.messaging.MessageHandler;
 import org.springframework.integration.support.MessageBuilder;
-
-import java.util.concurrent.atomic.AtomicInteger;
-
-import static org.mockito.Mockito.*;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.MessageHandler;
+import org.springframework.messaging.MessagingException;
 
 /**
  * @author Iwein Fuld
@@ -42,7 +45,7 @@ import static org.mockito.Mockito.*;
 @RunWith(MockitoJUnitRunner.class)
 public class RoundRobinDispatcherTests {
 
-	private UnicastingDispatcher dispatcher = new UnicastingDispatcher();
+	private final UnicastingDispatcher dispatcher = new UnicastingDispatcher();
 
 	@Mock
 	private MessageHandler handler;
@@ -83,7 +86,7 @@ public class RoundRobinDispatcherTests {
 			dispatcher.dispatch(message);
 		}
 		verify(handler, times(4)).handleMessage(message);
-		verify(differentHandler, times(3)).handleMessage(message);		
+		verify(differentHandler, times(3)).handleMessage(message);
 	}
 
 	@Test
@@ -92,8 +95,8 @@ public class RoundRobinDispatcherTests {
 		dispatcher.addHandler(differentHandler);
 		DirectFieldAccessor accessor = new DirectFieldAccessor(
 				new DirectFieldAccessor(dispatcher).getPropertyValue("loadBalancingStrategy"));
-		((AtomicInteger) accessor.getPropertyValue("currentHandlerIndex")).set(Integer.MAX_VALUE-5);
-		for(int i = 0; i < 40; i++) {
+		((AtomicInteger) accessor.getPropertyValue("currentHandlerIndex")).set(Integer.MAX_VALUE - 5);
+		for (int i = 0; i < 40; i++) {
 			dispatcher.dispatch(message);
 		}
 		verify(handler, atLeast(18)).handleMessage(message);
@@ -112,7 +115,8 @@ public class RoundRobinDispatcherTests {
 		try {
 			dispatcher.dispatch(message);
 			fail("Expected Exception");
-		} catch (MessagingException e) {
+		}
+		catch (MessagingException e) {
 			assertEquals(message, e.getFailedMessage());
 		}
 	}
@@ -130,7 +134,8 @@ public class RoundRobinDispatcherTests {
 		try {
 			dispatcher.dispatch(message);
 			fail("Expected Exception");
-		} catch (MessagingException e) {
+		}
+		catch (MessagingException e) {
 			assertEquals(dontReplaceThisMessage, e.getFailedMessage());
 		}
 	}

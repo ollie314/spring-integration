@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -46,10 +46,11 @@ import org.springframework.beans.factory.BeanCreationException;
 import org.springframework.beans.factory.BeanFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.context.ApplicationContext;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
 import org.springframework.integration.IntegrationMessageHeaderAccessor;
 import org.springframework.integration.MessageRejectedException;
+import org.springframework.integration.channel.QueueChannel;
 import org.springframework.integration.endpoint.AbstractEndpoint;
 import org.springframework.integration.gateway.GatewayProxyFactoryBean;
 import org.springframework.integration.handler.AbstractReplyProducingMessageHandler;
@@ -76,6 +77,7 @@ import org.springframework.util.StringUtils;
  * @author Dave Turanski
  * @author Artem Bilan
  * @author Gunnar Hillert
+ * @author Gary Russell
  */
 @ContextConfiguration
 @RunWith(SpringJUnit4ClassRunner.class)
@@ -156,10 +158,16 @@ public class ChainParserTests {
 	private PollableChannel numbers;
 
 	@Autowired
-	private MessageChannel chainReplayRequiredChannel;
+	private MessageChannel chainReplyRequiredChannel;
 
 	@Autowired
 	private MessageChannel chainMessageRejectedExceptionChannel;
+
+	@Autowired
+	private MessageChannel chainWithNoOutputChannel;
+
+	@Autowired
+	private MessageChannel chainWithTransformNoOutputChannel;
 
 	public static Message<?> successMessage = MessageBuilder.withPayload("success").build();
 
@@ -278,7 +286,8 @@ public class ChainParserTests {
 
 	@Test // INT-1165
 	public void chainWithSendTimeout() {
-		long sendTimeout = TestUtils.getPropertyValue(this.chainWithSendTimeout, "sendTimeout", Long.class);
+		long sendTimeout = TestUtils.getPropertyValue(this.chainWithSendTimeout, "messagingTemplate.sendTimeout",
+				Long.class);
 		assertEquals(9876, sendTimeout);
 	}
 
@@ -324,7 +333,8 @@ public class ChainParserTests {
 	@Test(expected = BeanCreationException.class) //INT-2275
 	public void invalidNestedChainWithLoggingChannelAdapter() {
 		try {
-			new ClassPathXmlApplicationContext("invalidNestedChainWithOutboundChannelAdapter-context.xml", this.getClass());
+			new ClassPathXmlApplicationContext("invalidNestedChainWithOutboundChannelAdapter-context.xml",
+					this.getClass()).close();
 			fail("BeanCreationException is expected!");
 		}
 		catch (BeansException e) {
@@ -337,17 +347,19 @@ public class ChainParserTests {
 
 	@Test //INT-2605
 	public void checkSmartLifecycleConfig() {
-		ApplicationContext ctx = new ClassPathXmlApplicationContext("ChainParserSmartLifecycleAttributesTest.xml", this.getClass());
+		ConfigurableApplicationContext ctx = new ClassPathXmlApplicationContext(
+				"ChainParserSmartLifecycleAttributesTest.xml", this.getClass());
 		AbstractEndpoint chainEndpoint = ctx.getBean("chain", AbstractEndpoint.class);
 		assertEquals(false, chainEndpoint.isAutoStartup());
 		assertEquals(256, chainEndpoint.getPhase());
 
 		MessageHandlerChain handlerChain = ctx.getBean("chain.handler", MessageHandlerChain.class);
-		assertEquals(3000L, TestUtils.getPropertyValue(handlerChain, "sendTimeout"));
+		assertEquals(3000L, TestUtils.getPropertyValue(handlerChain, "messagingTemplate.sendTimeout"));
 		assertEquals(false, TestUtils.getPropertyValue(handlerChain, "running"));
 		//INT-3108
 		MessageHandler serviceActivator = ctx.getBean("chain$child.sa-within-chain.handler", MessageHandler.class);
 		assertTrue(TestUtils.getPropertyValue(serviceActivator, "requiresReply", Boolean.class));
+		ctx.close();
 	}
 
 	@Test
@@ -382,8 +394,8 @@ public class ChainParserTests {
 		//INT-3117
 		GatewayProxyFactoryBean gatewayProxyFactoryBean = this.beanFactory.getBean("&subComponentsIdSupport1$child.gatewayWithinChain.handler",
 				GatewayProxyFactoryBean.class);
-		assertSame(this.strings, TestUtils.getPropertyValue(gatewayProxyFactoryBean, "defaultRequestChannel", MessageChannel.class));
-		assertSame(this.numbers, TestUtils.getPropertyValue(gatewayProxyFactoryBean, "defaultReplyChannel", MessageChannel.class));
+		assertEquals("strings", TestUtils.getPropertyValue(gatewayProxyFactoryBean, "defaultRequestChannelName"));
+		assertEquals("numbers", TestUtils.getPropertyValue(gatewayProxyFactoryBean, "defaultReplyChannelName"));
 		assertEquals(new Long(1000), TestUtils.getPropertyValue(gatewayProxyFactoryBean, "defaultRequestTimeout", Long.class));
 		assertEquals(new Long(100), TestUtils.getPropertyValue(gatewayProxyFactoryBean, "defaultReplyTimeout", Long.class));
 
@@ -405,7 +417,7 @@ public class ChainParserTests {
 
 		assertTrue(handlers.get(1) instanceof ServiceActivatingHandler);
 		assertEquals("headerEnricherChain$child#1", TestUtils.getPropertyValue(handlers.get(1), "componentName"));
-		assertNull(TestUtils.getPropertyValue(handlers.get(1), "beanName"));
+		assertEquals("headerEnricherChain$child#1.handler", TestUtils.getPropertyValue(handlers.get(1), "beanName"));
 		assertFalse(this.beanFactory.containsBean("headerEnricherChain$child#1.handler"));
 
 	}
@@ -414,12 +426,12 @@ public class ChainParserTests {
 	public void testInt2755SubComponentException() {
 		GenericMessage<String> testMessage = new GenericMessage<String>("test");
 		try {
-			this.chainReplayRequiredChannel.send(testMessage);
+			this.chainReplyRequiredChannel.send(testMessage);
 			fail("Expected ReplyRequiredException");
 		}
 		catch (Exception e) {
 			assertTrue(e instanceof ReplyRequiredException);
-			assertTrue(e.getMessage().contains("'chainReplayRequired$child.transformerReplayRequired'"));
+			assertTrue(e.getMessage().contains("'chainReplyRequired$child.transformerReplyRequired'"));
 		}
 
 		try {
@@ -431,6 +443,21 @@ public class ChainParserTests {
 			assertTrue(e.getMessage().contains("chainMessageRejectedException$child.filterMessageRejectedException"));
 		}
 
+	}
+
+	@Test
+	public void testChainWithNoOutput() {
+		QueueChannel replyChannel = new QueueChannel();
+		Message<String> message = MessageBuilder.withPayload("foo").setHeader("myReplyChannel", replyChannel).build();
+		this.chainWithNoOutputChannel.send(message);
+		Message<?> receive = replyChannel.receive(10000);
+		assertNotNull(receive);
+
+		message = MessageBuilder.withPayload("foo").setReplyChannel(replyChannel).build();
+		Message<String> message2 = MessageBuilder.withPayload("bar").setHeader("myMessage", message).build();
+		this.chainWithTransformNoOutputChannel.send(message2);
+		receive = replyChannel.receive(10000);
+		assertNotNull(receive);
 	}
 
 	public static class StubHandler extends AbstractReplyProducingMessageHandler {

@@ -1,14 +1,17 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
- * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
- * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
- * specific language governing permissions and limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package org.springframework.integration.util;
@@ -26,13 +29,12 @@ import org.springframework.expression.Expression;
 import org.springframework.expression.ExpressionParser;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.expression.spel.support.StandardEvaluationContext;
-import org.springframework.integration.context.IntegrationContextUtils;
 import org.springframework.integration.expression.ExpressionUtils;
 import org.springframework.integration.support.DefaultMessageBuilderFactory;
 import org.springframework.integration.support.MessageBuilderFactory;
+import org.springframework.integration.support.utils.IntegrationUtils;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageHandlingException;
-import org.springframework.util.Assert;
 
 /**
  * @author Mark Fisher
@@ -45,21 +47,22 @@ import org.springframework.util.Assert;
  */
 public abstract class AbstractExpressionEvaluator implements BeanFactoryAware, InitializingBean {
 
-	private final Log logger = LogFactory.getLog(this.getClass());
+	protected final Log logger = LogFactory.getLog(this.getClass());
 
-	private volatile StandardEvaluationContext evaluationContext;
-
-	private final ExpressionParser expressionParser = new SpelExpressionParser();
+	protected static final ExpressionParser EXPRESSION_PARSER = new SpelExpressionParser();
 
 	private final BeanFactoryTypeConverter typeConverter = new BeanFactoryTypeConverter();
 
+	private volatile StandardEvaluationContext evaluationContext;
+
 	private volatile BeanFactory beanFactory;
 
-	private volatile MessageBuilderFactory messageBuilderFactory;
+	private volatile MessageBuilderFactory messageBuilderFactory = new DefaultMessageBuilderFactory();
 
 	/**
 	 * Specify a BeanFactory in order to enable resolution via <code>@beanName</code> in the expression.
 	 */
+	@Override
 	public void setBeanFactory(final BeanFactory beanFactory) {
 		if (beanFactory != null) {
 			this.beanFactory = beanFactory;
@@ -70,29 +73,25 @@ public abstract class AbstractExpressionEvaluator implements BeanFactoryAware, I
 		}
 	}
 
+	protected BeanFactory getBeanFactory() {
+		return this.beanFactory;
+	}
+
 	public void setConversionService(ConversionService conversionService) {
 		if (conversionService != null) {
 			this.typeConverter.setConversionService(conversionService);
 		}
 	}
 
-	public void setMessageBuilderFactory(MessageBuilderFactory messageBuilderFactory) {
-		Assert.notNull(messageBuilderFactory, "'messageBuilderFactory' cannot be null");
-		this.messageBuilderFactory = messageBuilderFactory;
-	}
-
 	protected MessageBuilderFactory getMessageBuilderFactory() {
-		if (this.messageBuilderFactory == null) {
-			this.messageBuilderFactory = new DefaultMessageBuilderFactory();
-		}
 		return this.messageBuilderFactory;
 	}
 
 	@Override
 	public void afterPropertiesSet() throws Exception {
 		getEvaluationContext();
-		if (this.messageBuilderFactory == null) {
-			this.messageBuilderFactory = IntegrationContextUtils.getMessageBuilderFactory(beanFactory);
+		if (this.beanFactory != null) {
+			this.messageBuilderFactory = IntegrationUtils.getMessageBuilderFactory(this.beanFactory);
 		}
 	}
 
@@ -113,8 +112,12 @@ public abstract class AbstractExpressionEvaluator implements BeanFactoryAware, I
 			else {
 				this.evaluationContext = ExpressionUtils.createStandardEvaluationContext(this.beanFactory);
 			}
-			if (this.typeConverter != null) {
-				this.evaluationContext.setTypeConverter(this.typeConverter);
+			this.evaluationContext.setTypeConverter(this.typeConverter);
+			if (this.beanFactory != null) {
+				ConversionService conversionService = IntegrationUtils.getConversionService(this.beanFactory);
+				if (conversionService != null) {
+					this.typeConverter.setConversionService(conversionService);
+				}
 			}
 		}
 		return this.evaluationContext;
@@ -127,14 +130,14 @@ public abstract class AbstractExpressionEvaluator implements BeanFactoryAware, I
 		catch (EvaluationException e) {
 			Throwable cause = e.getCause();
 			if (this.logger.isDebugEnabled()) {
-				logger.debug("SpEL Expression evaluation failed with EvaluationException.", e);
+				this.logger.debug("SpEL Expression evaluation failed with EvaluationException.", e);
 			}
 			throw new MessageHandlingException(message, "Expression evaluation failed: "
 					+ expression.getExpressionString(), cause == null ? e : cause);
 		}
 		catch (Exception e) {
 			if (this.logger.isDebugEnabled()) {
-				logger.debug("SpEL Expression evaluation failed with Exception." + e);
+				this.logger.debug("SpEL Expression evaluation failed with Exception." + e);
 			}
 			throw new MessageHandlingException(message, "Expression evaluation failed: "
 					+ expression.getExpressionString(), e);
@@ -142,15 +145,16 @@ public abstract class AbstractExpressionEvaluator implements BeanFactoryAware, I
 	}
 
 	protected Object evaluateExpression(String expression, Object input) {
-		return this.evaluateExpression(expression, input, (Class<?>) null);
+		return this.evaluateExpression(expression, input, null);
 	}
 
 	protected <T> T evaluateExpression(String expression, Object input, Class<T> expectedType) {
-		return this.expressionParser.parseExpression(expression).getValue(this.getEvaluationContext(), input, expectedType);
+		return EXPRESSION_PARSER.parseExpression(expression)
+				.getValue(this.getEvaluationContext(), input, expectedType);
 	}
 
 	protected Object evaluateExpression(Expression expression, Object input) {
-		return this.evaluateExpression(expression, input, (Class<?>) null);
+		return this.evaluateExpression(expression, input, null);
 	}
 
 	protected <T> T evaluateExpression(Expression expression, Class<T> expectedType) {

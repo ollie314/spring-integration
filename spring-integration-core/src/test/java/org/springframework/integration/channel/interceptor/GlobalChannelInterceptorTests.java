@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,11 +30,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.ApplicationContext;
 import org.springframework.core.Ordered;
-import org.springframework.integration.channel.AbstractMessageChannel;
 import org.springframework.integration.channel.ChannelInterceptorAware;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.support.ChannelInterceptor;
+import org.springframework.messaging.support.ChannelInterceptorAdapter;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 
@@ -57,17 +57,17 @@ public class GlobalChannelInterceptorTests {
 
 
 	@Test
-	public void validateGlobalInterceptor() throws Exception{
+	public void validateGlobalInterceptor() throws Exception {
  		Map<String, ChannelInterceptorAware> channels = applicationContext.getBeansOfType(ChannelInterceptorAware.class);
 		for (String channelName : channels.keySet()) {
 			ChannelInterceptorAware channel = channels.get(channelName);
-			if (channelName.equals("nullChannel")){
+			if (channelName.equals("nullChannel")) {
 				continue;
 			}
 
 			ChannelInterceptor[] interceptors = channel.getChannelInterceptors().toArray(new ChannelInterceptor[channel.getChannelInterceptors().size()]);
-			if (channelName.equals("inputA")){ // 328741
-				Assert.assertTrue(interceptors.length ==10);
+			if (channelName.equals("inputA")) { // 328741
+				Assert.assertTrue(interceptors.length == 10);
 				Assert.assertEquals("interceptor-three", interceptors[0].toString());
 				Assert.assertEquals("interceptor-two", interceptors[1].toString());
 				Assert.assertEquals("interceptor-eight", interceptors[2].toString());
@@ -127,7 +127,7 @@ public class GlobalChannelInterceptorTests {
 	}
 
 
-	public static class SampleInterceptor implements ChannelInterceptor {
+	public static class SampleInterceptor extends ChannelInterceptorAdapter {
 
 		private String testIdentifier;
 
@@ -175,7 +175,7 @@ public class GlobalChannelInterceptorTests {
 		}
 	}
 
-	public static class TestInterceptor implements MethodInterceptor{
+	public static class TestInterceptor implements MethodInterceptor {
 
 		@Override
 		public Object invoke(MethodInvocation invocation) throws Throwable {

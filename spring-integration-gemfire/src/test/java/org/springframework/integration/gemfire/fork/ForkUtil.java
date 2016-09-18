@@ -1,5 +1,5 @@
 /*
- * Copyright 2011 the original author or authors.
+ * Copyright 2011-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,17 +24,27 @@ import java.io.OutputStream;
 import java.io.PrintStream;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+
 /**
  * Utility for forking Java processes. Modified from the SGF version for SI
- * 
+ *
  * @author Costin Leau
  * @author David Turanski
- * 
- * 
+ * @author Gary Russell
+ *
+ *
  */
 public class ForkUtil {
 
+	private static final Log logger = LogFactory.getLog(ForkUtil.class);
+
 	private static String TEMP_DIR = System.getProperty("java.io.tmpdir");
+
+	private ForkUtil() {
+		super();
+	}
 
 	public static OutputStream cloneJVM(String argument) {
 		String cp = System.getProperty("java.class.path");
@@ -56,7 +66,7 @@ public class ForkUtil {
 			throw new IllegalStateException("Cannot start command " + cmdArray, ioe);
 		}
 
-		System.out.println("Started fork");
+		logger.info("Started fork");
 		final Process p = proc;
 
 		final BufferedReader br = new BufferedReader(new InputStreamReader(p.getInputStream()));
@@ -72,10 +82,11 @@ public class ForkUtil {
 		Runtime.getRuntime().addShutdownHook(new Thread() {
 			@Override
 			public void run() {
-				System.out.println("Stopping fork...");
+				logger.info("Stopping fork...");
 				run.set(false);
-				if (p != null)
+				if (p != null) {
 					p.destroy();
+				}
 
 				try {
 					p.waitFor();
@@ -83,7 +94,7 @@ public class ForkUtil {
 				catch (InterruptedException e) {
 					// ignore
 				}
-				System.out.println("Fork stopped");
+				logger.info("Fork stopped");
 			}
 		});
 
@@ -94,6 +105,7 @@ public class ForkUtil {
 			final AtomicBoolean run, final PrintStream out) {
 		Thread reader = new Thread(new Runnable() {
 
+			@Override
 			public void run() {
 				try {
 					String line = null;
@@ -110,22 +122,22 @@ public class ForkUtil {
 		});
 		return reader;
 	}
-	
+
 	public static OutputStream cacheServer() {
 		return startCacheServer("org.springframework.integration.gemfire.fork.CacheServerProcess");
 	}
-	
+
 	public static OutputStream cacheServer(String className) {
 		return startCacheServer(className);
 	}
 
 	private static OutputStream startCacheServer(String className) {
-		
+
 		if (controlFileExists(className)) {
 			deleteControlFile(className);
 		}
 		OutputStream os = cloneJVM(className);
-		int maxTime = 30000;
+		int maxTime = 60000;
 		int time = 0;
 		while (!controlFileExists(className) && time < maxTime) {
 			try {
@@ -136,9 +148,10 @@ public class ForkUtil {
 				// ignore and move on
 			}
 		}
-		if (controlFileExists(className)){
-			System.out.println("Started cache server");
-		} else {
+		if (controlFileExists(className)) {
+			logger.info("Started cache server");
+		}
+		else {
 			throw new RuntimeException("could not fork cache server");
 		}
 		return os;

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,8 +25,8 @@ import org.junit.Test;
 import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.context.support.StaticApplicationContext;
 import org.springframework.expression.EvaluationContext;
-import org.springframework.integration.annotation.Header;
-import org.springframework.integration.annotation.Payload;
+import org.springframework.messaging.handler.annotation.Header;
+import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.integration.annotation.Publisher;
 import org.springframework.integration.channel.QueueChannel;
 import org.springframework.integration.config.IntegrationEvaluationContextFactoryBean;
@@ -60,7 +60,7 @@ public class PublisherExpressionTests {
 		PublisherAnnotationAdvisor advisor = new PublisherAnnotationAdvisor();
 		advisor.setBeanFactory(context);
 		QueueChannel testChannel = context.getBean("testChannel", QueueChannel.class);
-		advisor.setDefaultChannel(testChannel);
+		advisor.setDefaultChannelName("testChannel");
 		ProxyFactory pf = new ProxyFactory(new TestBeanImpl());
 		pf.addAdvisor(advisor);
 		TestBean proxy = (TestBean) pf.getProxy();
@@ -72,13 +72,14 @@ public class PublisherExpressionTests {
 	}
 
 
-	static interface TestBean {
+	interface TestBean {
 		String test(String sku);
 	}
 
 
 	static class TestBeanImpl implements TestBean {
 
+		@Override
 		@Publisher
 		@Payload("#return + @foo")
 		public String test(@Header("foo") String foo) {

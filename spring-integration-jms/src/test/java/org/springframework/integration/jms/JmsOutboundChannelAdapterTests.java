@@ -1,5 +1,5 @@
 /*
- * Copyright 2014 the original author or authors.
+ * Copyright 2014-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.jms;
 
 import static org.junit.Assert.assertNotNull;
@@ -29,7 +30,6 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.ImportResource;
 import org.springframework.integration.jms.JmsOutboundChannelAdapterTests.CFConfig;
 import org.springframework.jms.core.JmsTemplate;
-import org.springframework.messaging.PollableChannel;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
@@ -39,13 +39,10 @@ import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
  * @since 4.0
  *
  */
-@ContextConfiguration(classes=CFConfig.class)
+@ContextConfiguration(classes = CFConfig.class)
 @RunWith(SpringJUnit4ClassRunner.class)
 @DirtiesContext
 public class JmsOutboundChannelAdapterTests extends ActiveMQMultiContextTests {
-
-	@Autowired
-	private PollableChannel out;
 
 	@Autowired
 	private Aborter aborter;
@@ -56,14 +53,14 @@ public class JmsOutboundChannelAdapterTests extends ActiveMQMultiContextTests {
 	@Test
 	public void testTransactionalSend() {
 		JmsTemplate template = new JmsTemplate(connectionFactory);
-		template.convertAndSend("foo", "Hello, world!");
+		template.convertAndSend("outcatQ1", "Hello, world!");
 		template.setReceiveTimeout(20000);
-		assertNotNull(template.receive("bar"));
+		assertNotNull(template.receive("outcatQ2"));
 
 		this.aborter.abort = true;
-		template.convertAndSend("foo", "Hello, world!");
+		template.convertAndSend("outcatQ1", "Hello, world!");
 		template.setReceiveTimeout(1000);
-		assertNull(template.receive("bar"));
+		assertNull(template.receive("outcatQ2"));
 		endpoint.stop();
 	}
 
@@ -72,7 +69,7 @@ public class JmsOutboundChannelAdapterTests extends ActiveMQMultiContextTests {
 	public static class CFConfig {
 
 		@Bean
-		public ConnectionFactory connectionFactory() {
+		public ConnectionFactory jmsConnectionFactory() {
 			return connectionFactory;
 		}
 	}

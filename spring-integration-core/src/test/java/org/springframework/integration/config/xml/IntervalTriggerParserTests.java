@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2010 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,12 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.config.xml;
 
 import static org.junit.Assert.assertEquals;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
+
 import org.springframework.beans.DirectFieldAccessor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;
@@ -49,7 +51,7 @@ public class IntervalTriggerParserTests {
 		Boolean fixedRate = (Boolean) accessor.getPropertyValue("fixedRate");
         Long period = (Long) accessor.getPropertyValue("period");
         assertEquals(fixedRate, true);
-		assertEquals(36l, period.longValue());
+		assertEquals(36L, period.longValue());
     }
 
     @Test
@@ -63,6 +65,6 @@ public class IntervalTriggerParserTests {
 		Boolean fixedRate = (Boolean) accessor.getPropertyValue("fixedRate");
         Long period = (Long) accessor.getPropertyValue("period");
         assertEquals(fixedRate, false);
-		assertEquals(37l, period.longValue());
+		assertEquals(37L, period.longValue());
     }
 }

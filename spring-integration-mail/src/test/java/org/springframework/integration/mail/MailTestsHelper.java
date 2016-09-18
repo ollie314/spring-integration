@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,15 +16,9 @@
 
 package org.springframework.integration.mail;
 
-import static org.mockito.Mockito.mock;
-
-import javax.mail.Folder;
-
-import org.springframework.messaging.Message;
-import org.springframework.integration.mail.MailReceiver.MailReceiverContext;
 import org.springframework.integration.support.MessageBuilder;
-import org.springframework.integration.test.util.TestUtils;
 import org.springframework.mail.SimpleMailMessage;
+import org.springframework.messaging.Message;
 
 /**
  * @author Marius Bogoevici
@@ -50,6 +44,10 @@ public class MailTestsHelper {
 	public static final String REPLY_TO = "replyTo@springframework.org";
 
 
+	private MailTestsHelper() {
+		super();
+	}
+
 	public static SimpleMailMessage createSimpleMailMessage() {
 		SimpleMailMessage message = new SimpleMailMessage();
 		message.setBcc(BCC);
@@ -71,15 +69,6 @@ public class MailTestsHelper {
 				.setHeader(MailHeaders.FROM, MailTestsHelper.FROM)
 				.setHeader(MailHeaders.REPLY_TO, MailTestsHelper.REPLY_TO)
 				.build();
-	}
-
-	public static MailReceiverContext setupContextHolder(AbstractMailReceiver receiver) {
-		@SuppressWarnings("unchecked")
-		ThreadLocal<MailReceiverContext> contextHolder = TestUtils.getPropertyValue(receiver, "contextHolder",ThreadLocal.class);
-		Folder folder = mock(Folder.class);
-		MailReceiverContext context = new MailReceiverContext(folder);
-		contextHolder.set(context);
-		return context;
 	}
 
 }

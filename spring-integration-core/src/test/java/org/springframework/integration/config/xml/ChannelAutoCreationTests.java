@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.config.xml;
 
 import org.junit.Test;
@@ -22,27 +23,29 @@ import org.springframework.context.support.ClassPathXmlApplicationContext;
 /**
  *
  * @author Oleg Zhurakousky
+ * @author Gary Russell
  *
  */
 public class ChannelAutoCreationTests {
 
 	@Test // no assertions since it validates that no exception is thrown
-	public void testEnablingAutoChannelCreationBeforeWithCustom(){
-		new ClassPathXmlApplicationContext("TestEnableChannelAutoCreation-before-context.xml", this.getClass());
+	public void testEnablingAutoChannelCreationBeforeWithCustom() {
+		new ClassPathXmlApplicationContext("TestEnableChannelAutoCreation-before-context.xml", this.getClass()).close();
 	}
 
 	@Test // no assertions since it validates that no exception is thrown
-	public void testEnablingAutoChannelCreationAfterWithCustom(){
-		new ClassPathXmlApplicationContext("TestEnableChannelAutoCreation-after-context.xml", this.getClass());
+	public void testEnablingAutoChannelCreationAfterWithCustom() {
+		new ClassPathXmlApplicationContext("TestEnableChannelAutoCreation-after-context.xml", this.getClass()).close();
 	}
 
-	@Test(expected=BeanCreationException.class)
-	public void testDisablingAutoChannelCreationAfter(){
-		new ClassPathXmlApplicationContext("TestDisableChannelAutoCreation-after-context.xml", this.getClass());
+	@Test(expected = BeanCreationException.class)
+	public void testDisablingAutoChannelCreationAfter() {
+		new ClassPathXmlApplicationContext("TestDisableChannelAutoCreation-after-context.xml", this.getClass()).close();
 	}
 
-	@Test(expected=BeanCreationException.class)
-	public void testDisablingAutoChannelCreationBefore(){
-		new ClassPathXmlApplicationContext("TestDisableChannelAutoCreation-before-context.xml", this.getClass());
+	@Test(expected = BeanCreationException.class)
+	public void testDisablingAutoChannelCreationBefore() {
+		new ClassPathXmlApplicationContext("TestDisableChannelAutoCreation-before-context.xml", this.getClass())
+				.close();
 	}
 }

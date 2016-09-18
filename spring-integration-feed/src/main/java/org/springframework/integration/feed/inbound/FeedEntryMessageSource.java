@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,13 +36,8 @@ import org.springframework.util.Assert;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
-import com.sun.syndication.feed.synd.SyndEntry;
-import com.sun.syndication.feed.synd.SyndFeed;
-import com.sun.syndication.fetcher.FeedFetcher;
-import com.sun.syndication.fetcher.FetcherEvent;
-import com.sun.syndication.fetcher.FetcherListener;
-import com.sun.syndication.fetcher.impl.HashMapFeedInfoCache;
-import com.sun.syndication.fetcher.impl.HttpURLFeedFetcher;
+import com.rometools.rome.feed.synd.SyndEntry;
+import com.rometools.rome.feed.synd.SyndFeed;
 
 /**
  * This implementation of {@link MessageSource} will produce individual
@@ -52,13 +47,15 @@ import com.sun.syndication.fetcher.impl.HttpURLFeedFetcher;
  * @author Mario Gray
  * @author Oleg Zhurakousky
  * @author Artem Bilan
+ * @author Aaron Loes
  * @since 2.0
  */
+@SuppressWarnings("deprecation")
 public class FeedEntryMessageSource extends IntegrationObjectSupport implements MessageSource<SyndEntry> {
 
 	private final URL feedUrl;
 
-	private final FeedFetcher feedFetcher;
+	private final com.rometools.fetcher.FeedFetcher feedFetcher;
 
 	private final Queue<SyndEntry> entries = new ConcurrentLinkedQueue<SyndEntry>();
 
@@ -80,23 +77,23 @@ public class FeedEntryMessageSource extends IntegrationObjectSupport implements 
 	/**
 	 * Creates a FeedEntryMessageSource that will use a HttpURLFeedFetcher to read feeds from the given URL.
 	 * If the feed URL has a protocol other than http*, consider providing a custom implementation of the
-	 * {@link FeedFetcher} via the alternate constructor.
-	 *
+	 * {@link com.rometools.fetcher.FeedFetcher} via the alternate constructor.
 	 * @param feedUrl The URL.
 	 * @param metadataKey The metadata key.
 	 */
 	public FeedEntryMessageSource(URL feedUrl, String metadataKey) {
-		this(feedUrl, metadataKey, new HttpURLFeedFetcher(HashMapFeedInfoCache.getInstance()));
+		this(feedUrl, metadataKey,
+				new com.rometools.fetcher.impl.HttpURLFeedFetcher(
+						com.rometools.fetcher.impl.HashMapFeedInfoCache.getInstance()));
 	}
 
 	/**
 	 * Creates a FeedEntryMessageSource that will use the provided FeedFetcher to read from the given feed URL.
-	 *
 	 * @param feedUrl The URL.
 	 * @param metadataKey The metadata key.
 	 * @param feedFetcher The feed fetcher.
 	 */
-	public FeedEntryMessageSource(URL feedUrl, String metadataKey, FeedFetcher feedFetcher) {
+	public FeedEntryMessageSource(URL feedUrl, String metadataKey, com.rometools.fetcher.FeedFetcher feedFetcher) {
 		Assert.notNull(feedUrl, "feedUrl must not be null");
 		Assert.notNull(metadataKey, "metadataKey must not be null");
 		Assert.notNull(feedFetcher, "feedFetcher must not be null");
@@ -118,7 +115,8 @@ public class FeedEntryMessageSource extends IntegrationObjectSupport implements 
 
 	@Override
 	public Message<SyndEntry> receive() {
-		Assert.isTrue(this.initialized, "'FeedEntryReaderMessageSource' must be initialized before it can produce Messages.");
+		Assert.isTrue(this.initialized,
+				"'FeedEntryReaderMessageSource' must be initialized before it can produce Messages.");
 		SyndEntry entry = doReceive();
 		if (entry == null) {
 			return null;
@@ -166,17 +164,18 @@ public class FeedEntryMessageSource extends IntegrationObjectSupport implements 
 		if (next == null) {
 			return null;
 		}
-		if (next.getPublishedDate() != null) {
-			this.lastTime = next.getPublishedDate().getTime();
+
+		Date lastModifiedDate = FeedEntryMessageSource.getLastModifiedDate(next);
+		if (lastModifiedDate != null) {
+			this.lastTime = lastModifiedDate.getTime();
 		}
 		else {
-			this.lastTime += 1;
+			this.lastTime += 1; //NOSONAR - single poller thread
 		}
 		this.metadataStore.put(this.metadataKey, this.lastTime + "");
 		return next;
 	}
 
-	@SuppressWarnings("unchecked")
 	private void populateEntryList() {
 		SyndFeed syndFeed = this.getFeed();
 		if (syndFeed != null) {
@@ -241,20 +240,17 @@ public class FeedEntryMessageSource extends IntegrationObjectSupport implements 
 	}
 
 
-	private class FeedQueueUpdatingFetcherListener implements FetcherListener {
+	private class FeedQueueUpdatingFetcherListener implements com.rometools.fetcher.FetcherListener {
 
-		/**
-		 * @see com.sun.syndication.fetcher.FetcherListener#fetcherEvent(com.sun.syndication.fetcher.FetcherEvent)
-		 */
 		@Override
-		public void fetcherEvent(final FetcherEvent event) {
+		public void fetcherEvent(final com.rometools.fetcher.FetcherEvent event) {
 			String eventType = event.getEventType();
-			if (FetcherEvent.EVENT_TYPE_FEED_POLLED.equals(eventType)) {
+			if (com.rometools.fetcher.FetcherEvent.EVENT_TYPE_FEED_POLLED.equals(eventType)) {
 				if (logger.isDebugEnabled()) {
 					logger.debug("\tEVENT: Feed Polled. URL = " + event.getUrlString());
 				}
 			}
-			else if (FetcherEvent.EVENT_TYPE_FEED_UNCHANGED.equals(eventType)) {
+			else if (com.rometools.fetcher.FetcherEvent.EVENT_TYPE_FEED_UNCHANGED.equals(eventType)) {
 				if (logger.isDebugEnabled()) {
 					logger.debug("\tEVENT: Feed Unchanged. URL = " + event.getUrlString());
 				}

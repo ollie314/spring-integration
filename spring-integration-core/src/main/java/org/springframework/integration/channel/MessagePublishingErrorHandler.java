@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2009 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,6 +38,7 @@ import org.springframework.util.ErrorHandler;
  * @author Mark Fisher
  * @author Iwein Fuld
  * @author Oleg Zhurakousky
+ * @author Gary Russell
  */
 public class MessagePublishingErrorHandler implements ErrorHandler, BeanFactoryAware {
 
@@ -63,10 +64,20 @@ public class MessagePublishingErrorHandler implements ErrorHandler, BeanFactoryA
 		this.defaultErrorChannel = defaultErrorChannel;
 	}
 
+	/**
+	 * Return the default error channel for this error handler.
+	 * @return the error channel.
+	 * @since 4.3
+	 */
+	public MessageChannel getDefaultErrorChannel() {
+		return this.defaultErrorChannel;
+	}
+
 	public void setSendTimeout(long sendTimeout) {
 		this.sendTimeout = sendTimeout;
 	}
 
+	@Override
 	public void setBeanFactory(BeanFactory beanFactory) {
 		Assert.notNull(beanFactory, "beanFactory must not be null");
 		if (this.channelResolver == null) {
@@ -74,6 +85,7 @@ public class MessagePublishingErrorHandler implements ErrorHandler, BeanFactoryA
 		}
 	}
 
+	@Override
 	public final void handleError(Throwable t) {
 		MessageChannel errorChannel = this.resolveErrorChannel(t);
 		boolean sent = false;
@@ -86,20 +98,24 @@ public class MessagePublishingErrorHandler implements ErrorHandler, BeanFactoryA
 					sent = errorChannel.send(new ErrorMessage(t));
 				}
 			}
-			catch (Throwable errorDeliveryError) { // message will be logged only
-				if (logger.isWarnEnabled()) {
-					logger.warn("Error message was not delivered.", errorDeliveryError);
+			catch (Throwable errorDeliveryError) { //NOSONAR
+				// message will be logged only
+				if (this.logger.isWarnEnabled()) {
+					this.logger.warn("Error message was not delivered.", errorDeliveryError);
+				}
+				if (errorDeliveryError instanceof Error) {
+					throw ((Error) errorDeliveryError);
 				}
 			}
 		}
-		if (!sent && logger.isErrorEnabled()) {
+		if (!sent && this.logger.isErrorEnabled()) {
 			Message<?> failedMessage = (t instanceof MessagingException) ?
 					((MessagingException) t).getFailedMessage() : null;
 			if (failedMessage != null) {
-				logger.error("failure occurred in messaging task with message: " + failedMessage, t);
+				this.logger.error("failure occurred in messaging task with message: " + failedMessage, t);
 			}
 			else {
-				logger.error("failure occurred in messaging task", t);
+				this.logger.error("failure occurred in messaging task", t);
 			}
 		}
 	}

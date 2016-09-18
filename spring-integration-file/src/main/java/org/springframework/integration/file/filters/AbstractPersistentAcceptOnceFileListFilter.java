@@ -1,5 +1,5 @@
 /*
- * Copyright 2013 the original author or authors.
+ * Copyright 2013-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,9 +13,15 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.file.filters;
 
-import org.springframework.integration.metadata.MetadataStore;
+import java.io.Closeable;
+import java.io.Flushable;
+import java.io.IOException;
+import java.util.List;
+
+import org.springframework.integration.metadata.ConcurrentMetadataStore;
 import org.springframework.util.Assert;
 
 /**
@@ -28,32 +34,90 @@ import org.springframework.util.Assert;
  * @since 3.0
  *
  */
-public abstract class AbstractPersistentAcceptOnceFileListFilter<F> extends AbstractFileListFilter<F> {
+public abstract class AbstractPersistentAcceptOnceFileListFilter<F> extends AbstractFileListFilter<F>
+		implements ReversibleFileListFilter<F>, ResettableFileListFilter<F>,  Closeable {
 
-	protected final MetadataStore store;
+	protected final ConcurrentMetadataStore store;
+
+	protected final Flushable flushableStore;
 
 	protected final String prefix;
 
+	protected volatile boolean flushOnUpdate;
+
 	private final Object monitor = new Object();
 
-	public AbstractPersistentAcceptOnceFileListFilter(MetadataStore store, String prefix) {
+	public AbstractPersistentAcceptOnceFileListFilter(ConcurrentMetadataStore store, String prefix) {
 		Assert.notNull(store, "'store' cannot be null");
 		Assert.notNull(prefix, "'prefix' cannot be null");
 		this.store = store;
 		this.prefix = prefix;
+		if (store instanceof Flushable) {
+			this.flushableStore = (Flushable) store;
+		}
+		else {
+			this.flushableStore = null;
+		}
+	}
+
+	/**
+	 * Determine whether the metadataStore should be flushed on each update (if {@link Flushable}).
+	 * @param flushOnUpdate true to flush.
+	 * @since 4.1.5
+	 */
+	public void setFlushOnUpdate(boolean flushOnUpdate) {
+		this.flushOnUpdate = flushOnUpdate;
 	}
 
 	@Override
 	protected boolean accept(F file) {
 		String key = buildKey(file);
-		synchronized(monitor) {
-			String value = store.get(key);
-			if (value != null && isEqual(file, value)) {
-				return false;
+		synchronized (this.monitor) {
+			String newValue = value(file);
+			String oldValue = this.store.putIfAbsent(key, newValue);
+			if (oldValue == null) { // not in store
+				flushIfNeeded();
+				return true;
 			}
-			store.put(key, value(file));
+			// same value in store
+			if (!isEqual(file, oldValue) && this.store.replace(key, oldValue, newValue)) {
+				flushIfNeeded();
+				return true;
+			}
+			return false;
 		}
-		return true;
+	}
+
+	/**
+	 * {@inheritDoc}
+	 * @since 4.0.4
+	 */
+	@Override
+	public void rollback(F file, List<F> files) {
+		// If file must be removed all subsequent files should be removed as well
+		boolean rollingBack = false;
+		for (F fileToRollback : files) {
+			if (fileToRollback.equals(file)) {
+				rollingBack = true;
+			}
+			if (rollingBack) {
+				remove(fileToRollback);
+			}
+		}
+	}
+
+	@Override
+	public boolean remove(F fileToRemove) {
+		String removed = this.store.remove(buildKey(fileToRemove));
+		flushIfNeeded();
+		return removed != null;
+	}
+
+	@Override
+	public void close() throws IOException {
+		if (this.store instanceof Closeable) {
+			((Closeable) this.store).close();
+		}
 	}
 
 	/**
@@ -73,7 +137,7 @@ public abstract class AbstractPersistentAcceptOnceFileListFilter<F> extends Abst
 	 * @return true if equal.
 	 */
 	protected boolean isEqual(F file, String value) {
-		return Long.valueOf(value).longValue() == this.modified(file);
+		return Long.valueOf(value) == this.modified(file);
 	}
 
 	/**
@@ -83,6 +147,22 @@ public abstract class AbstractPersistentAcceptOnceFileListFilter<F> extends Abst
 	 */
 	protected String buildKey(F file) {
 		return this.prefix + this.fileName(file);
+	}
+
+	/**
+	 * Flush the store if it's a {@link Flushable} and
+	 * {@link #setFlushOnUpdate(boolean) flushOnUpdate} is true.
+	 * @since 1.4.5
+	 */
+	protected void flushIfNeeded() {
+		if (this.flushOnUpdate && this.flushableStore != null) {
+			try {
+				this.flushableStore.flush();
+			}
+			catch (IOException e) {
+				// store's responsibility to log
+			}
+		}
 	}
 
 	protected abstract long modified(F file);

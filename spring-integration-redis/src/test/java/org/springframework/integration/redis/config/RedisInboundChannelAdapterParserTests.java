@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,6 +40,7 @@ import org.springframework.integration.support.converter.SimpleMessageConverter;
 import org.springframework.integration.test.util.TestUtils;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 
@@ -51,6 +52,7 @@ import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
  */
 @ContextConfiguration
 @RunWith(SpringJUnit4ClassRunner.class)
+@DirtiesContext
 public class RedisInboundChannelAdapterParserTests extends RedisAvailableTests {
 
 	@Autowired
@@ -83,7 +85,8 @@ public class RedisInboundChannelAdapterParserTests extends RedisAvailableTests {
 	@RedisAvailable
 	public void testInboundChannelAdapterMessaging() throws Exception {
 		RedisInboundChannelAdapter adapter = context.getBean("adapter", RedisInboundChannelAdapter.class);
-		this.awaitContainerSubscribedWithPatterns(TestUtils.getPropertyValue(adapter, "container", RedisMessageListenerContainer.class));
+		this.awaitContainerSubscribedWithPatterns(TestUtils.getPropertyValue(adapter, "container",
+				RedisMessageListenerContainer.class));
 
 		RedisConnectionFactory connectionFactory = this.getConnectionFactoryForTest();
 
@@ -94,7 +97,7 @@ public class RedisInboundChannelAdapterParserTests extends RedisAvailableTests {
 		for (int i = 0; i < 3; i++) {
 			Message<?> receive = receiveChannel.receive(2000);
 			assertNotNull(receive);
-			assertThat(receive.getPayload(), Matchers.<Object> isOneOf("Hello Redis from foo", "Hello Redis from bar"));
+			assertThat(receive.getPayload(), Matchers.<Object>isOneOf("Hello Redis from foo", "Hello Redis from bar"));
 		}
 
 	}

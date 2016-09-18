@@ -1,22 +1,25 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
- * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
- * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
- * specific language governing permissions and limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
+
 package org.springframework.integration.endpoint;
 
 import org.springframework.expression.EvaluationContext;
 import org.springframework.expression.Expression;
-import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.integration.expression.ExpressionUtils;
-import org.springframework.integration.expression.IntegrationEvaluationContextAware;
+import org.springframework.util.Assert;
 
 /**
  * A {@link MessageProducerSupport} sub-class that provides {@linkplain #payloadExpression}
@@ -28,24 +31,29 @@ import org.springframework.integration.expression.IntegrationEvaluationContextAw
  * @since 2.1
  *
  */
-public abstract class ExpressionMessageProducerSupport extends MessageProducerSupport implements IntegrationEvaluationContextAware {
-
-	private final SpelExpressionParser parser = new SpelExpressionParser();
+public abstract class ExpressionMessageProducerSupport extends MessageProducerSupport {
 
 	private volatile Expression payloadExpression;
 
 	private volatile EvaluationContext evaluationContext;
 
-	public void setPayloadExpression(String payloadExpression) {
-		if (payloadExpression == null) {
-			this.payloadExpression = null;
-		}
-		else {
-			this.payloadExpression = this.parser.parseExpression(payloadExpression);
-		}
+	/**
+	 * @param payloadExpression the expression to use.
+	 * @since 4.3
+	 */
+	public void setPayloadExpression(Expression payloadExpression) {
+		this.payloadExpression = payloadExpression;
 	}
 
-	@Override
+	/**
+	 * @param payloadExpression the String in SpEL syntax.
+	 * @since 4.3
+	 */
+	public void setPayloadExpressionString(String payloadExpression) {
+		Assert.hasText(payloadExpression, "'payloadExpression' must not be empty");
+		this.payloadExpression = EXPRESSION_PARSER.parseExpression(payloadExpression);
+	}
+
 	public void setIntegrationEvaluationContext(EvaluationContext evaluationContext) {
 		this.evaluationContext = evaluationContext;
 	}
@@ -58,10 +66,10 @@ public abstract class ExpressionMessageProducerSupport extends MessageProducerSu
 		}
 	}
 
-	protected Object evaluatePayloadExpression(Object payload){
+	protected Object evaluatePayloadExpression(Object payload) {
 		Object evaluationResult = payload;
-		if (payloadExpression != null) {
-			evaluationResult = payloadExpression.getValue(this.evaluationContext, payload);
+		if (this.payloadExpression != null) {
+			evaluationResult = this.payloadExpression.getValue(this.evaluationContext, payload);
 		}
 		return evaluationResult;
 	}

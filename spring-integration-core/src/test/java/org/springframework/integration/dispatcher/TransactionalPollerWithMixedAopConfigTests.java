@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,18 +13,20 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.dispatcher;
 
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
+
 import org.springframework.aop.framework.Advised;
-import org.springframework.context.ApplicationContext;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
 
 /**
  * @author Oleg Zhurakousky
  * @author Gunnar Hillert
+ * @author Gary Russell
  *
  * This test was influenced by INT-1483 where by registering TX Advisor
  * in the BeanFactory while having <aop:config> resent resulted in
@@ -33,20 +35,21 @@ import org.springframework.context.support.ClassPathXmlApplicationContext;
 public class TransactionalPollerWithMixedAopConfigTests {
 
 	@Test
-	public void validateTransactionalProxyIsolationToThePollerOnly(){
-		ApplicationContext context =
+	public void validateTransactionalProxyIsolationToThePollerOnly() {
+		ClassPathXmlApplicationContext context =
 			new ClassPathXmlApplicationContext("TransactionalPollerWithMixedAopConfig-context.xml", this.getClass());
 
 		assertTrue(!(context.getBean("foo") instanceof Advised));
 		assertTrue(!(context.getBean("inputChannel") instanceof Advised));
+		context.close();
 	}
 
-	public static class SampleService{
-		public void foo(String payload){}
+	public static class SampleService {
+		public void foo(String payload) { }
 	}
 
-	public static class Foo{
-		public Foo(String value){}
+	public static class Foo {
+		public Foo(String value) { }
 	}
 
 //	public static class SampleAdvice implements MethodInterceptor{

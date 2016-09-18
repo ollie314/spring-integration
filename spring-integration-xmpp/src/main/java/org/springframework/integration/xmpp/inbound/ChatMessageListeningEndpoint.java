@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,18 +16,22 @@
 
 package org.springframework.integration.xmpp.inbound;
 
+import java.util.List;
 import java.util.Map;
 
-import org.jivesoftware.smack.PacketListener;
+import org.jivesoftware.smack.StanzaListener;
 import org.jivesoftware.smack.XMPPConnection;
-import org.jivesoftware.smack.packet.Packet;
+import org.jivesoftware.smack.filter.StanzaFilter;
+import org.jivesoftware.smack.packet.ExtensionElement;
+import org.jivesoftware.smack.packet.Stanza;
 
-import org.springframework.integration.support.AbstractIntegrationMessageBuilder;
+import org.springframework.expression.EvaluationContext;
+import org.springframework.expression.Expression;
+import org.springframework.integration.expression.ExpressionUtils;
 import org.springframework.integration.xmpp.core.AbstractXmppConnectionAwareEndpoint;
 import org.springframework.integration.xmpp.support.DefaultXmppHeaderMapper;
 import org.springframework.integration.xmpp.support.XmppHeaderMapper;
 import org.springframework.util.Assert;
-import org.springframework.util.StringUtils;
 
 /**
  * This component logs in as a user and forwards any messages <em>to</em> that
@@ -36,15 +40,20 @@ import org.springframework.util.StringUtils;
  * @author Josh Long
  * @author Mark Fisher
  * @author Oleg Zhurakousky
+ * @author Artem Bilan
  * @since 2.0
  */
 public class ChatMessageListeningEndpoint extends AbstractXmppConnectionAwareEndpoint {
 
-	private volatile boolean extractPayload = true;
+	private final StanzaListener stanzaListener = new ChatMessagePublishingStanzaListener();
 
-	private final PacketListener packetListener = new ChatMessagePublishingPacketListener();
+	private XmppHeaderMapper headerMapper = new DefaultXmppHeaderMapper();
 
-	private volatile XmppHeaderMapper headerMapper = new DefaultXmppHeaderMapper();
+	private Expression payloadExpression;
+
+	private StanzaFilter stanzaFilter;
+
+	private EvaluationContext evaluationContext;
 
 	public ChatMessageListeningEndpoint() {
 		super();
@@ -58,16 +67,26 @@ public class ChatMessageListeningEndpoint extends AbstractXmppConnectionAwareEnd
 		this.headerMapper = headerMapper;
 	}
 
+	/**
+	 * Specify a {@link StanzaFilter} to use for the incoming packets.
+	 * @param stanzaFilter the {@link StanzaFilter} to use
+	 * @since 4.3
+	 * @see XMPPConnection#addAsyncStanzaListener(StanzaListener, StanzaFilter)
+	 */
+	public void setStanzaFilter(StanzaFilter stanzaFilter) {
+		this.stanzaFilter = stanzaFilter;
+	}
 
 	/**
-	 * Specify whether the text message body should be extracted when mapping to a
-	 * Spring Integration Message payload. Otherwise, the full XMPP Message will be
-	 * passed within the payload. This value is <em>true</em> by default.
-	 *
-	 * @param extractPayload true if the payload should be extracted.
+	 * Specify a SpEL expression to evaluate a {@code payload} against an incoming
+	 * {@link org.jivesoftware.smack.packet.Message}.
+	 * @param payloadExpression the {@link Expression} for payload evaluation.
+	 * @since 4.3
+	 * @see StanzaListener
+	 * @see org.jivesoftware.smack.packet.Message
 	 */
-	public void setExtractPayload(boolean extractPayload) {
-		this.extractPayload = extractPayload;
+	public void setPayloadExpression(Expression payloadExpression) {
+		this.payloadExpression = payloadExpression;
 	}
 
 	@Override
@@ -75,48 +94,68 @@ public class ChatMessageListeningEndpoint extends AbstractXmppConnectionAwareEnd
 		return "xmpp:inbound-channel-adapter";
 	}
 
+	@Override protected void onInit() {
+		super.onInit();
+		this.evaluationContext = ExpressionUtils.createStandardEvaluationContext(getBeanFactory());
+	}
+
 	@Override
 	protected void doStart() {
-		Assert.isTrue(this.initialized, this.getComponentName() + " [" + this.getComponentType() + "] must be initialized");
-		this.xmppConnection.addPacketListener(this.packetListener, null);
+		Assert.isTrue(this.initialized, this.getComponentName() + " [" + this.getComponentType()
+				+ "] must be initialized");
+		this.xmppConnection.addAsyncStanzaListener(this.stanzaListener, this.stanzaFilter);
 	}
 
 	@Override
 	protected void doStop() {
 		if (this.xmppConnection != null) {
-			this.xmppConnection.removePacketListener(this.packetListener);
+			this.xmppConnection.removeAsyncStanzaListener(this.stanzaListener);
 		}
 	}
 
 
-	private class ChatMessagePublishingPacketListener implements PacketListener {
+	private class ChatMessagePublishingStanzaListener implements StanzaListener {
 
 		@Override
-		public void processPacket(final Packet packet) {
+		public void processPacket(final Stanza packet) {
 			if (packet instanceof org.jivesoftware.smack.packet.Message) {
 				org.jivesoftware.smack.packet.Message xmppMessage = (org.jivesoftware.smack.packet.Message) packet;
-				Map<String, ?> mappedHeaders = headerMapper.toHeadersFromRequest(xmppMessage);
+				Map<String, ?> mappedHeaders = ChatMessageListeningEndpoint.this.headerMapper.toHeadersFromRequest(xmppMessage);
 
-				String messageBody = xmppMessage.getBody();
-				/*
-				 * Since there are several types of chat messages with different ChatState (e.g., composing, paused etc)
-				 * we need to perform further validation since for now we only support messages that have
-				 * content (e.g., Use A says 'Hello' to User B). We don't yet support messages with no
-				 * content (e.g., User A is typing a message for User B etc.).
-				 * See https://jira.springsource.org/browse/INT-1728
-				 * Also see: packet.getExtensions()
-				 */
-				if (StringUtils.hasText(messageBody)){
-					Object payload = (extractPayload ? messageBody : xmppMessage);
+				Object messageBody = xmppMessage.getBody();
 
-					AbstractIntegrationMessageBuilder<?> messageBuilder =
-							ChatMessageListeningEndpoint.this.getMessageBuilderFactory()
-								.withPayload(payload)
-								.copyHeaders(mappedHeaders);
-					sendMessage(messageBuilder.build());
+				if (ChatMessageListeningEndpoint.this.payloadExpression != null) {
+					EvaluationContext evaluationContext = ChatMessageListeningEndpoint.this.evaluationContext;
+
+					List<ExtensionElement> extensions = xmppMessage.getExtensions();
+					if (extensions.size() == 1) {
+						ExtensionElement extension = extensions.get(0);
+						evaluationContext = ExpressionUtils.createStandardEvaluationContext(getBeanFactory());
+						evaluationContext.setVariable("extension", extension);
+					}
+
+					messageBody = ChatMessageListeningEndpoint.this.payloadExpression
+							.getValue(evaluationContext, xmppMessage);
+				}
+
+				if (messageBody != null) {
+					sendMessage(getMessageBuilderFactory()
+							.withPayload(messageBody)
+							.copyHeaders(mappedHeaders).build());
+				}
+				else if (logger.isInfoEnabled()) {
+					if (ChatMessageListeningEndpoint.this.payloadExpression != null) {
+						logger.info("The 'payloadExpression' ["
+								+ ChatMessageListeningEndpoint.this.payloadExpression.getExpressionString()
+						+ "] has been evaluated to 'null'. The XMPP Message [" + xmppMessage + "] is ignored.");
+					}
+					else {
+						logger.info("The XMPP Message [" + xmppMessage + "] with empty body is ignored.");
+					}
 				}
 			}
 		}
+
 	}
 
 }

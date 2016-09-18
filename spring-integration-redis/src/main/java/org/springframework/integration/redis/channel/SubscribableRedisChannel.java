@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package org.springframework.integration.redis.channel;
 
 import java.util.concurrent.Executor;
 
+import org.springframework.beans.factory.BeanFactoryAware;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.core.task.SimpleAsyncTaskExecutor;
@@ -33,7 +34,6 @@ import org.springframework.integration.MessageDispatchingException;
 import org.springframework.integration.channel.AbstractMessageChannel;
 import org.springframework.integration.channel.MessagePublishingErrorHandler;
 import org.springframework.integration.context.IntegrationProperties;
-import org.springframework.integration.dispatcher.AbstractDispatcher;
 import org.springframework.integration.dispatcher.BroadcastingDispatcher;
 import org.springframework.integration.support.channel.BeanFactoryChannelResolver;
 import org.springframework.integration.support.converter.SimpleMessageConverter;
@@ -50,17 +50,22 @@ import org.springframework.util.StringUtils;
 /**
  * @author Oleg Zhurakousky
  * @author Gary Russell
+ * @author Artem Bilan
  * @since 2.0
  */
 @SuppressWarnings("rawtypes")
-public class SubscribableRedisChannel extends AbstractMessageChannel implements SubscribableChannel, SmartLifecycle, DisposableBean {
+public class SubscribableRedisChannel extends AbstractMessageChannel
+		implements SubscribableChannel, SmartLifecycle, DisposableBean {
 
 	private final RedisMessageListenerContainer container = new RedisMessageListenerContainer();
+
 	private final RedisConnectionFactory connectionFactory;
+
 	private final RedisTemplate redisTemplate;
+
 	private final String topicName;
 
-	private final AbstractDispatcher dispatcher = new BroadcastingDispatcher(true);
+	private final BroadcastingDispatcher dispatcher = new BroadcastingDispatcher(true);
 
 	private volatile Integer maxSubscribers;
 
@@ -68,7 +73,9 @@ public class SubscribableRedisChannel extends AbstractMessageChannel implements 
 
 	// defaults
 	private volatile Executor taskExecutor = new SimpleAsyncTaskExecutor();
+
 	private volatile RedisSerializer<?> serializer = new StringRedisSerializer();
+
 	private volatile MessageConverter messageConverter = new SimpleMessageConverter();
 
 	public SubscribableRedisChannel(RedisConnectionFactory connectionFactory, String topicName) {
@@ -84,6 +91,7 @@ public class SubscribableRedisChannel extends AbstractMessageChannel implements 
 		this.taskExecutor = taskExecutor;
 	}
 
+	@Override
 	public void setMessageConverter(MessageConverter messageConverter) {
 		Assert.notNull(messageConverter, "'messageConverter' must not be null");
 		this.messageConverter = messageConverter;
@@ -124,18 +132,22 @@ public class SubscribableRedisChannel extends AbstractMessageChannel implements 
 
 	@Override
 	public void onInit() throws Exception {
-		if (this.initialized){
+		if (this.initialized) {
 			return;
 		}
 		super.onInit();
 		if (this.maxSubscribers == null) {
-			Integer maxSubscribers = this.getIntegrationProperty(IntegrationProperties.CHANNELS_MAX_BROADCAST_SUBSCRIBERS, Integer.class);
+			Integer maxSubscribers =
+					getIntegrationProperty(IntegrationProperties.CHANNELS_MAX_BROADCAST_SUBSCRIBERS, Integer.class);
 			this.setMaxSubscribers(maxSubscribers);
 		}
-		if (this.messageConverter == null){
+		if (this.messageConverter == null) {
 			this.messageConverter = new SimpleMessageConverter();
 		}
-		this.container.setConnectionFactory(connectionFactory);
+		if (this.messageConverter instanceof BeanFactoryAware) {
+			((BeanFactoryAware) this.messageConverter).setBeanFactory(this.getBeanFactory());
+		}
+		this.container.setConnectionFactory(this.connectionFactory);
 		if (!(this.taskExecutor instanceof ErrorHandlingTaskExecutor)) {
 			ErrorHandler errorHandler = new MessagePublishingErrorHandler(
 					new BeanFactoryChannelResolver(this.getBeanFactory()));
@@ -143,10 +155,11 @@ public class SubscribableRedisChannel extends AbstractMessageChannel implements 
 		}
 		this.container.setTaskExecutor(this.taskExecutor);
 		MessageListenerAdapter adapter = new MessageListenerAdapter(new MessageListenerDelegate());
-		adapter.setSerializer(serializer);
+		adapter.setSerializer(this.serializer);
 		adapter.afterPropertiesSet();
-		this.container.addMessageListener(adapter, new ChannelTopic(topicName));
+		this.container.addMessageListener(adapter, new ChannelTopic(this.topicName));
 		this.container.afterPropertiesSet();
+		this.dispatcher.setBeanFactory(this.getBeanFactory());
 		this.initialized = true;
 	}
 
@@ -156,7 +169,7 @@ public class SubscribableRedisChannel extends AbstractMessageChannel implements 
 
 	@Override
 	public boolean isAutoStartup() {
-		return (this.container != null) ? this.container.isAutoStartup() : false;
+		return (this.container != null) && this.container.isAutoStartup();
 	}
 
 	@Override
@@ -166,7 +179,7 @@ public class SubscribableRedisChannel extends AbstractMessageChannel implements 
 
 	@Override
 	public boolean isRunning() {
-		return (this.container != null) ? this.container.isRunning() : false;
+		return (this.container != null) && this.container.isRunning();
 	}
 
 	@Override
@@ -200,19 +213,20 @@ public class SubscribableRedisChannel extends AbstractMessageChannel implements 
 	private class MessageListenerDelegate {
 
 		@SuppressWarnings({ "unused", "unchecked" })
-		public void handleMessage(String s) {
-			Message<?> siMessage = messageConverter.toMessage(s, null);
+		public void handleMessage(Object payload) {
+			Message<?> siMessage = SubscribableRedisChannel.this.messageConverter.toMessage(payload, null);
 			try {
-				dispatcher.dispatch(siMessage);
+				SubscribableRedisChannel.this.dispatcher.dispatch(siMessage);
 			}
 			catch (MessageDispatchingException e) {
 				String topicName = SubscribableRedisChannel.this.topicName;
 				topicName = StringUtils.hasText(topicName) ? topicName : "unknown";
 				throw new MessageDeliveryException(siMessage, e.getMessage()
 						+ " for redis-channel '"
-						+ topicName + "' (" + SubscribableRedisChannel.this.getFullChannelName()
-						+ ").", e);
+						+ topicName
+						+ "' (" + SubscribableRedisChannel.this.getFullChannelName() + ").", e);
 			}
 		}
 	}
+
 }

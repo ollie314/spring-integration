@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.config;
 
 import static org.junit.Assert.assertEquals;
@@ -51,7 +52,7 @@ public class IdGeneratorConfigurerTests {
 		MessageHeaders headers = new MessageHeaders(null);
 		assertEquals(1, headers.getId().getMostSignificantBits());
 		assertEquals(2, headers.getId().getLeastSignificantBits());
-		context.destroy();
+		context.close();
 		headers = new MessageHeaders(null);
 		assertNotEquals(1, headers.getId().getMostSignificantBits());
 		assertNotEquals(2, headers.getId().getLeastSignificantBits());
@@ -70,7 +71,7 @@ public class IdGeneratorConfigurerTests {
 		MessageHeaders headers = new MessageHeaders(null);
 		assertNull(TestUtils.getPropertyValue(headers, "idGenerator"));
 
-		context.destroy();
+		context.close();
 	}
 
 	@Test
@@ -82,7 +83,7 @@ public class IdGeneratorConfigurerTests {
 		MessageHeaders headers = new MessageHeaders(null);
 		assertNull(TestUtils.getPropertyValue(headers, "idGenerator"));
 
-		context.destroy();
+		context.close();
 	}
 
 	@Test
@@ -100,8 +101,8 @@ public class IdGeneratorConfigurerTests {
 		context2.registerBeanDefinition("foo", new RootBeanDefinition(MyIdGenerator.class));
 		context2.refresh();
 
-		context.destroy();
-		context2.destroy();
+		context.close();
+		context2.close();
 
 		headers = new MessageHeaders(null);
 		assertNotEquals(1, headers.getId().getMostSignificantBits());
@@ -125,13 +126,13 @@ public class IdGeneratorConfigurerTests {
 		context2.registerBeanDefinition("foo", new RootBeanDefinition(MyIdGenerator.class));
 		context2.refresh();
 
-		context.destroy();
+		context.close();
 		// we should still use the custom strategy
 		headers = new MessageHeaders(null);
 		assertEquals(1, headers.getId().getMostSignificantBits());
 		assertEquals(2, headers.getId().getLeastSignificantBits());
 
-		context2.destroy();
+		context2.close();
 		// back to default
 		headers = new MessageHeaders(null);
 		assertNotEquals(1, headers.getId().getMostSignificantBits());
@@ -162,8 +163,8 @@ public class IdGeneratorConfigurerTests {
 					e.getMessage());
 		}
 
-		context.destroy();
-		context2.destroy();
+		context.close();
+		context2.close();
 	}
 
 	@Test
@@ -175,7 +176,7 @@ public class IdGeneratorConfigurerTests {
 		MessageHeaders headers = new MessageHeaders(null);
 		assertSame(context.getBean(IdGenerator.class), TestUtils.getPropertyValue(headers, "idGenerator"));
 
-		context.destroy();
+		context.close();
 	}
 
 	@Test
@@ -200,7 +201,7 @@ public class IdGeneratorConfigurerTests {
 		assertEquals(1, headers.getId().getMostSignificantBits());
 		assertEquals(1, headers.getId().getLeastSignificantBits());
 
-		context.destroy();
+		context.close();
 	}
 
 	public static class MyIdGenerator implements IdGenerator {

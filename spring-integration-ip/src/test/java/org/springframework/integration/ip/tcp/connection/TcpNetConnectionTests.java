@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.ip.tcp.connection;
 
 import static org.junit.Assert.assertEquals;
@@ -32,8 +33,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.apache.commons.logging.Log;
 import org.junit.Test;
 import org.mockito.Mockito;
-import org.mockito.invocation.InvocationOnMock;
-import org.mockito.stubbing.Answer;
 
 import org.springframework.beans.DirectFieldAccessor;
 import org.springframework.context.ApplicationEvent;
@@ -55,8 +54,16 @@ import org.springframework.messaging.support.ErrorMessage;
 public class TcpNetConnectionTests {
 
 	private final ApplicationEventPublisher nullPublisher = new ApplicationEventPublisher() {
+
+		@Override
 		public void publishEvent(ApplicationEvent event) {
 		}
+
+		@Override
+		public void publishEvent(Object event) {
+
+		}
+
 	};
 
 	@Test
@@ -69,11 +76,9 @@ public class TcpNetConnectionTests {
 		connection.setDeserializer(new ByteArrayStxEtxSerializer());
 		final AtomicReference<Object> log = new AtomicReference<Object>();
 		Log logger = mock(Log.class);
-		doAnswer(new Answer<Object>() {
-			public Object answer(InvocationOnMock invocation) throws Throwable {
-				log.set(invocation.getArguments()[0]);
-				return null;
-			}
+		doAnswer(invocation -> {
+			log.set(invocation.getArguments()[0]);
+			return null;
 		}).when(logger).error(Mockito.anyString());
 		DirectFieldAccessor accessor = new DirectFieldAccessor(connection);
 		accessor.setPropertyValue("logger", logger);
@@ -93,7 +98,8 @@ public class TcpNetConnectionTests {
 		Socket socket = mock(Socket.class);
 		when(socketChannel.socket()).thenReturn(socket);
 		TcpNioConnection connection = new TcpNioConnection(socketChannel, true, false, nullPublisher, null);
-		ChannelInputStream inputStream = TestUtils.getPropertyValue(connection, "channelInputStream", ChannelInputStream.class);
+		ChannelInputStream inputStream =
+				TestUtils.getPropertyValue(connection, "channelInputStream", ChannelInputStream.class);
 		inputStream.write(new byte[] {(byte) 0x80}, 1);
 		assertEquals(0x80, inputStream.read());
 	}
@@ -130,14 +136,11 @@ public class TcpNetConnectionTests {
 		out.close();
 
 		final AtomicReference<Message<?>> inboundMessage = new AtomicReference<Message<?>>();
-		TcpListener listener = new TcpListener() {
-
-			public boolean onMessage(Message<?> message) {
-				if (!(message instanceof ErrorMessage)) {
-					inboundMessage.set(message);
-				}
-				return false;
+		TcpListener listener = message1 -> {
+			if (!(message1 instanceof ErrorMessage)) {
+				inboundMessage.set(message1);
 			}
+			return false;
 		};
 		inboundConnection.registerListener(listener);
 		inboundConnection.run();
@@ -145,4 +148,5 @@ public class TcpNetConnectionTests {
 		assertEquals("foo", inboundMessage.get().getPayload());
 		assertEquals("baz", inboundMessage.get().getHeaders().get("bar"));
 	}
+
 }

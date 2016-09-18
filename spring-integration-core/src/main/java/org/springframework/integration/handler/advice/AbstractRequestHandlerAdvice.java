@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.handler.advice;
 
 import java.lang.reflect.Method;
@@ -55,9 +56,9 @@ public abstract class AbstractRequestHandlerAdvice extends IntegrationObjectSupp
 		if (!isMessageMethod) {
 			boolean isMessageHandler = invocationThis != null
 					&& MessageHandler.class.isAssignableFrom(invocationThis.getClass());
-			if (!isMessageHandler && logger.isWarnEnabled()) {
+			if (!isMessageHandler && this.logger.isWarnEnabled()) {
 				String clazzName = invocationThis == null ? method.getDeclaringClass().getName() : invocationThis.getClass().getName();
-				logger.warn("This advice " + this.getClass().getName() +
+				this.logger.warn("This advice " + this.getClass().getName() +
 						" can only be used for MessageHandlers; an attempt to advise method '" + method.getName() +
 						"' in '" + clazzName + "' is ignored");
 			}
@@ -73,10 +74,10 @@ public abstract class AbstractRequestHandlerAdvice extends IntegrationObjectSupp
 						try {
 							return invocation.proceed();
 						}
-						catch (Exception e) {
+						catch (Exception e) { //NOSONAR - catch necessary so we can wrap Errors
 							throw e;
 						}
-						catch (Throwable e) {
+						catch (Throwable e) { //NOSONAR - ok to catch; unwrapped and rethrown below
 							throw new ThrowableHolderException(e);
 						}
 					}
@@ -97,10 +98,10 @@ public abstract class AbstractRequestHandlerAdvice extends IntegrationObjectSupp
 												" so please raise an issue if you see this exception");
 							}
 						}
-						catch (Exception e) {
+						catch (Exception e) { //NOSONAR - catch necessary so we can wrap Errors
 							throw e;
 						}
-						catch (Throwable e) {
+						catch (Throwable e) { //NOSONAR - ok to catch; unwrapped and rethrown below
 							throw new ThrowableHolderException(e);
 						}
 					}
@@ -132,10 +133,9 @@ public abstract class AbstractRequestHandlerAdvice extends IntegrationObjectSupp
 	 */
 	protected Exception unwrapExceptionIfNecessary(Exception e) {
 		Exception actualException = e;
-		if (e instanceof ThrowableHolderException) {
-			if (e.getCause() instanceof Exception) {
-				actualException = (Exception) e.getCause();
-			}
+		if (e instanceof ThrowableHolderException
+				&& e.getCause() instanceof Exception) {
+			actualException = (Exception) e.getCause();
 		}
 		return actualException;
 	}
@@ -182,9 +182,9 @@ public abstract class AbstractRequestHandlerAdvice extends IntegrationObjectSupp
 	}
 
 	@SuppressWarnings("serial")
-	private class ThrowableHolderException extends RuntimeException {
+	private final class ThrowableHolderException extends RuntimeException {
 
-		public ThrowableHolderException(Throwable cause) {
+		private ThrowableHolderException(Throwable cause) {
 			super(cause);
 		}
 

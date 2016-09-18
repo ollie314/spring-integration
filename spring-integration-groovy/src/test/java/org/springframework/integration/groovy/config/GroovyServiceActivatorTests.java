@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,14 +22,13 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
-import groovy.lang.GroovyObject;
-import groovy.lang.MissingPropertyException;
 
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.hamcrest.Matchers;
 import org.junit.Test;
@@ -38,19 +37,22 @@ import org.junit.runner.RunWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.parsing.BeanDefinitionParsingException;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
-import org.springframework.messaging.MessageHandlingException;
 import org.springframework.integration.channel.QueueChannel;
 import org.springframework.integration.handler.ReplyRequiredException;
 import org.springframework.integration.scripting.ScriptVariableGenerator;
 import org.springframework.integration.support.MessageBuilder;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
+import org.springframework.messaging.MessageHandlingException;
 import org.springframework.messaging.PollableChannel;
 import org.springframework.messaging.support.ErrorMessage;
 import org.springframework.messaging.support.GenericMessage;
 import org.springframework.scripting.groovy.GroovyObjectCustomizer;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
+
+import groovy.lang.GroovyObject;
+import groovy.lang.MissingPropertyException;
 
 /**
  * @author Mark Fisher
@@ -81,9 +83,15 @@ public class GroovyServiceActivatorTests {
 	@Autowired
 	private MyGroovyCustomizer groovyCustomizer;
 
+	@Autowired
+	private AtomicBoolean invoked;
+
+	@Autowired
+	private MessageChannel outboundChannelAdapterWithGroovy;
+
 
 	@Test
-	public void referencedScriptAndCustomiser() throws Exception{
+	public void referencedScriptAndCustomiser() throws Exception {
 		groovyCustomizer.executed = false;
 		QueueChannel replyChannel = new QueueChannel();
 		replyChannel.setBeanName("returnAddress");
@@ -107,7 +115,7 @@ public class GroovyServiceActivatorTests {
 	}
 
 	@Test
-	public void withScriptVariableGenerator() throws Exception{
+	public void withScriptVariableGenerator() throws Exception {
 		groovyCustomizer.executed = false;
 		QueueChannel replyChannel = new QueueChannel();
 		replyChannel.setBeanName("returnAddress");
@@ -131,7 +139,7 @@ public class GroovyServiceActivatorTests {
 	}
 
 	@Test
-	public void inlineScript() throws Exception{
+	public void inlineScript() throws Exception {
 		groovyCustomizer.executed = false;
 		QueueChannel replyChannel = new QueueChannel();
 		replyChannel.setBeanName("returnAddress");
@@ -153,7 +161,7 @@ public class GroovyServiceActivatorTests {
 	}
 
 	@Test
-	public void testScriptWithoutVariables() throws Exception{
+	public void testScriptWithoutVariables() throws Exception {
 		PollableChannel replyChannel = new QueueChannel();
 		for (int i = 1; i <= 3; i++) {
 			Message<?> message = MessageBuilder.withPayload("test-" + i).setReplyChannel(replyChannel).build();
@@ -174,7 +182,8 @@ public class GroovyServiceActivatorTests {
 	//INT-2399
 	@Test(expected = MessageHandlingException.class)
 	public void invalidInlineScript() throws Exception {
-		Message<?> message = new ErrorMessage(new ReplyRequiredException(new GenericMessage<String>("test"), "reply required!"));
+		Message<?> message =
+				new ErrorMessage(new ReplyRequiredException(new GenericMessage<String>("test"), "reply required!"));
 		try {
 			this.invalidInlineScript.send(message);
 			fail("MessageHandlingException expected!");
@@ -182,19 +191,28 @@ public class GroovyServiceActivatorTests {
 		catch (Exception e) {
 			Throwable cause = e.getCause();
 			assertEquals(MissingPropertyException.class, cause.getClass());
-			assertThat(cause.getMessage(), Matchers.containsString("No such property: ReplyRequiredException for class: groovy.lang"));
-		    throw e;
+			assertThat(cause.getMessage(),
+					Matchers.containsString("No such property: ReplyRequiredException for class: script"));
+			throw e;
 		}
 
 	}
 
-	@Test(expected=BeanDefinitionParsingException.class)
-	public void variablesAndScriptVariableGenerator() throws Exception{
-		new ClassPathXmlApplicationContext("GroovyServiceActivatorTests-fail-withgenerator-context.xml", this.getClass());
+	@Test(expected = BeanDefinitionParsingException.class)
+	public void variablesAndScriptVariableGenerator() throws Exception {
+		new ClassPathXmlApplicationContext("GroovyServiceActivatorTests-fail-withgenerator-context.xml",
+				this.getClass()).close();
+	}
+
+	@Test
+	public void testGroovyScriptForOutboundChannelAdapter() {
+		this.outboundChannelAdapterWithGroovy.send(new GenericMessage<String>("foo"));
+		assertTrue(this.invoked.get());
 	}
 
 
-	public static class SampleScriptVariSource implements ScriptVariableGenerator{
+	public static class SampleScriptVariSource implements ScriptVariableGenerator {
+
 		public Map<String, Object> generateScriptVariables(Message<?> message) {
 			Map<String, Object> variables = new HashMap<String, Object>();
 			variables.put("foo", "foo");
@@ -204,6 +222,7 @@ public class GroovyServiceActivatorTests {
 			variables.put("headers", message.getHeaders());
 			return variables;
 		}
+
 	}
 
 
@@ -214,6 +233,7 @@ public class GroovyServiceActivatorTests {
 		public void customize(GroovyObject goo) {
 			this.executed = true;
 		}
+
 	}
 
 }

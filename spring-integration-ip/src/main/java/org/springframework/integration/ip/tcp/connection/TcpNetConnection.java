@@ -1,5 +1,5 @@
 /*
- * Copyright 2001-2014 the original author or authors.
+ * Copyright 2001-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,15 +16,22 @@
 
 package org.springframework.integration.ip.tcp.connection;
 
+import java.io.BufferedOutputStream;
+import java.io.OutputStream;
 import java.net.Socket;
 import java.net.SocketException;
 import java.net.SocketTimeoutException;
 
+import javax.net.ssl.SSLSession;
+import javax.net.ssl.SSLSocket;
+
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.core.serializer.Deserializer;
 import org.springframework.core.serializer.Serializer;
-import org.springframework.messaging.Message;
 import org.springframework.integration.ip.tcp.serializer.SoftEndOfStreamException;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.MessagingException;
+import org.springframework.scheduling.SchedulingAwareRunnable;
 
 /**
  * A TcpConnection that uses and underlying {@link Socket}.
@@ -33,9 +40,11 @@ import org.springframework.integration.ip.tcp.serializer.SoftEndOfStreamExceptio
  * @since 2.0
  *
  */
-public class TcpNetConnection extends TcpConnectionSupport {
+public class TcpNetConnection extends TcpConnectionSupport implements SchedulingAwareRunnable {
 
 	private final Socket socket;
+
+	private volatile OutputStream socketOutputStream;
 
 	private volatile long lastRead = System.currentTimeMillis();
 
@@ -59,6 +68,11 @@ public class TcpNetConnection extends TcpConnectionSupport {
 		this.socket = socket;
 	}
 
+	@Override
+	public boolean isLongLived() {
+		return true;
+	}
+
 	/**
 	 * Closes this connection.
 	 */
@@ -68,37 +82,50 @@ public class TcpNetConnection extends TcpConnectionSupport {
 		try {
 			this.socket.close();
 		}
-		catch (Exception e) {}
+		catch (Exception e) { }
 		super.close();
 	}
 
+	@Override
 	public boolean isOpen() {
 		return !this.socket.isClosed();
 	}
 
+	@Override
 	@SuppressWarnings("unchecked")
 	public synchronized void send(Message<?> message) throws Exception {
+		if (this.socketOutputStream == null) {
+			int writeBufferSize = this.socket.getSendBufferSize();
+			this.socketOutputStream = new BufferedOutputStream(this.socket.getOutputStream(),
+					writeBufferSize > 0 ? writeBufferSize : 8192);
+		}
 		Object object = this.getMapper().fromMessage(message);
 		this.lastSend = System.currentTimeMillis();
 		try {
-			((Serializer<Object>) this.getSerializer()).serialize(object, this.socket.getOutputStream());
+			((Serializer<Object>) this.getSerializer()).serialize(object, this.socketOutputStream);
+			this.socketOutputStream.flush();
 		}
 		catch (Exception e) {
-			this.publishConnectionExceptionEvent(e);
+			this.publishConnectionExceptionEvent(new MessagingException(message, "Failed TCP serialization", e));
 			this.closeConnection(true);
 			throw e;
 		}
-		this.afterSend(message);
+		if (logger.isDebugEnabled()) {
+			logger.debug(getConnectionId() + " Message sent " + message);
+		}
 	}
 
+	@Override
 	public Object getPayload() throws Exception {
 		return this.getDeserializer().deserialize(this.socket.getInputStream());
 	}
 
+	@Override
 	public int getPort() {
 		return this.socket.getPort();
 	}
 
+	@Override
 	public Object getDeserializerStateKey() {
 		try {
 			return this.socket.getInputStream();
@@ -108,28 +135,29 @@ public class TcpNetConnection extends TcpConnectionSupport {
 		}
 	}
 
-	/**
-	 * If there is no listener, and this connection is not for single use,
-	 * this method exits. When there is a listener, the method runs in a
-	 * loop reading input from the connections's stream, data is converted
-	 * to an object using the {@link Deserializer} and the listener's
-	 * {@link TcpListener#onMessage(Message)} method is called. For single use
-	 * connections with no listener, the socket is closed after its timeout
-	 * expires. If data is received on a single use socket with no listener,
-	 * a warning is logged.
-	 */
-	public void run() {
-		boolean singleUse = this.isSingleUse();
-		TcpListener listener = this.getListener();
-		if (listener == null && !singleUse) {
-			logger.debug("TcpListener exiting - no listener and not single use");
-			return;
+	@Override
+	public SSLSession getSslSession() {
+		if (this.socket instanceof SSLSocket) {
+			return ((SSLSocket) this.socket).getSession();
 		}
+		else {
+			return null;
+		}
+	}
+
+	/**
+	 * If there is no listener,
+	 * this method exits. When there is a listener, the method runs in a
+	 * loop reading input from the connection's stream, data is converted
+	 * to an object using the {@link Deserializer} and the listener's
+	 * {@link TcpListener#onMessage(Message)} method is called.
+	 */
+	@Override
+	public void run() {
 		boolean okToRun = true;
 		if (logger.isDebugEnabled()) {
 			logger.debug(this.getConnectionId() + " Reading...");
 		}
-		boolean intercepted = false;
 		while (okToRun) {
 			Message<?> message = null;
 			try {
@@ -147,33 +175,22 @@ public class TcpNetConnection extends TcpConnectionSupport {
 					logger.debug("Message received " + message);
 				}
 				try {
+					TcpListener listener = getListener();
 					if (listener == null) {
-						logger.warn("Unexpected message - no inbound adapter registered with connection " + message);
-						continue;
+						throw new NoListenerException("No listener");
 					}
-					intercepted = this.getListener().onMessage(message);
+					listener.onMessage(message);
 				}
-				catch (NoListenerException nle) {
-					if (singleUse) {
-						logger.debug("Closing single use socket after inbound message " + this.getConnectionId());
-						this.closeConnection(true);
-						okToRun = false;
-					} else {
-						logger.warn("Unexpected message - no inbound adapter registered with connection " + message);
+				catch (NoListenerException nle) { // could also be thrown by an interceptor
+					if (logger.isWarnEnabled()) {
+						logger.warn("Unexpected message - no endpoint registered with connection interceptor: "
+										+ getConnectionId()
+										+ " - "
+										+ message);
 					}
 				}
 				catch (Exception e2) {
 					logger.error("Exception sending message: " + message, e2);
-				}
-				/*
-				 * For single use sockets, we close after receipt if we are on the client
-				 * side, and the data was not intercepted,
-				 * or the server side has no outbound adapter registered
-				 */
-				if (singleUse && ((!this.isServer() && !intercepted) || (this.isServer() && this.getSender() == null))) {
-					logger.debug("Closing single use socket after inbound message " + this.getConnectionId());
-					this.closeConnection(false);
-					okToRun = false;
 				}
 			}
 		}
@@ -202,11 +219,11 @@ public class TcpNetConnection extends TcpConnectionSupport {
 		}
 		if (doClose) {
 			boolean noReadErrorOnClose = this.isNoReadErrorOnClose();
-			this.closeConnection(true);
+			closeConnection(true);
 			if (!(e instanceof SoftEndOfStreamException)) {
-				if (e instanceof SocketTimeoutException && this.isSingleUse()) {
+				if (e instanceof SocketTimeoutException) {
 					if (logger.isDebugEnabled()) {
-						logger.debug("Closed single use socket after timeout:" + this.getConnectionId());
+						logger.debug("Closed socket after timeout:" + this.getConnectionId());
 					}
 				}
 				else {
@@ -232,8 +249,8 @@ public class TcpNetConnection extends TcpConnectionSupport {
 									 e.getClass().getSimpleName() +
 								     ":" + (e.getCause() != null ? e.getCause() + ":" : "") + e.getMessage());
 					}
-					this.sendExceptionToListener(e);
 				}
+				this.sendExceptionToListener(e);
 			}
 		}
 		return doClose;

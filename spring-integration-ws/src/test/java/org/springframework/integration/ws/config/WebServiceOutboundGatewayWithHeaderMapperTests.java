@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package org.springframework.integration.ws.config;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -24,7 +25,6 @@ import static org.junit.Assert.assertTrue;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.net.URI;
-import java.util.List;
 
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
@@ -37,17 +37,20 @@ import org.junit.Test;
 import org.mockito.Mockito;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
-import org.springframework.context.ApplicationContext;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+
 import org.springframework.context.support.ClassPathXmlApplicationContext;
-import org.springframework.messaging.Message;
-import org.springframework.messaging.MessageChannel;
 import org.springframework.integration.channel.QueueChannel;
+import org.springframework.integration.mapping.AbstractHeaderMapper;
 import org.springframework.integration.support.MessageBuilder;
 import org.springframework.integration.test.util.TestUtils;
 import org.springframework.integration.ws.AbstractWebServiceOutboundGateway;
 import org.springframework.integration.ws.DefaultSoapHeaderMapper;
 import org.springframework.integration.ws.SimpleWebServiceOutboundGateway;
 import org.springframework.integration.ws.WebServiceHeaders;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.MessageChannel;
 import org.springframework.oxm.Unmarshaller;
 import org.springframework.oxm.XmlMappingException;
 import org.springframework.util.xml.DomUtils;
@@ -61,8 +64,6 @@ import org.springframework.ws.transport.WebServiceConnection;
 import org.springframework.ws.transport.WebServiceMessageSender;
 import org.springframework.xml.namespace.QNameUtils;
 import org.springframework.xml.transform.StringResult;
-import org.w3c.dom.Document;
-import org.w3c.dom.Element;
 
 /**
  * @author Oleg Zhurakousky
@@ -84,24 +85,37 @@ public class WebServiceOutboundGatewayWithHeaderMapperTests {
 
 	@SuppressWarnings("unchecked")
 	@Test
-	public void headerMapperParserTest() throws Exception{
-		ApplicationContext context = new ClassPathXmlApplicationContext("ws-outbound-gateway-with-headermappers.xml", this.getClass());
-		SimpleWebServiceOutboundGateway gateway = TestUtils.getPropertyValue(context.getBean("withHeaderMapper"), "handler", SimpleWebServiceOutboundGateway.class);
-		DefaultSoapHeaderMapper headerMapper = TestUtils.getPropertyValue(gateway, "headerMapper", DefaultSoapHeaderMapper.class);
+	public void headerMapperParserTest() throws Exception {
+		ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext(
+				"ws-outbound-gateway-with-headermappers.xml", this.getClass());
+		SimpleWebServiceOutboundGateway gateway = TestUtils.getPropertyValue(context.getBean("withHeaderMapper"),
+				"handler", SimpleWebServiceOutboundGateway.class);
+		DefaultSoapHeaderMapper headerMapper = TestUtils.getPropertyValue(gateway, "headerMapper",
+				DefaultSoapHeaderMapper.class);
 		assertNotNull(headerMapper);
 
-		List<String> requestHeaderNames = TestUtils.getPropertyValue(headerMapper, "requestHeaderNames", List.class);
-		assertEquals(2, requestHeaderNames.size());
-		assertEquals("foo*", requestHeaderNames.get(0));
-		assertEquals("*baz*", requestHeaderNames.get(1));
+		AbstractHeaderMapper.HeaderMatcher requestHeaderMatcher = TestUtils.getPropertyValue(headerMapper,
+				"requestHeaderMatcher", AbstractHeaderMapper.HeaderMatcher.class);
+		assertTrue(requestHeaderMatcher.matchHeader("foo"));
+		assertTrue(requestHeaderMatcher.matchHeader("foo123"));
+		assertTrue(requestHeaderMatcher.matchHeader("baz"));
+		assertTrue(requestHeaderMatcher.matchHeader("123baz123"));
+		assertFalse(requestHeaderMatcher.matchHeader("bar"));
+		assertFalse(requestHeaderMatcher.matchHeader("bar123"));
 
-		List<String> responseHeaderNames = TestUtils.getPropertyValue(headerMapper, "replyHeaderNames", List.class);
-		assertEquals(1, responseHeaderNames.size());
-		assertEquals("bar*", responseHeaderNames.get(0));
+		AbstractHeaderMapper.HeaderMatcher replyHeaderMatcher = TestUtils.getPropertyValue(headerMapper,
+				"replyHeaderMatcher", AbstractHeaderMapper.HeaderMatcher.class);
+		assertFalse(replyHeaderMatcher.matchHeader("foo"));
+		assertFalse(replyHeaderMatcher.matchHeader("foo123"));
+		assertFalse(replyHeaderMatcher.matchHeader("baz"));
+		assertFalse(replyHeaderMatcher.matchHeader("123baz123"));
+		assertTrue(replyHeaderMatcher.matchHeader("bar"));
+		assertTrue(replyHeaderMatcher.matchHeader("bar123"));
+		context.close();
 	}
 
 	@Test
-	public void withHeaderMapperString() throws Exception{
+	public void withHeaderMapperString() throws Exception {
 		String payload = "<root><name>bill</name></root>";
 		Message<?> replyMessage = this.process(payload, "withHeaderMapper", "inputChannel", true);
 		assertTrue(replyMessage.getPayload() instanceof String);
@@ -110,15 +124,15 @@ public class WebServiceOutboundGatewayWithHeaderMapperTests {
 	}
 
 	@Test
-	public void withHeaderMapperStringPOX() throws Exception{
+	public void withHeaderMapperStringPOX() throws Exception {
 		String payload = "<root><name>bill</name></root>";
 		Message<?> replyMessage = this.process(payload, "withHeaderMapper", "inputChannel", false);
 		assertTrue(replyMessage.getPayload() instanceof String);
-		assertTrue(((String)replyMessage.getPayload()).contains("<person><name>oleg</name></person>"));
+		assertTrue(((String) replyMessage.getPayload()).contains("<person><name>oleg</name></person>"));
 	}
 
 	@Test
-	public void withHeaderMapperSource() throws Exception{
+	public void withHeaderMapperSource() throws Exception {
 		DocumentBuilderFactory dbfac = DocumentBuilderFactory.newInstance();
 		DocumentBuilder docBuilder = dbfac.newDocumentBuilder();
 		Document document = docBuilder.parse(new ByteArrayInputStream("<root><name>bill</name></root>".getBytes()));
@@ -130,7 +144,7 @@ public class WebServiceOutboundGatewayWithHeaderMapperTests {
 	}
 
 	@Test
-	public void withHeaderMapperSourcePOX() throws Exception{
+	public void withHeaderMapperSourcePOX() throws Exception {
 		DocumentBuilderFactory dbfac = DocumentBuilderFactory.newInstance();
 		DocumentBuilder docBuilder = dbfac.newDocumentBuilder();
 		Document document = docBuilder.parse(new ByteArrayInputStream("<root><name>bill</name></root>".getBytes()));
@@ -141,7 +155,7 @@ public class WebServiceOutboundGatewayWithHeaderMapperTests {
 	}
 
 	@Test
-	public void withHeaderMapperDocument() throws Exception{
+	public void withHeaderMapperDocument() throws Exception {
 		DocumentBuilderFactory dbfac = DocumentBuilderFactory.newInstance();
 		DocumentBuilder docBuilder = dbfac.newDocumentBuilder();
 		Document payload = docBuilder.parse(new ByteArrayInputStream("<root><name>bill</name></root>".getBytes()));
@@ -152,7 +166,7 @@ public class WebServiceOutboundGatewayWithHeaderMapperTests {
 	}
 
 	@Test
-	public void withHeaderMapperDocumentPOX() throws Exception{
+	public void withHeaderMapperDocumentPOX() throws Exception {
 		DocumentBuilderFactory dbfac = DocumentBuilderFactory.newInstance();
 		DocumentBuilder docBuilder = dbfac.newDocumentBuilder();
 		Document payload = docBuilder.parse(new ByteArrayInputStream("<root><name>bill</name></root>".getBytes()));
@@ -162,7 +176,7 @@ public class WebServiceOutboundGatewayWithHeaderMapperTests {
 	}
 
 	@Test
-	public void withHeaderMapperAndMarshaller() throws Exception{
+	public void withHeaderMapperAndMarshaller() throws Exception {
 		Person person = new Person();
 		person.setName("Bill Clinton");
 		Message<?> replyMessage = this.process(person, "marshallingWithHeaderMapper", "inputMarshallingChannel", true);
@@ -171,11 +185,13 @@ public class WebServiceOutboundGatewayWithHeaderMapperTests {
 	}
 
 	@SuppressWarnings("rawtypes")
-	public Message<?> process(Object payload, String gatewayName, String channelName, final boolean soap) throws Exception{
-		ApplicationContext context = new ClassPathXmlApplicationContext("ws-outbound-gateway-with-headermappers.xml", this.getClass());
-		AbstractWebServiceOutboundGateway gateway = TestUtils.getPropertyValue(context.getBean(gatewayName), "handler", AbstractWebServiceOutboundGateway.class);
+	public Message<?> process(Object payload, String gatewayName, String channelName, final boolean soap) throws Exception {
+		ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext(
+				"ws-outbound-gateway-with-headermappers.xml", this.getClass());
+		AbstractWebServiceOutboundGateway gateway = TestUtils.getPropertyValue(context.getBean(gatewayName), "handler",
+				AbstractWebServiceOutboundGateway.class);
 
-		if (!soap){
+		if (!soap) {
 			WebServiceTemplate template = TestUtils.getPropertyValue(gateway, "webServiceTemplate", WebServiceTemplate.class);
 			template.setMessageFactory(new StubMessageFactory());
 		}
@@ -186,50 +202,55 @@ public class WebServiceOutboundGatewayWithHeaderMapperTests {
 		Mockito.when(messageSender.supports(Mockito.any(URI.class))).thenReturn(true);
 
 		Mockito.doAnswer(new Answer() {
-		      public Object answer(InvocationOnMock invocation) {
-		          Object[] args = invocation.getArguments();
-		          WebServiceMessage wsMessage = (WebServiceMessage) args[0];
-//		          try { // uncomment if you want to see a pretty-print of SOAP message
-//		        	  Transformer transformer = TransformerFactory.newInstance().newTransformer();
-//			  	      transformer.setOutputProperty(OutputKeys.INDENT, "yes");
-//			  	      transformer.transform(new DOMSource(soapMessage.getDocument()), new StreamResult(System.out));
-//		          } catch (Exception e) {
+			@Override
+			public Object answer(InvocationOnMock invocation) {
+				Object[] args = invocation.getArguments();
+				WebServiceMessage wsMessage = (WebServiceMessage) args[0];
+//				try { // uncomment if you want to see a pretty-print of SOAP message
+//					Transformer transformer = TransformerFactory.newInstance().newTransformer();
+//					transformer.setOutputProperty(OutputKeys.INDENT, "yes");
+//					transformer.transform(new DOMSource(soapMessage.getDocument()), new StreamResult(System.out));
+//				}
+//				catch (Exception e) {
 //					// ignore
-//		          }
-		          if (soap){
-		        	  SoapHeader soapHeader = ((SoapMessage)wsMessage).getSoapHeader();
-			          assertNotNull(soapHeader.getAttributeValue(QNameUtils.parseQNameString("foo")));
-			          assertNotNull(soapHeader.getAttributeValue(QNameUtils.parseQNameString("foobar")));
-			          assertNotNull(soapHeader.getAttributeValue(QNameUtils.parseQNameString("abaz")));
-			          assertNull(soapHeader.getAttributeValue(QNameUtils.parseQNameString("bar")));
-		          }
-
-		          return null;
-		      }})
-		 .when(wsConnection).send(Mockito.any(WebServiceMessage.class));
+//				}
+				if (soap) {
+					SoapHeader soapHeader = ((SoapMessage) wsMessage).getSoapHeader();
+					assertNotNull(soapHeader.getAttributeValue(QNameUtils.parseQNameString("foo")));
+					assertNotNull(soapHeader.getAttributeValue(QNameUtils.parseQNameString("foobar")));
+					assertNotNull(soapHeader.getAttributeValue(QNameUtils.parseQNameString("abaz")));
+					assertNull(soapHeader.getAttributeValue(QNameUtils.parseQNameString("bar")));
+				}
+				return null;
+			}
+		}).when(wsConnection).send(Mockito.any(WebServiceMessage.class));
 
 		Mockito.doAnswer(new Answer() {
-		      public Object answer(InvocationOnMock invocation) throws Exception{
-		          Object[] args = invocation.getArguments();
-		          WebServiceMessageFactory factory = (WebServiceMessageFactory) args[0];
-		          String responseMessage = factory instanceof SoapMessageFactory ? responseSoapMessage : responseNonSoapMessage;
-		          WebServiceMessage wsMessage = factory.createWebServiceMessage(new ByteArrayInputStream(responseMessage.getBytes()));
-		          if (soap){
+			@Override
+			public Object answer(InvocationOnMock invocation) throws Exception {
+				Object[] args = invocation.getArguments();
+				WebServiceMessageFactory factory = (WebServiceMessageFactory) args[0];
+				String responseMessage = factory instanceof SoapMessageFactory ? responseSoapMessage
+						: responseNonSoapMessage;
+				WebServiceMessage wsMessage = factory
+						.createWebServiceMessage(new ByteArrayInputStream(responseMessage.getBytes()));
+				if (soap) {
 
-		        	  ((SoapMessage)wsMessage).getSoapHeader().addAttribute(QNameUtils.parseQNameString("bar"), "bar");
-		        	  ((SoapMessage)wsMessage).getSoapHeader().addAttribute(QNameUtils.parseQNameString("baz"), "baz");
-		          }
+					((SoapMessage) wsMessage).getSoapHeader().addAttribute(QNameUtils.parseQNameString("bar"), "bar");
+					((SoapMessage) wsMessage).getSoapHeader().addAttribute(QNameUtils.parseQNameString("baz"), "baz");
+				}
 
-//		          try { // uncomment if you want to see a pretty-print of SOAP message
-//		        	  Transformer transformer = TransformerFactory.newInstance().newTransformer();
-//			  	      transformer.setOutputProperty(OutputKeys.INDENT, "yes");
-//			  	      transformer.transform(new DOMSource(soapMessage.getDocument()), new StreamResult(System.out));
-//		          } catch (Exception e) {
+//				try { // uncomment if you want to see a pretty-print of SOAP message
+//					Transformer transformer = TransformerFactory.newInstance().newTransformer();
+//					transformer.setOutputProperty(OutputKeys.INDENT, "yes");
+//					transformer.transform(new DOMSource(soapMessage.getDocument()), new StreamResult(System.out));
+//				}
+//				catch (Exception e) {
 //					// ignore
-//		          }
-		          return wsMessage;
-		      }})
-		 .when(wsConnection).receive(Mockito.any(WebServiceMessageFactory.class));
+//				}
+				return wsMessage;
+			}
+		}).when(wsConnection).receive(Mockito.any(WebServiceMessageFactory.class));
 
 		gateway.setMessageSender(messageSender);
 
@@ -241,10 +262,11 @@ public class WebServiceOutboundGatewayWithHeaderMapperTests {
 		inputChannel.send(message);
 		QueueChannel outputChannel = context.getBean("outputChannel", QueueChannel.class);
 		Message<?> replyMessage = outputChannel.receive(0);
+		context.close();
 		return replyMessage;
 	}
 
-	public static class Person{
+	public static class Person {
 		private String name;
 
 		public String getName() {
@@ -258,10 +280,12 @@ public class WebServiceOutboundGatewayWithHeaderMapperTests {
 
 	public static class SampleUnmarshaller implements Unmarshaller {
 
+		@Override
 		public boolean supports(Class<?> clazz) {
 			return true;
 		}
 
+		@Override
 		public Object unmarshal(Source source) throws IOException, XmlMappingException {
 			Element documentElement = (Element) ((DOMSource) source).getNode();
 
@@ -272,15 +296,15 @@ public class WebServiceOutboundGatewayWithHeaderMapperTests {
 		}
 	}
 
-	private String extractStringResult(Message<?> replyMessage) throws Exception{
+	private String extractStringResult(Message<?> replyMessage) throws Exception {
         Transformer transformer = TransformerFactory.newInstance().newTransformer();
         StringResult result = new StringResult();
         Object payload = replyMessage.getPayload();
-        if (payload instanceof DOMSource){
-        	transformer.transform(((DOMSource)replyMessage.getPayload()), result);
+        if (payload instanceof DOMSource) {
+        	transformer.transform(((DOMSource) replyMessage.getPayload()), result);
         }
-        else if (payload instanceof Document){
-        	transformer.transform(new DOMSource((Document)replyMessage.getPayload()), result);
+        else if (payload instanceof Document) {
+        	transformer.transform(new DOMSource((Document) replyMessage.getPayload()), result);
         }
         else {
         	throw new IllegalArgumentException("Unsupported payload type: " + payload.getClass().getName());

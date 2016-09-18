@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.handler.advice;
 
 import org.springframework.expression.EvaluationContext;
@@ -33,8 +34,9 @@ import org.springframework.util.Assert;
  * Used to advise {@link MessageHandler}s.
  * Two expressions 'onSuccessExpression' and 'onFailureExpression' are evaluated when
  * appropriate. If the evaluation returns a result, a message is sent to the onSuccessChannel
- * or onFailureChannel as appropriate; the message is the input message with a header
- * {@link org.springframework.integration.IntegrationMessageHeaderAccessor#POSTPROCESS_RESULT} containing the evaluation result.
+ * or onFailureChannel as appropriate; the message is an {@link AdviceMessage}
+ * containing the evaluation result in its payload and the {@code inputMessage} property containing
+ * the original message that was sent to the endpoint.
  * The failure expression is NOT evaluated if the success expression throws an exception.
  *
  * @author Gary Russell
@@ -67,18 +69,26 @@ public class ExpressionEvaluatingRequestHandlerAdvice extends AbstractRequestHan
 		this.onSuccessExpression = new SpelExpressionParser().parseExpression(onSuccessExpression);
 	}
 
+	public void setExpressionOnSuccess(Expression onSuccessExpression) {
+		this.onSuccessExpression = onSuccessExpression;
+	}
+
 	public void setOnFailureExpression(String onFailureExpression) {
 		Assert.notNull(onFailureExpression, "'onFailureExpression' must not be null");
 		this.onFailureExpression = new SpelExpressionParser().parseExpression(onFailureExpression);
 	}
 
+	public void setExpressionOnFailure(Expression onFailureExpression) {
+		this.onFailureExpression = onFailureExpression;
+	}
+
 	public void setSuccessChannel(MessageChannel successChannel) {
-		Assert.notNull(successChannel,"'successChannel' must not be null");
+		Assert.notNull(successChannel, "'successChannel' must not be null");
 		this.successChannel = successChannel;
 	}
 
 	public void setFailureChannel(MessageChannel failureChannel) {
-		Assert.notNull(failureChannel,"'failureChannel' must not be null");
+		Assert.notNull(failureChannel, "'failureChannel' must not be null");
 		this.failureChannel = failureChannel;
 	}
 
@@ -154,7 +164,7 @@ public class ExpressionEvaluatingRequestHandlerAdvice extends AbstractRequestHan
 			evaluationFailed = true;
 		}
 		if (evalResult != null && this.successChannel != null) {
-			AdviceMessage resultMessage = new AdviceMessage(evalResult, message);
+			AdviceMessage<?> resultMessage = new AdviceMessage<Object>(evalResult, message);
 			this.messagingTemplate.send(this.successChannel, resultMessage);
 		}
 		if (evaluationFailed && this.propagateOnSuccessEvaluationFailures) {
@@ -180,7 +190,7 @@ public class ExpressionEvaluatingRequestHandlerAdvice extends AbstractRequestHan
 		return evalResult;
 	}
 
-	protected StandardEvaluationContext createEvaluationContext(){
+	protected StandardEvaluationContext createEvaluationContext() {
 		return ExpressionUtils.createStandardEvaluationContext(this.getBeanFactory());
 	}
 
@@ -218,7 +228,7 @@ public class ExpressionEvaluatingRequestHandlerAdvice extends AbstractRequestHan
 		}
 
 		public Object getEvaluationResult() {
-			return evaluationResult;
+			return this.evaluationResult;
 		}
 
 	}

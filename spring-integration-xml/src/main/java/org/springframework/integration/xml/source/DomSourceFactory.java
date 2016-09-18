@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2010 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,7 +33,7 @@ import org.springframework.messaging.MessagingException;
 /**
  * {@link SourceFactory} implementation which supports creation of a {@link DOMSource}
  * from a {@link Document}, {@link File} or {@link String} payload.
- * 
+ *
  * @author Jonas Partner
  * @author Mark Fisher
  */
@@ -97,7 +97,7 @@ public class DomSourceFactory implements SourceFactory {
 
 	private DocumentBuilder getNewDocumentBuilder() throws ParserConfigurationException {
 		synchronized (this.documentBuilderFactory) {
-			return documentBuilderFactory.newDocumentBuilder();
+			return this.documentBuilderFactory.newDocumentBuilder();
 		}
 	}
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,14 +34,15 @@ import org.junit.Before;
 import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.messaging.Message;
-import org.springframework.messaging.MessageChannel;
 import org.springframework.integration.IntegrationMessageHeaderAccessor;
 import org.springframework.integration.channel.QueueChannel;
 import org.springframework.integration.support.MessageBuilder;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.MessageChannel;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.annotation.DirtiesContext.ClassMode;
 import org.springframework.test.context.ContextConfiguration;
@@ -59,7 +60,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  */
 @ContextConfiguration
 @RunWith(SpringJUnit4ClassRunner.class)
-@DirtiesContext(classMode=ClassMode.AFTER_EACH_TEST_METHOD)
+@DirtiesContext(classMode = ClassMode.AFTER_EACH_TEST_METHOD)
 @Ignore
 public class MySqlJdbcMessageStoreMultipleChannelTests {
 
@@ -94,6 +95,7 @@ public class MySqlJdbcMessageStoreMultipleChannelTests {
 	@After
 	public void afterTest() {
 		new TransactionTemplate(this.transactionManager).execute(new TransactionCallback<Void>() {
+			@Override
 			public Void doInTransaction(TransactionStatus status) {
 				final int deletedGroupToMessageRows = jdbcTemplate.update("delete from INT_GROUP_TO_MESSAGE");
 				final int deletedMessages = jdbcTemplate.update("delete from INT_MESSAGE");
@@ -112,6 +114,7 @@ public class MySqlJdbcMessageStoreMultipleChannelTests {
 	public void testSendAndActivateTransactionalSend() throws Exception {
 
 		new TransactionTemplate(this.transactionManager).execute(new TransactionCallback<Void>() {
+			@Override
 			public Void doInTransaction(TransactionStatus status) {
 				requestChannel.send(MessageBuilder.withPayload("Hello ").build());
 				return null;
@@ -135,9 +138,6 @@ public class MySqlJdbcMessageStoreMultipleChannelTests {
 			ArrayList<Object> res = new ArrayList<Object>();
 			res.add(message);
 			res.add(message);
-
-			System.out.println("Split Complete");
-
 			return res;
 		}
 	}
@@ -148,7 +148,7 @@ public class MySqlJdbcMessageStoreMultipleChannelTests {
 			super();
 		}
 
-		public void first(Message<?> message ) {
+		public void first(Message<?> message) {
 
 			int sequenceNumber = new IntegrationMessageHeaderAccessor(message).getSequenceNumber();
 
@@ -161,7 +161,7 @@ public class MySqlJdbcMessageStoreMultipleChannelTests {
 			countDownLatch1.countDown();
 		}
 
-		public void second(Message<?> message ) {
+		public void second(Message<?> message) {
 
 			int sequenceNumber = new IntegrationMessageHeaderAccessor(message).getSequenceNumber();
 			LOG.info("Second handling sequence number: " + sequenceNumber + "; Message ID: " + message.getHeaders().getId());

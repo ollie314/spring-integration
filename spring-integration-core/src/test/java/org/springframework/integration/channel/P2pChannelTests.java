@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.channel;
 
 import static org.junit.Assert.assertEquals;
@@ -32,8 +33,9 @@ import org.junit.Test;
 import org.mockito.Mockito;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
-import org.springframework.messaging.MessageHandler;
+
 import org.springframework.integration.dispatcher.MessageDispatcher;
+import org.springframework.messaging.MessageHandler;
 import org.springframework.util.ReflectionUtils;
 import org.springframework.util.ReflectionUtils.FieldCallback;
 
@@ -43,7 +45,7 @@ import org.springframework.util.ReflectionUtils.FieldCallback;
  *
  */
 public class P2pChannelTests {
-	
+
 	@Test
 	public void testDirectChannelLoggingWithMoreThenOneSubscriber() {
 		final DirectChannel channel = new DirectChannel();
@@ -77,14 +79,17 @@ public class P2pChannelTests {
 		when(logger.isInfoEnabled()).thenReturn(true);
 		final List<String> logs = new ArrayList<String>();
 		doAnswer(new Answer<Object>() {
+			@Override
 			public Object answer(InvocationOnMock invocation) throws Throwable {
 				logs.add((String) invocation.getArguments()[0]);
 				return null;
-			}}).when(logger).info(Mockito.anyString());
+			}
+		}).when(logger).info(Mockito.anyString());
 		ReflectionUtils.doWithFields(AbstractMessageChannel.class, new FieldCallback() {
+			@Override
 			public void doWith(Field field) throws IllegalArgumentException,
 					IllegalAccessException {
-				if ("logger".equals(field.getName())){
+				if ("logger".equals(field.getName())) {
 					field.setAccessible(true);
 					field.set(channel, logger);
 				}
@@ -109,7 +114,7 @@ public class P2pChannelTests {
 		assertEquals(String.format(log, 0), logs.remove(0));
 		verify(logger, times(4)).info(Mockito.anyString());
 	}
-	
+
 	@Test
 	public void testExecutorChannelLoggingWithMoreThenOneSubscriber() {
 		final ExecutorChannel channel = new ExecutorChannel(mock(Executor.class));
@@ -119,9 +124,10 @@ public class P2pChannelTests {
 		when(logger.isInfoEnabled()).thenReturn(true);
 		ReflectionUtils.doWithFields(AbstractMessageChannel.class, new FieldCallback() {
 
+			@Override
 			public void doWith(Field field) throws IllegalArgumentException,
 					IllegalAccessException {
-				if ("logger".equals(field.getName())){
+				if ("logger".equals(field.getName())) {
 					field.setAccessible(true);
 					field.set(channel, logger);
 				}
@@ -131,7 +137,7 @@ public class P2pChannelTests {
 		channel.subscribe(mock(MessageHandler.class));
 		verify(logger, times(2)).info(Mockito.anyString());
 	}
-	
+
 	@Test
 	public void testPubSubChannelLoggingWithMoreThenOneSubscriber() {
 		final PublishSubscribeChannel channel = new PublishSubscribeChannel();
@@ -140,10 +146,11 @@ public class P2pChannelTests {
 		final Log logger = mock(Log.class);
 		when(logger.isInfoEnabled()).thenReturn(true);
 		ReflectionUtils.doWithFields(AbstractMessageChannel.class, new FieldCallback() {
-			
+
+			@Override
 			public void doWith(Field field) throws IllegalArgumentException,
 					IllegalAccessException {
-				if ("logger".equals(field.getName())){
+				if ("logger".equals(field.getName())) {
 					field.setAccessible(true);
 					field.set(channel, logger);
 				}

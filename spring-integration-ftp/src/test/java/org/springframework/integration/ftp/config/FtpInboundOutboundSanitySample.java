@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,6 @@ import java.io.File;
 import org.junit.Ignore;
 import org.junit.Test;
 
-import org.springframework.context.ApplicationContext;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.support.GenericMessage;
@@ -31,42 +30,45 @@ import org.springframework.messaging.support.GenericMessage;
 /**
  * @author Oleg Zhurakousky
  * @author Gunnar Hillert
+ * @author Gary Russell
  */
 public class FtpInboundOutboundSanitySample {
 
 
 	@Test
 	@Ignore
-	public void testFtpInboundChannelAdapter() throws Exception{
+	public void testFtpInboundChannelAdapter() throws Exception {
 		File fileA = new File("local-test-dir/a.test");
-		if (fileA.exists()){
+		if (fileA.exists()) {
 			fileA.delete();
 		}
 		File fileB = new File("local-test-dir/b.test");
-		if (fileB.exists()){
+		if (fileB.exists()) {
 			fileB.delete();
 		}
 		fileA = new File("remote-target-dir/a.test");
-		if (fileA.exists()){
+		if (fileA.exists()) {
 			fileA.delete();
 		}
 		fileB = new File("remote-target-dir/b.test");
-		if (fileB.exists()){
+		if (fileB.exists()) {
 			fileB.delete();
 		}
 
-		new ClassPathXmlApplicationContext("FtpInboundChannelAdapterSample-context.xml", this.getClass());
+		ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext(
+				"FtpInboundChannelAdapterSample-context.xml", this.getClass());
 		Thread.sleep(3000);
 		fileA = new File("local-test-dir/b.test");
 		fileB = new File("local-test-dir/b.test");
 		assertTrue(fileA.exists());
 		assertTrue(fileB.exists());
+		context.close();
 	}
 
 	@Test
 	@Ignore
-	public void testFtpOutboundChannelAdapter() throws Exception{
-		ApplicationContext ac =
+	public void testFtpOutboundChannelAdapter() throws Exception {
+		ClassPathXmlApplicationContext ac =
 			new ClassPathXmlApplicationContext("FtpOutboundChannelAdapterSample-context.xml", this.getClass());
 		File fileA = new File("local-test-dir/a.test");
 		File fileB = new File("local-test-dir/b.test");
@@ -78,6 +80,7 @@ public class FtpInboundOutboundSanitySample {
 		fileB = new File("remote-target-dir/b.test");
 		assertTrue(fileA.exists());
 		assertTrue(fileB.exists());
+		ac.close();
 	}
 
 }

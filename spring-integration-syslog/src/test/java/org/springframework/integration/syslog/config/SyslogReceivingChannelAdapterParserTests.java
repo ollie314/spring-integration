@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.syslog.config;
 
 import static org.junit.Assert.assertEquals;
@@ -37,9 +38,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.parsing.BeanDefinitionParsingException;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
-import org.springframework.integration.ip.tcp.connection.AbstractConnectionFactory;
 import org.springframework.integration.ip.tcp.connection.AbstractServerConnectionFactory;
 import org.springframework.integration.syslog.MessageConverter;
+import org.springframework.integration.syslog.RFC5424MessageConverter;
 import org.springframework.integration.syslog.inbound.TcpSyslogReceivingChannelAdapter;
 import org.springframework.integration.syslog.inbound.UdpSyslogReceivingChannelAdapter;
 import org.springframework.integration.test.util.TestUtils;
@@ -80,6 +81,9 @@ public class SyslogReceivingChannelAdapterParserTests {
 
 	@Autowired
 	private PassThruConverter converter;
+
+	@Autowired
+	private RFC5424MessageConverter rfc5424;
 
 	@Autowired @Qualifier("bar.adapter")
 	private TcpSyslogReceivingChannelAdapter adapter2;
@@ -152,7 +156,7 @@ public class SyslogReceivingChannelAdapterParserTests {
 		assertFalse(fullBoatTcp.isAutoStartup());
 		assertEquals(123, fullBoatTcp.getPhase());
 		assertEquals(456L, TestUtils.getPropertyValue(fullBoatUdp, "messagingTemplate.sendTimeout"));
-		assertSame(converter, TestUtils.getPropertyValue(fullBoatTcp, "converter"));
+		assertSame(rfc5424, TestUtils.getPropertyValue(fullBoatTcp, "converter"));
 		assertSame(errors, TestUtils.getPropertyValue(fullBoatTcp, "errorChannel"));
 		assertSame(cf, TestUtils.getPropertyValue(fullBoatTcp, "connectionFactory"));
 	}
@@ -160,19 +164,21 @@ public class SyslogReceivingChannelAdapterParserTests {
 	@Test
 	public void testPortOnUdpChild() {
 		try {
-			new ClassPathXmlApplicationContext(this.getClass().getSimpleName() + "-fail1-context.xml", this.getClass());
+			new ClassPathXmlApplicationContext(this.getClass().getSimpleName() + "-fail1-context.xml", this.getClass())
+					.close();
 			fail("Expected exception");
 		}
 		catch (BeanDefinitionParsingException e) {
 			assertTrue(e.getMessage().startsWith(
-					"Configuration problem: When child element 'udp-attributes' is present, 'port' must be defined there"));
+				"Configuration problem: When child element 'udp-attributes' is present, 'port' must be defined there"));
 		}
 	}
 
 	@Test
 	public void testPortWithTCPFactory() {
 		try {
-			new ClassPathXmlApplicationContext(this.getClass().getSimpleName() + "-fail2-context.xml", this.getClass());
+			new ClassPathXmlApplicationContext(this.getClass().getSimpleName() + "-fail2-context.xml", this.getClass())
+					.close();
 			fail("Expected exception");
 		}
 		catch (BeanCreationException e) {
@@ -183,24 +189,27 @@ public class SyslogReceivingChannelAdapterParserTests {
 	@Test
 	public void testUdpChildWithTcp() {
 		try {
-			new ClassPathXmlApplicationContext(this.getClass().getSimpleName() + "-fail3-context.xml", this.getClass());
+			new ClassPathXmlApplicationContext(this.getClass().getSimpleName() + "-fail3-context.xml", this.getClass())
+					.close();
 			fail("Expected exception");
 		}
 		catch (BeanCreationException e) {
 			e.printStackTrace();
 
-			assertEquals("Cannot specifiy 'udp-attributes' when the protocol is 'tcp'", e.getCause().getMessage());
+			assertEquals("Cannot specify 'udp-attributes' when the protocol is 'tcp'", e.getCause().getMessage());
 		}
 	}
 
 	@Test
 	public void testUDPWithTCPFactory() {
 		try {
-			new ClassPathXmlApplicationContext(this.getClass().getSimpleName() + "-fail4-context.xml", this.getClass());
+			new ClassPathXmlApplicationContext(this.getClass().getSimpleName() + "-fail4-context.xml", this.getClass())
+					.close();
 			fail("Expected exception");
 		}
 		catch (BeanCreationException e) {
-			assertEquals("Cannot specifiy 'connection-factory' unless the protocol is 'tcp'", e.getCause().getMessage());
+			assertEquals("Cannot specify 'connection-factory' unless the protocol is 'tcp'",
+					e.getCause().getMessage());
 		}
 	}
 

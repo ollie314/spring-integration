@@ -1,15 +1,19 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
- * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
- * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
- * specific language governing permissions and limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
+
 package org.springframework.integration.jdbc.config;
 
 import static org.junit.Assert.assertEquals;
@@ -17,6 +21,8 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
+import java.sql.PreparedStatement;
+import java.sql.SQLException;
 import java.util.Collections;
 import java.util.Map;
 
@@ -27,19 +33,20 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import org.springframework.beans.DirectFieldAccessor;
-import org.springframework.context.ApplicationContext;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
 import org.springframework.integration.core.MessagingTemplate;
 import org.springframework.integration.endpoint.PollingConsumer;
 import org.springframework.integration.handler.advice.AbstractRequestHandlerAdvice;
 import org.springframework.integration.jdbc.JdbcOutboundGateway;
+import org.springframework.integration.jdbc.MessagePreparedStatementSetter;
 import org.springframework.integration.support.MessageBuilder;
 import org.springframework.integration.test.util.TestUtils;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.PollableChannel;
+import org.springframework.messaging.support.GenericMessage;
 
 /**
  * @author Dave Syer
@@ -65,46 +72,68 @@ public class JdbcOutboundGatewayParserTests {
 	@Test
 	public void testMapPayloadMapReply() {
 		setUp("handlingMapPayloadJdbcOutboundGatewayTest.xml", getClass());
-		assertTrue(context.containsBean("jdbcGateway"));
+		assertTrue(this.context.containsBean("jdbcGateway"));
 		Message<?> message = MessageBuilder.withPayload(Collections.singletonMap("foo", "bar")).build();
-		channel.send(message);
-		Map<String, Object> map = this.jdbcTemplate.queryForMap("SELECT * from FOOS");
-		assertEquals("Wrong id", message.getHeaders().getId().toString(), map.get("ID"));
-		assertEquals("Wrong name", "bar", map.get("name"));
-		Message<?> reply = messagingTemplate.receive();
+		this.channel.send(message);
+
+		Message<?> reply = this.messagingTemplate.receive();
 		assertNotNull(reply);
 		@SuppressWarnings("unchecked")
 		Map<String, ?> payload = (Map<String, ?>) reply.getPayload();
 		assertEquals("bar", payload.get("name"));
+
+		Map<String, Object> map = this.jdbcTemplate.queryForMap("SELECT * from FOOS");
+		assertEquals("Wrong id", message.getHeaders().getId().toString(), map.get("ID"));
+		assertEquals("Wrong name", "bar", map.get("name"));
+
 		JdbcOutboundGateway gateway = context.getBean("jdbcGateway.handler", JdbcOutboundGateway.class);
 		assertEquals(23, TestUtils.getPropertyValue(gateway, "order"));
 		Assert.assertTrue(TestUtils.getPropertyValue(gateway, "requiresReply", Boolean.class));
-		Object gw = context.getBean("jdbcGateway");
 		assertEquals(1, adviceCalled);
 	}
 
 	@Test
+	@SuppressWarnings("unchecked")
 	public void testKeyGeneration() {
 		setUp("handlingKeyGenerationJdbcOutboundGatewayTest.xml", getClass());
 		Message<?> message = MessageBuilder.withPayload(Collections.singletonMap("foo", "bar")).build();
-		channel.send(message);
-		Message<?> reply = messagingTemplate.receive();
+
+		this.channel.send(message);
+
+		Message<?> reply = this.messagingTemplate.receive();
 		assertNotNull(reply);
-		@SuppressWarnings("unchecked")
+
 		Map<String, ?> payload = (Map<String, ?>) reply.getPayload();
 		Object id = payload.get("SCOPE_IDENTITY()");
 		assertNotNull(id);
+
 		Map<String, Object> map = this.jdbcTemplate.queryForMap("SELECT * from BARS");
 		assertEquals("Wrong id", id, map.get("ID"));
 		assertEquals("Wrong name", "bar", map.get("name"));
+
+		this.jdbcTemplate.execute("DELETE FROM BARS");
+
+		MessageChannel setterRequest = this.context.getBean("setterRequest", MessageChannel.class);
+		setterRequest.send(new GenericMessage<String>("bar2"));
+		reply = this.messagingTemplate.receive();
+		assertNotNull(reply);
+
+		payload = (Map<String, ?>) reply.getPayload();
+		id = payload.get("SCOPE_IDENTITY()");
+		assertNotNull(id);
+		map = this.jdbcTemplate.queryForMap("SELECT * from BARS");
+		assertEquals("Wrong id", id, map.get("ID"));
+		assertEquals("Wrong name", "bar2", map.get("name"));
 	}
 
 	@Test
 	public void testCountUpdates() {
 		setUp("handlingCountUpdatesJdbcOutboundGatewayTest.xml", getClass());
 		Message<?> message = MessageBuilder.withPayload(Collections.singletonMap("foo", "bar")).build();
-		channel.send(message);
-		Message<?> reply = messagingTemplate.receive();
+
+		this.channel.send(message);
+
+		Message<?> reply = this.messagingTemplate.receive();
 		assertNotNull(reply);
 		@SuppressWarnings("unchecked")
 		Map<String, ?> payload = (Map<String, ?>) reply.getPayload();
@@ -112,40 +141,36 @@ public class JdbcOutboundGatewayParserTests {
 	}
 
 	@Test
-	public void testWithPoller() throws Exception{
+	public void testWithPoller() throws Exception {
 		setUp("JdbcOutboundGatewayWithPollerTest-context.xml", this.getClass());
 		Message<?> message = MessageBuilder.withPayload(Collections.singletonMap("foo", "bar")).build();
-		MessageChannel target = context.getBean("target", MessageChannel.class);
-		PollableChannel output = context.getBean("output", PollableChannel.class);
-		target.send(message);
-		Thread.sleep(1000);
-		Map<String, Object> map = (context.getBean("jdbcTemplate", JdbcTemplate.class)).queryForMap("SELECT * from BAZZ");
-		assertEquals("Wrong id", message.getHeaders().getId().toString(), map.get("ID"));
-		assertEquals("Wrong name", "bar", map.get("name"));
-		Message<?> reply = output.receive(1000);
+
+		this.channel.send(message);
+
+		Message<?> reply = this.messagingTemplate.receive();
 		assertNotNull(reply);
 		@SuppressWarnings("unchecked")
 		Map<String, ?> payload = (Map<String, ?>) reply.getPayload();
 		assertEquals("bar", payload.get("name"));
+
+		Map<String, Object> map = this.jdbcTemplate.queryForMap("SELECT * from BAZZ");
+		assertEquals("Wrong id", message.getHeaders().getId().toString(), map.get("ID"));
+		assertEquals("Wrong name", "bar", map.get("name"));
 	}
 
 	@Test
-	public void testWithSelectQueryOnly() throws Exception{
-		this.context = new ClassPathXmlApplicationContext("JdbcOutboundGatewayWithSelectTest-context.xml", this.getClass());
-		Message<?> message = MessageBuilder.withPayload(Integer.valueOf(100)).build();
-		MessageChannel requestChannel = context.getBean("request", MessageChannel.class);
-		PollableChannel replyChannel = context.getBean("reply", PollableChannel.class);
+	public void testWithSelectQueryOnly() throws Exception {
+		setUp("JdbcOutboundGatewayWithSelectTest-context.xml", getClass());
+		Message<?> message = MessageBuilder.withPayload(100).build();
 
-		requestChannel.send(message);
-		Thread.sleep(1000);
+		this.channel.send(message);
 
 		@SuppressWarnings("unchecked")
-		Message<Map<String, Object>> reply = (Message<Map<String, Object>>) replyChannel.receive(500);
+		Message<Map<String, Object>> reply = (Message<Map<String, Object>>) this.messagingTemplate.receive();
 
 		String id = (String) reply.getPayload().get("id");
 		Integer status = (Integer) reply.getPayload().get("status");
 		String name = (String) reply.getPayload().get("name");
-		ApplicationContext ac = this.context;
 
 		assertEquals("100", id);
 		assertEquals(Integer.valueOf(3), status);
@@ -153,7 +178,7 @@ public class JdbcOutboundGatewayParserTests {
 	}
 
 	@Test
-	public void testReplyTimeoutIsSet() throws Exception {
+	public void testReplyTimeoutIsSet() {
 		setUp("JdbcOutboundGatewayWithPollerTest-context.xml", getClass());
 
 		PollingConsumer outboundGateway = this.context.getBean("jdbcOutboundGateway", PollingConsumer.class);
@@ -173,11 +198,10 @@ public class JdbcOutboundGatewayParserTests {
 	}
 
 	@Test
-	public void testDefaultMaxMessagesPerPollIsSet() throws Exception {
-
+	public void testDefaultMaxMessagesPerPollIsSet() {
 		setUp("JdbcOutboundGatewayWithPollerTest-context.xml", this.getClass());
 
-		PollingConsumer pollingConsumer = context.getBean(PollingConsumer.class);
+		PollingConsumer pollingConsumer = this.context.getBean(PollingConsumer.class);
 
 		DirectFieldAccessor accessor = new DirectFieldAccessor(pollingConsumer);
 		Object source = accessor.getPropertyValue("handler");
@@ -190,11 +214,10 @@ public class JdbcOutboundGatewayParserTests {
 	}
 
 	@Test
-	public void testMaxMessagesPerPollIsSet() throws Exception {
-
+	public void testMaxMessagesPerPollIsSet() {
 		setUp("JdbcOutboundGatewayWithPoller2Test-context.xml", this.getClass());
 
-		PollingConsumer pollingConsumer = context.getBean(PollingConsumer.class);
+		PollingConsumer pollingConsumer = this.context.getBean(PollingConsumer.class);
 
 		DirectFieldAccessor accessor = new DirectFieldAccessor(pollingConsumer);
 		Object source = accessor.getPropertyValue("handler");
@@ -203,25 +226,24 @@ public class JdbcOutboundGatewayParserTests {
 		accessor = new DirectFieldAccessor(source);
 		Integer maxRowsPerPoll = (Integer) accessor.getPropertyValue("maxRowsPerPoll");
 		assertEquals("maxRowsPerPoll should default to 10", Integer.valueOf(10),  maxRowsPerPoll);
-
 	}
 
 	@Test //INT-1029
 	public void testOutboundGatewayInsideChain() {
 		setUp("handlingMapPayloadJdbcOutboundGatewayTest.xml", getClass());
 
-		JdbcOutboundGateway jdbcMessageHandler =
-				context.getBean("org.springframework.integration.handler.MessageHandlerChain#0$child.jdbc-outbound-gateway-within-chain.handler",
-				JdbcOutboundGateway.class);
+		String beanName = "org.springframework.integration.handler.MessageHandlerChain#" +
+				"0$child.jdbc-outbound-gateway-within-chain.handler";
+		JdbcOutboundGateway jdbcMessageHandler = this.context.getBean(beanName, JdbcOutboundGateway.class);
 
-		MessageChannel channel = context.getBean("jdbcOutboundGatewayInsideChain", MessageChannel.class);
+		MessageChannel channel = this.context.getBean("jdbcOutboundGatewayInsideChain", MessageChannel.class);
 
 		assertFalse(TestUtils.getPropertyValue(jdbcMessageHandler, "requiresReply", Boolean.class));
 
 		channel.send(MessageBuilder.withPayload(Collections.singletonMap("foo", "bar")).build());
 
-		PollableChannel outbound = context.getBean("replyChannel", PollableChannel.class);
-		Message<?> reply = outbound.receive();
+		PollableChannel outbound = this.context.getBean("replyChannel", PollableChannel.class);
+		Message<?> reply = outbound.receive(10000);
 		assertNotNull(reply);
 		@SuppressWarnings("unchecked")
 		Map<String, ?> payload = (Map<String, ?>) reply.getPayload();
@@ -231,8 +253,8 @@ public class JdbcOutboundGatewayParserTests {
 
 	@After
 	public void tearDown() {
-		if (context != null) {
-			context.close();
+		if (this.context != null) {
+			this.context.close();
 		}
 	}
 
@@ -240,13 +262,13 @@ public class JdbcOutboundGatewayParserTests {
 		PollableChannel pollableChannel = this.context.getBean("output", PollableChannel.class);
 		this.messagingTemplate = new MessagingTemplate();
 		this.messagingTemplate.setDefaultDestination(pollableChannel);
-		this.messagingTemplate.setReceiveTimeout(500);
+		this.messagingTemplate.setReceiveTimeout(10000);
 	}
 
 	public void setUp(String name, Class<?> cls) {
-		context = new ClassPathXmlApplicationContext(name, cls);
-		jdbcTemplate = new JdbcTemplate(this.context.getBean("dataSource", DataSource.class));
-		channel = this.context.getBean("target", MessageChannel.class);
+		this.context = new ClassPathXmlApplicationContext(name, cls);
+		this.jdbcTemplate = new JdbcTemplate(this.context.getBean("dataSource", DataSource.class));
+		this.channel = this.context.getBean("target", MessageChannel.class);
 		setupMessagingTemplate();
 	}
 
@@ -259,4 +281,14 @@ public class JdbcOutboundGatewayParserTests {
 		}
 
 	}
+
+	public static class TestMessagePreparedStatementSetter implements MessagePreparedStatementSetter {
+
+		@Override
+		public void setValues(PreparedStatement ps, Message<?> requestMessage) throws SQLException {
+			ps.setObject(1, requestMessage.getPayload());
+		}
+
+	}
+
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package org.springframework.integration.feed.config;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.atLeast;
@@ -34,28 +35,27 @@ import org.junit.Ignore;
 import org.junit.Test;
 import org.mockito.Mockito;
 
-import org.springframework.context.ApplicationContext;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
-import org.springframework.messaging.Message;
-import org.springframework.messaging.MessageChannel;
-import org.springframework.messaging.MessagingException;
 import org.springframework.integration.channel.DirectChannel;
-import org.springframework.messaging.MessageHandler;
 import org.springframework.integration.endpoint.SourcePollingChannelAdapter;
 import org.springframework.integration.feed.inbound.FeedEntryMessageSource;
 import org.springframework.integration.history.MessageHistory;
 import org.springframework.integration.metadata.MetadataStore;
 import org.springframework.integration.test.util.TestUtils;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.MessageChannel;
+import org.springframework.messaging.MessageHandler;
+import org.springframework.messaging.MessagingException;
 
-import com.sun.syndication.feed.synd.SyndEntry;
-import com.sun.syndication.fetcher.impl.AbstractFeedFetcher;
-import com.sun.syndication.fetcher.impl.HttpURLFeedFetcher;
+import com.rometools.rome.feed.synd.SyndEntry;
 
 /**
  * @author Oleg Zhurakousky
  * @author Mark Fisher
  * @author Gary Russell
  * @author Gunnar Hillert
+ * @author Artem Bilan
  * @since 2.0
  */
 public class FeedInboundChannelAdapterParserTests {
@@ -64,7 +64,8 @@ public class FeedInboundChannelAdapterParserTests {
 
 	@Before
 	public void prepare() {
-		File persisterFile = new File(System.getProperty("java.io.tmpdir") + "/spring-integration/", "feedAdapter.last.entry");
+		File persisterFile = new File(System.getProperty("java.io.tmpdir") + "/spring-integration/",
+				"feedAdapter.last.entry");
 		if (persisterFile.exists()) {
 			persisterFile.delete();
 		}
@@ -79,28 +80,29 @@ public class FeedInboundChannelAdapterParserTests {
 		MetadataStore metadataStore = (MetadataStore) TestUtils.getPropertyValue(source, "metadataStore");
 		assertTrue(metadataStore instanceof SampleMetadataStore);
 		assertEquals(metadataStore, context.getBean("customMetadataStore"));
-		AbstractFeedFetcher fetcher = (AbstractFeedFetcher) TestUtils.getPropertyValue(source, "feedFetcher");
+		Object fetcher = TestUtils.getPropertyValue(source, "feedFetcher");
 		assertEquals("FileUrlFeedFetcher", fetcher.getClass().getSimpleName());
-		context.destroy();
+		context.close();
 	}
 
 
+	@SuppressWarnings("deprecation")
+	@Test
 	public void validateSuccessfulHttpConfigurationWithCustomMetadataStore() {
 		ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext(
 				"FeedInboundChannelAdapterParserTests-http-context.xml", this.getClass());
 		SourcePollingChannelAdapter adapter = context.getBean("feedAdapter", SourcePollingChannelAdapter.class);
 		FeedEntryMessageSource source = (FeedEntryMessageSource) TestUtils.getPropertyValue(adapter, "source");
-		MetadataStore metadataStore = (MetadataStore) TestUtils.getPropertyValue(source, "metadataStore");
-		assertTrue(metadataStore instanceof SampleMetadataStore);
-		assertEquals(metadataStore, context.getBean("customMetadataStore"));
-		AbstractFeedFetcher fetcher = (AbstractFeedFetcher) TestUtils.getPropertyValue(source, "feedFetcher");
-		assertTrue(fetcher instanceof HttpURLFeedFetcher);
-		context.destroy();
+		assertNotNull(TestUtils.getPropertyValue(source, "metadataStore"));
+		Object fetcher = TestUtils.getPropertyValue(source, "feedFetcher");
+		assertTrue(fetcher instanceof com.rometools.fetcher.impl.HttpURLFeedFetcher);
+		context.close();
 	}
 
 	@Test
 	public void validateSuccessfulNewsRetrievalWithFileUrlAndMessageHistory() throws Exception {
-		File persisterFile = new File(System.getProperty("java.io.tmpdir") + "/spring-integration/", "metadata-store.properties");
+		File persisterFile = new File(System.getProperty("java.io.tmpdir") + "/spring-integration/",
+				"metadata-store.properties");
 		if (persisterFile.exists()) {
 			persisterFile.delete();
 		}
@@ -108,35 +110,37 @@ public class FeedInboundChannelAdapterParserTests {
 		latch = spy(new CountDownLatch(3));
 		ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext(
 				"FeedInboundChannelAdapterParserTests-file-usage-context.xml", this.getClass());
-		latch.await(5, TimeUnit.SECONDS);
+		latch.await(10, TimeUnit.SECONDS);
 		verify(latch, times(3)).countDown();
-		context.destroy();
+		context.close();
 
 		// since we are not deleting the persister file
 		// in this iteration no new feeds will be received and the latch will timeout
 		latch = spy(new CountDownLatch(3));
 		context = new ClassPathXmlApplicationContext(
 				"FeedInboundChannelAdapterParserTests-file-usage-context.xml", this.getClass());
-		latch.await(5, TimeUnit.SECONDS);
+		latch.await(500, TimeUnit.MILLISECONDS);
 		verify(latch, times(0)).countDown();
-		context.destroy();
+		context.close();
 	}
 
 	@Test
 	@Ignore // goes against the real feed
-	public void validateSuccessfulNewsRetrievalWithHttpUrl() throws Exception{
+	public void validateSuccessfulNewsRetrievalWithHttpUrl() throws Exception {
 		final CountDownLatch latch = new CountDownLatch(3);
 		MessageHandler handler = spy(new MessageHandler() {
+			@Override
 			public void handleMessage(Message<?> message) throws MessagingException {
 				latch.countDown();
 			}
 		});
-		ApplicationContext context = new ClassPathXmlApplicationContext(
+		ConfigurableApplicationContext context = new ClassPathXmlApplicationContext(
 				"FeedInboundChannelAdapterParserTests-http-context.xml", this.getClass());
 		DirectChannel feedChannel = context.getBean("feedChannel", DirectChannel.class);
 		feedChannel.subscribe(handler);
-		latch.await(5, TimeUnit.SECONDS);
+		latch.await(10, TimeUnit.SECONDS);
 		verify(handler, atLeast(3)).handleMessage(Mockito.any(Message.class));
+		context.close();
 	}
 
 	@Test
@@ -146,7 +150,7 @@ public class FeedInboundChannelAdapterParserTests {
 		MessageChannel autoChannel = context.getBean("autoChannel", MessageChannel.class);
 		SourcePollingChannelAdapter adapter = context.getBean("autoChannel.adapter", SourcePollingChannelAdapter.class);
 		assertSame(autoChannel, TestUtils.getPropertyValue(adapter, "outputChannel"));
-		context.destroy();
+		context.close();
 	}
 
 	public static class SampleService {
@@ -175,14 +179,17 @@ public class FeedInboundChannelAdapterParserTests {
 		public void receiveFeedEntry(SyndEntry entry) {
 			latch.countDown();
 		}
+
 	}
 
 
 	public static class SampleMetadataStore implements MetadataStore {
 
+		@Override
 		public void put(String key, String value) {
 		}
 
+		@Override
 		public String get(String key) {
 			return null;
 		}
@@ -191,6 +198,7 @@ public class FeedInboundChannelAdapterParserTests {
 		public String remove(String key) {
 			return null;
 		}
+
 	}
 
 }

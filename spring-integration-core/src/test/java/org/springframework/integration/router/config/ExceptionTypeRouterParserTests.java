@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.router.config;
 
 import static org.junit.Assert.assertNotNull;
@@ -20,11 +21,10 @@ import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
-import org.springframework.context.ApplicationContext;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
+import org.springframework.integration.channel.QueueChannel;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
-import org.springframework.integration.channel.QueueChannel;
 import org.springframework.messaging.support.GenericMessage;
 
 /**
@@ -36,8 +36,9 @@ public class ExceptionTypeRouterParserTests {
 
 	@SuppressWarnings("unchecked")
 	@Test
-	public void testExceptionTypeRouterConfig(){
-		ApplicationContext context = new ClassPathXmlApplicationContext("ExceptionTypeRouterParserTests-context.xml", this.getClass());
+	public void testExceptionTypeRouterConfig() {
+		ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext(
+				"ExceptionTypeRouterParserTests-context.xml", this.getClass());
 		MessageChannel inputChannel = context.getBean("inChannel", MessageChannel.class);
 
 		inputChannel.send(new GenericMessage<Throwable>(new NullPointerException()));
@@ -55,5 +56,6 @@ public class ExceptionTypeRouterParserTests {
 		inputChannel.send(new GenericMessage<String>("Hello"));
 		QueueChannel outputChannel = context.getBean("outputChannel", QueueChannel.class);
 		assertNotNull(outputChannel.receive(1000));
+		context.close();
 	}
 }

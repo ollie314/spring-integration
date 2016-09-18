@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,13 +17,14 @@
 package org.springframework.integration.config;
 
 import org.springframework.expression.Expression;
-import org.springframework.messaging.MessageChannel;
-import org.springframework.messaging.MessageHandler;
 import org.springframework.integration.core.MessageSelector;
 import org.springframework.integration.filter.ExpressionEvaluatingSelector;
 import org.springframework.integration.filter.MessageFilter;
 import org.springframework.integration.filter.MethodInvokingSelector;
+import org.springframework.integration.handler.AbstractMessageProducingHandler;
 import org.springframework.integration.handler.AbstractReplyProducingMessageHandler;
+import org.springframework.messaging.MessageChannel;
+import org.springframework.messaging.MessageHandler;
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
 
@@ -32,6 +33,7 @@ import org.springframework.util.StringUtils;
  *
  * @author Mark Fisher
  * @author Gary Russell
+ * @author David Liu
  * @since 2.0
  */
 public class FilterFactoryBean extends AbstractStandardMessageHandlerFactoryBean {
@@ -61,7 +63,7 @@ public class FilterFactoryBean extends AbstractStandardMessageHandlerFactoryBean
 	}
 
 	@Override
-	MessageHandler createMethodInvokingHandler(Object targetObject, String targetMethodName) {
+	protected MessageHandler createMethodInvokingHandler(Object targetObject, String targetMethodName) {
 		MessageSelector selector = null;
 		if (targetObject instanceof MessageSelector) {
 			selector = (MessageSelector) targetObject;
@@ -86,22 +88,22 @@ public class FilterFactoryBean extends AbstractStandardMessageHandlerFactoryBean
 	}
 
 	@Override
-	MessageHandler createExpressionEvaluatingHandler(Expression expression) {
+	protected MessageHandler createExpressionEvaluatingHandler(Expression expression) {
 		return this.createFilter(new ExpressionEvaluatingSelector(expression));
 	}
 
-	private MessageFilter createFilter(MessageSelector selector) {
+	protected MessageFilter createFilter(MessageSelector selector) {
 		MessageFilter filter = new MessageFilter(selector);
 		postProcessReplyProducer(filter);
 		return filter;
 	}
 
-	private void postProcessFilter(MessageFilter filter) {
+	protected void postProcessFilter(MessageFilter filter) {
 		if (this.throwExceptionOnRejection != null) {
 			filter.setThrowExceptionOnRejection(this.throwExceptionOnRejection);
 		}
 		if (this.discardChannel != null) {
-			filter.setDiscardChannel(discardChannel);
+			filter.setDiscardChannel(this.discardChannel);
 		}
 		if (this.discardWithinAdvice != null) {
 			filter.setDiscardWithinAdvice(this.discardWithinAdvice);
@@ -110,9 +112,9 @@ public class FilterFactoryBean extends AbstractStandardMessageHandlerFactoryBean
 
 
 	@Override
-	protected void postProcessReplyProducer(AbstractReplyProducingMessageHandler handler) {
+	protected void postProcessReplyProducer(AbstractMessageProducingHandler handler) {
 		if (this.sendTimeout != null) {
-			handler.setSendTimeout(this.sendTimeout.longValue());
+			handler.setSendTimeout(this.sendTimeout);
 		}
 		if (!(handler instanceof MessageFilter)) {
 			Assert.isNull(this.throwExceptionOnRejection, "Cannot set throwExceptionOnRejection if the referenced bean is "
@@ -132,12 +134,16 @@ public class FilterFactoryBean extends AbstractStandardMessageHandlerFactoryBean
 	 * MessageSelector, MesageSelector wins and gets wrapped in a MessageFilter.
 	 */
 	@Override
-	protected boolean canBeUsedDirect(AbstractReplyProducingMessageHandler handler) {
+	protected boolean canBeUsedDirect(AbstractMessageProducingHandler handler) {
 		return handler instanceof MessageFilter
 				|| (!(handler instanceof MessageSelector)
 						&& this.discardChannel == null && this.throwExceptionOnRejection == null
 						&& this.discardWithinAdvice == null);
 	}
 
+	@Override
+	protected Class<? extends MessageHandler> getPreCreationHandlerType() {
+		return MessageFilter.class;
+	}
 
 }

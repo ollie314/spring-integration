@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,24 +16,37 @@
 
 package org.springframework.integration.file.config;
 
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.instanceOf;
+import static org.hamcrest.Matchers.isOneOf;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 
 import java.io.File;
 import java.util.Comparator;
+import java.util.Iterator;
+import java.util.Set;
 import java.util.concurrent.PriorityBlockingQueue;
 
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+
 import org.springframework.beans.DirectFieldAccessor;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.ApplicationContext;
 import org.springframework.integration.channel.AbstractMessageChannel;
 import org.springframework.integration.file.DefaultDirectoryScanner;
 import org.springframework.integration.file.FileReadingMessageSource;
 import org.springframework.integration.file.filters.AcceptOnceFileListFilter;
+import org.springframework.integration.file.filters.FileListFilter;
+import org.springframework.integration.file.filters.IgnoreHiddenFileListFilter;
+import org.springframework.integration.test.util.TestUtils;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 
@@ -41,69 +54,100 @@ import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
  * @author Iwein Fuld
  * @author Mark Fisher
  * @author Gary Russell
+ * @author Gunnar Hillert
+ * @author Artem Bilan
  */
 @ContextConfiguration
 @RunWith(SpringJUnit4ClassRunner.class)
+@DirtiesContext
 public class FileInboundChannelAdapterParserTests {
 
-    @Autowired(required = true)
-    private ApplicationContext context;
+	@Autowired
+	private ApplicationContext context;
 
-    @Autowired
-    private FileReadingMessageSource source;
+	@Autowired
+	@Qualifier("inputDirPoller.adapter.source")
+	private FileReadingMessageSource inputDirPollerSource;
 
-    private DirectFieldAccessor accessor;
+	@Autowired
+	@Qualifier("inboundWithJustFilter.adapter.source")
+	private FileReadingMessageSource inboundWithJustFilterSource;
 
-    @Before
-    public void init() {
-        accessor = new DirectFieldAccessor(source);
-    }
+	@Autowired
+	private FileListFilter<File> filter;
 
-    @Test
-    public void channelName() throws Exception {
-    	context.getBean("inputDirPoller");
-        AbstractMessageChannel channel = context.getBean("inputDirPoller", AbstractMessageChannel.class);
-        assertEquals("Channel should be available under specified id", "inputDirPoller", channel.getComponentName());
-    }
+	private DirectFieldAccessor accessor;
 
-    @Test
-    public void inputDirectory() {
-        File expected = new File(System.getProperty("java.io.tmpdir"));
-        File actual = (File) accessor.getPropertyValue("directory");
-        assertEquals("'directory' should be set", expected, actual);
-    }
+	@Before
+	public void init() {
+		accessor = new DirectFieldAccessor(inputDirPollerSource);
+	}
 
-    @Test
-    public void filter() throws Exception {
-        DefaultDirectoryScanner scanner = (DefaultDirectoryScanner) accessor.getPropertyValue("scanner");
-        DirectFieldAccessor scannerAccessor = new DirectFieldAccessor(scanner);
-        Object filter = scannerAccessor.getPropertyValue("filter");
-        assertTrue("'filter' should be set",
-                filter instanceof AcceptOnceFileListFilter);
-    }
+	@Test
+	public void channelName() throws Exception {
+		AbstractMessageChannel channel = context.getBean("inputDirPoller", AbstractMessageChannel.class);
+		assertEquals("Channel should be available under specified id", "inputDirPoller", channel.getComponentName());
+	}
 
-    @Test
-    public void comparator() throws Exception {
-        Object priorityQueue = accessor.getPropertyValue("toBeReceived");
-        assertEquals(PriorityBlockingQueue.class, priorityQueue.getClass());
-        Object expected = context.getBean("testComparator");
-        DirectFieldAccessor queueAccessor = new DirectFieldAccessor(priorityQueue);
-        Object innerQueue = queueAccessor.getPropertyValue("q");
-        Object actual;
-        if (innerQueue != null) {
-            actual = new DirectFieldAccessor(innerQueue).getPropertyValue("comparator");
-        }
-        else {
-            // probably running under JDK 7
-            actual = queueAccessor.getPropertyValue("comparator");
-        }
-        assertSame("comparator reference not set, ", expected, actual);
-    }
+	@Test
+	public void justFilter() throws Exception {
+		Iterator<?> filterIterator = TestUtils
+				.getPropertyValue(this.inboundWithJustFilterSource, "scanner.filter.fileFilters", Set.class).iterator();
+		assertThat(filterIterator.next(), instanceOf(IgnoreHiddenFileListFilter.class));
+		assertSame(this.filter, filterIterator.next());
+	}
 
-    static class TestComparator implements Comparator<File> {
+	@Test
+	public void inputDirectory() {
+		File expected = new File(System.getProperty("java.io.tmpdir"));
+		File actual = (File) accessor.getPropertyValue("directory");
+		assertEquals("'directory' should be set", expected, actual);
+	}
 
-        public int compare(File f1, File f2) {
-            return 0;
-        }
+	@Test
+	public void filter() throws Exception {
+		DefaultDirectoryScanner scanner = (DefaultDirectoryScanner) accessor.getPropertyValue("scanner");
+		DirectFieldAccessor scannerAccessor = new DirectFieldAccessor(scanner);
+		Object filter = scannerAccessor.getPropertyValue("filter");
+		assertTrue("'filter' should be set and be of instance AcceptOnceFileListFilter but got "
+			+ filter.getClass().getSimpleName(), filter instanceof AcceptOnceFileListFilter);
+
+		assertThat(scanner.getClass().getName(),
+				containsString("FileReadingMessageSource$WatchServiceDirectoryScanner"));
+
+		FileReadingMessageSource.WatchEventType[] watchEvents =
+				(FileReadingMessageSource.WatchEventType[]) this.accessor.getPropertyValue("watchEvents");
+		assertEquals(2, watchEvents.length);
+		for (FileReadingMessageSource.WatchEventType watchEvent : watchEvents) {
+			assertNotEquals(FileReadingMessageSource.WatchEventType.CREATE, watchEvent);
+			assertThat(watchEvent, isOneOf(FileReadingMessageSource.WatchEventType.MODIFY,
+					FileReadingMessageSource.WatchEventType.DELETE));
+		}
+	}
+
+	@Test
+	public void comparator() throws Exception {
+		Object priorityQueue = accessor.getPropertyValue("toBeReceived");
+		assertEquals(PriorityBlockingQueue.class, priorityQueue.getClass());
+		Object expected = context.getBean("testComparator");
+		DirectFieldAccessor queueAccessor = new DirectFieldAccessor(priorityQueue);
+		Object innerQueue = queueAccessor.getPropertyValue("q");
+		Object actual;
+		if (innerQueue != null) {
+			actual = new DirectFieldAccessor(innerQueue).getPropertyValue("comparator");
+		}
+		else {
+			// probably running under JDK 7
+			actual = queueAccessor.getPropertyValue("comparator");
+		}
+		assertSame("comparator reference not set, ", expected, actual);
+	}
+
+	static class TestComparator implements Comparator<File> {
+
+		@Override
+		public int compare(File f1, File f2) {
+			return 0;
+		}
 	}
 }

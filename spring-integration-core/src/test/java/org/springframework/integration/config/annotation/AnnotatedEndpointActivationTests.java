@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,6 +34,7 @@ import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.MessageDeliveryException;
 import org.springframework.messaging.PollableChannel;
 import org.springframework.messaging.support.GenericMessage;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 
@@ -41,10 +42,11 @@ import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
  * @author Dave Syer
  * @author Mark Fisher
  * @author Gary Russell
+ * @author Artem Bilan
  */
 @ContextConfiguration
 @RunWith(SpringJUnit4ClassRunner.class)
-@MessageEndpoint
+@DirtiesContext
 public class AnnotatedEndpointActivationTests {
 
 	@Autowired
@@ -63,29 +65,9 @@ public class AnnotatedEndpointActivationTests {
 	// them will get the message.
 	private static volatile int count = 0;
 
-
-	@ServiceActivator(inputChannel = "input", outputChannel = "output")
-	public String process(String message) {
-		count++;
-		String result = message + ": " + count;
-		return result;
-	}
-
-	@ServiceActivator(inputChannel = "inputImplicit", outputChannel = "output")
-	public String processImplicit(String message) {
-		count++;
-		String result = message + ": " + count;
-		return result;
-	}
-
 	@Before
 	public void resetCount() {
 		count = 0;
-	}
-
-	@Test
-	public void configCheck() {
-		assertTrue(true);
 	}
 
 	@Test
@@ -95,6 +77,9 @@ public class AnnotatedEndpointActivationTests {
 		assertNotNull(message);
 		assertEquals("foo: 1", message.getPayload());
 		assertEquals(1, count);
+
+		assertTrue(this.applicationContext.containsBean("annotatedEndpoint.process.serviceActivator"));
+		assertTrue(this.applicationContext.containsBean("annotatedEndpoint2.process.serviceActivator"));
 	}
 
 	@Test
@@ -108,12 +93,14 @@ public class AnnotatedEndpointActivationTests {
 	}
 
 	@Test(expected = MessageDeliveryException.class)
+	@DirtiesContext
 	public void stopContext() {
 		applicationContext.stop();
 		this.input.send(new GenericMessage<String>("foo"));
 	}
 
 	@Test
+	@DirtiesContext
 	public void stopAndRestartContext() {
 		applicationContext.stop();
 		applicationContext.start();
@@ -123,5 +110,34 @@ public class AnnotatedEndpointActivationTests {
 		assertEquals("foo: 1", message.getPayload());
 		assertEquals(1, count);
 	}
+
+	@MessageEndpoint
+	private static class AnnotatedEndpoint {
+
+		@ServiceActivator(inputChannel = "input", outputChannel = "output")
+		public String process(String message) {
+			count++;
+			return message + ": " + count;
+		}
+
+		@ServiceActivator(inputChannel = "inputImplicit", outputChannel = "output")
+		public String processImplicit(String message) {
+			count++;
+			return message + ": " + count;
+		}
+
+	}
+
+	@SuppressWarnings("unused")
+	private static class AnnotatedEndpoint2 {
+
+		@ServiceActivator(inputChannel = "input", outputChannel = "output")
+		public String process(String message) {
+			count++;
+			return message + ": " + count;
+		}
+
+	}
+
 
 }

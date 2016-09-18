@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,10 +40,13 @@ import com.gemstone.gemfire.cache.query.CqEvent;
  *
  * @author Josh Long
  * @author David Turanski
+ * @author Artem Bilan
  * @since 2.1
  *
  */
-public class ContinuousQueryMessageProducer extends ExpressionMessageProducerSupport implements ContinuousQueryListener {
+public class ContinuousQueryMessageProducer extends ExpressionMessageProducerSupport
+		implements ContinuousQueryListener {
+
 	private static Log logger = LogFactory.getLog(ContinuousQueryMessageProducer.class);
 
 	private final String query;
@@ -54,12 +57,11 @@ public class ContinuousQueryMessageProducer extends ExpressionMessageProducerSup
 
 	private boolean durable;
 
-	private volatile Set<CqEventType> supportedEventTypes = new HashSet<CqEventType>(Arrays.asList(CqEventType.CREATED,
-			CqEventType.UPDATED));
+	private volatile Set<CqEventType> supportedEventTypes =
+			new HashSet<CqEventType>(Arrays.asList(CqEventType.CREATED, CqEventType.UPDATED));
 
 	/**
-	 *
-	 * @param queryListenerContainer a {@link org.springframework.data.gemfire.listener.ContinuousQueryListenerContainer}
+	 * @param queryListenerContainer a {@link ContinuousQueryListenerContainer}
 	 * @param query the query string
 	 */
 	public ContinuousQueryMessageProducer(ContinuousQueryListenerContainer queryListenerContainer, String query) {
@@ -70,7 +72,6 @@ public class ContinuousQueryMessageProducer extends ExpressionMessageProducerSup
 	}
 
 	/**
-	 *
 	 * @param queryName optional query name
 	 */
 	public void setQueryName(String queryName) {
@@ -78,7 +79,6 @@ public class ContinuousQueryMessageProducer extends ExpressionMessageProducerSup
 	}
 
 	/**
-	 *
 	 * @param durable true if the query is a durable subscription
 	 */
 	public void setDurable(boolean durable) {
@@ -91,40 +91,51 @@ public class ContinuousQueryMessageProducer extends ExpressionMessageProducerSup
 	}
 
 	@Override
+	public String getComponentType() {
+		return "gemfire:cq-inbound-channel-adapter";
+	}
+
+	@Override
 	protected void onInit() {
 		super.onInit();
-		if (queryName == null) {
-			queryListenerContainer.addListener(new ContinuousQueryDefinition(this.query, this, this.durable));
+		if (this.queryName == null) {
+			this.queryListenerContainer.addListener(new ContinuousQueryDefinition(this.query, this, this.durable));
 		}
 		else {
-			queryListenerContainer.addListener(new ContinuousQueryDefinition(this.queryName, this.query, this, this.durable));
+			this.queryListenerContainer.addListener(new ContinuousQueryDefinition(this.queryName, this.query, this,
+					this.durable));
 		}
 	}
 
 	/*
 	 * (non-Javadoc)
-	 *
-	 * @see
-	 * org.springframework.data.gemfire.listener.QueryListener#onEvent(com.gemstone
-	 * .gemfire.cache.query.CqEvent)
+	 * @see org.springframework.data.gemfire.listener.QueryListener#onEvent(com.gemstone.gemfire.cache.query.CqEvent)
 	 */
+	@Override
 	public void onEvent(CqEvent event) {
 		if (isEventSupported(event)) {
 			if (logger.isDebugEnabled()) {
 				logger.debug(String.format("processing cq event key [%s] event [%s]", event.getQueryOperation()
 						.toString(), event.getKey()));
 			}
-			Message<?> cqEventMessage = this.getMessageBuilderFactory().withPayload(evaluatePayloadExpression(event)).build();
-			sendMessage(cqEventMessage);
+			Message<?> message = null;
+			Object object = evaluatePayloadExpression(event);
+			if (object instanceof Message) {
+				message = (Message<?>) object;
+			}
+			else {
+				message = getMessageBuilderFactory().withPayload(object).build();
+			}
+			sendMessage(message);
 		}
 	}
 
 	private boolean isEventSupported(CqEvent event) {
 
-		 String eventName = event.getQueryOperation().toString() +
-		 	(event.getQueryOperation().toString().endsWith("Y")? "ED" : "D");
-		 CqEventType eventType = CqEventType.valueOf(eventName);
-		 return supportedEventTypes.contains(eventType);
+		String eventName = event.getQueryOperation().toString() +
+				(event.getQueryOperation().toString().endsWith("Y") ? "ED" : "D");
+		CqEventType eventType = CqEventType.valueOf(eventName);
+		return this.supportedEventTypes.contains(eventType);
 	}
 
 }

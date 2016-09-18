@@ -16,12 +16,17 @@
 
 package org.springframework.integration.channel;
 
+import static org.hamcrest.Matchers.instanceOf;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 
 import java.util.Collections;
 import java.util.Date;
+import java.util.HashSet;
+import java.util.Set;
 
 import org.junit.Test;
 
@@ -30,11 +35,16 @@ import org.springframework.beans.factory.support.BeanDefinitionBuilder;
 import org.springframework.context.support.ConversionServiceFactoryBean;
 import org.springframework.context.support.GenericApplicationContext;
 import org.springframework.core.convert.ConversionService;
+import org.springframework.core.convert.TypeDescriptor;
 import org.springframework.core.convert.converter.Converter;
+import org.springframework.core.convert.converter.GenericConverter;
 import org.springframework.core.convert.support.DefaultConversionService;
 import org.springframework.core.convert.support.GenericConversionService;
 import org.springframework.integration.context.IntegrationContextUtils;
 import org.springframework.integration.support.converter.DefaultDatatypeChannelMessageConverter;
+import org.springframework.integration.support.utils.IntegrationUtils;
+import org.springframework.integration.test.util.TestUtils;
+import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.MessageDeliveryException;
 import org.springframework.messaging.MessagingException;
@@ -111,18 +121,22 @@ public class DatatypeChannelTests {
 		BeanDefinitionBuilder conversionServiceBuilder =
 				BeanDefinitionBuilder.genericBeanDefinition(ConversionServiceFactoryBean.class);
 		conversionServiceBuilder.addPropertyValue("converters", Collections.singleton(converter));
-		context.registerBeanDefinition(IntegrationContextUtils.INTEGRATION_CONVERSION_SERVICE_BEAN_NAME,
+		context.registerBeanDefinition(IntegrationUtils.INTEGRATION_CONVERSION_SERVICE_BEAN_NAME,
 				conversionServiceBuilder.getBeanDefinition());
 		BeanDefinition messageConverter = BeanDefinitionBuilder.genericBeanDefinition(
 				DefaultDatatypeChannelMessageConverter.class).getBeanDefinition();
 		context.registerBeanDefinition(
-				IntegrationContextUtils.INTEGRATION_DATATYPE_CHANNEL_MESSAGE_CONVERTER_BEAN_NAME, messageConverter);
-		BeanDefinitionBuilder channelBuilder = BeanDefinitionBuilder.genericBeanDefinition(QueueChannel.class);
+				IntegrationContextUtils.INTEGRATION_DATATYPE_CHANNEL_MESSAGE_CONVERTER_BEAN_NAME,
+				messageConverter);
+		BeanDefinitionBuilder channelBuilder = BeanDefinitionBuilder
+				.genericBeanDefinition(QueueChannel.class);
 		channelBuilder.addPropertyValue("datatypes", "java.lang.Integer, java.util.Date");
 		context.registerBeanDefinition("testChannel", channelBuilder.getBeanDefinition());
 		context.refresh();
 
 		QueueChannel channel = context.getBean("testChannel", QueueChannel.class);
+		assertSame(context.getBean(ConversionService.class),
+				TestUtils.getPropertyValue(channel, "messageConverter.conversionService"));
 		assertTrue(channel.send(new GenericMessage<Boolean>(Boolean.TRUE)));
 		assertEquals(1, channel.receive().getPayload());
 		context.close();
@@ -192,12 +206,75 @@ public class DatatypeChannelTests {
 		channel.send(new ErrorMessage(new Exception("test")));
 	}
 
+	@Test
+	public void genericConverters() {
+		QueueChannel channel = createChannel(Foo.class);
+		DefaultConversionService conversionService = new DefaultConversionService();
+		conversionService.addConverter(new StringToBarConverter());
+		conversionService.addConverter(new IntegerToBazConverter());
+		DefaultDatatypeChannelMessageConverter converter = new DefaultDatatypeChannelMessageConverter();
+		converter.setConversionService(conversionService);
+		channel.setMessageConverter(converter);
+		assertTrue(channel.send(new GenericMessage<String>("foo")));
+		Message<?> out = channel.receive(0);
+		assertThat(out.getPayload(), instanceOf(Bar.class));
+		assertTrue(channel.send(new GenericMessage<Integer>(42)));
+		out = channel.receive(0);
+		assertThat(out.getPayload(), instanceOf(Baz.class));
+	}
+
 
 	private static QueueChannel createChannel(Class<?> ... datatypes) {
 		QueueChannel channel = new QueueChannel();
 		channel.setBeanName("testChannel");
 		channel.setDatatypes(datatypes);
 		return channel;
+	}
+
+	private static class Foo {
+
+	}
+
+	private static class Bar extends Foo {
+
+	}
+
+	private static class Baz extends Foo {
+
+	}
+
+	private static class StringToBarConverter implements GenericConverter {
+
+		@Override
+		public Set<ConvertiblePair> getConvertibleTypes() {
+			Set<ConvertiblePair> pairs = new HashSet<ConvertiblePair>();
+			pairs.add(new ConvertiblePair(String.class, Foo.class));
+			pairs.add(new ConvertiblePair(String.class, Bar.class));
+			return pairs;
+		}
+
+		@Override
+		public Object convert(Object source, TypeDescriptor sourceType, TypeDescriptor targetType) {
+			return new Bar();
+		}
+
+	}
+
+	private static class IntegerToBazConverter implements GenericConverter {
+
+		@Override
+		public Set<ConvertiblePair> getConvertibleTypes() {
+			Set<ConvertiblePair> pairs = new HashSet<ConvertiblePair>();
+			pairs.add(new ConvertiblePair(Integer.class, Foo.class));
+			pairs.add(new ConvertiblePair(Integer.class, Baz.class));
+			return pairs;
+		}
+
+		@Override
+		public Object convert(Object source, TypeDescriptor sourceType, TypeDescriptor targetType) {
+			return new Baz();
+		}
+
 	}
 
 }

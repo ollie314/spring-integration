@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2015 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,20 +29,21 @@ import java.util.List;
 import org.junit.Before;
 import org.junit.Test;
 
-import org.springframework.messaging.Message;
 import org.springframework.integration.annotation.Filter;
 import org.springframework.integration.annotation.MessageEndpoint;
 import org.springframework.integration.channel.DirectChannel;
 import org.springframework.integration.channel.QueueChannel;
 import org.springframework.integration.endpoint.EventDrivenConsumer;
 import org.springframework.integration.handler.advice.AbstractRequestHandlerAdvice;
-import org.springframework.messaging.support.GenericMessage;
 import org.springframework.integration.test.util.TestUtils;
 import org.springframework.integration.test.util.TestUtils.TestApplicationContext;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.support.GenericMessage;
 
 /**
  * @author Mark Fisher
  * @author Gary Russell
+ * @author Artem Bilan
  * @since 2.0
  */
 public class FilterAnnotationPostProcessorTests {
@@ -195,7 +196,7 @@ public class FilterAnnotationPostProcessorTests {
 	@MessageEndpoint
 	private static class TestFilterWithBooleanPrimitive {
 
-		@Filter(inputChannel="input", outputChannel="output")
+		@Filter(inputChannel = "input", outputChannel = "output")
 		public boolean filter(String s) {
 			return !s.contains("bad");
 		}
@@ -204,7 +205,7 @@ public class FilterAnnotationPostProcessorTests {
 	@MessageEndpoint
 	private static class TestFilterWithAdviceDiscardWithin {
 
-		@Filter(inputChannel="input", outputChannel="output", adviceChain="adviceChain")
+		@Filter(inputChannel = "input", outputChannel = "output", adviceChain = "adviceChain")
 		public boolean filter(String s) {
 			return !s.contains("bad");
 		}
@@ -213,7 +214,7 @@ public class FilterAnnotationPostProcessorTests {
 	@MessageEndpoint
 	private static class TestFilterWithAdviceDiscardWithinTwice {
 
-		@Filter(inputChannel="input", outputChannel="output", adviceChain={"adviceChain1", "adviceChain2"})
+		@Filter(inputChannel = "input", outputChannel = "output", adviceChain = {"adviceChain1", "adviceChain2"})
 		public boolean filter(String s) {
 			return !s.contains("bad");
 		}
@@ -222,8 +223,8 @@ public class FilterAnnotationPostProcessorTests {
 	@MessageEndpoint
 	private static class TestFilterWithAdviceDiscardWithout {
 
-		@Filter(inputChannel="input", outputChannel="output",
-				adviceChain="adviceChain", discardWithinAdvice=false)
+		@Filter(inputChannel = "input", outputChannel = "output",
+				adviceChain = "adviceChain", discardWithinAdvice = "false")
 		public boolean filter(String s) {
 			return !s.contains("bad");
 		}
@@ -232,7 +233,7 @@ public class FilterAnnotationPostProcessorTests {
 	@MessageEndpoint
 	private static class TestFilterWithBooleanWrapperClass {
 
-		@Filter(inputChannel="input", outputChannel="output")
+		@Filter(inputChannel = "input", outputChannel = "output")
 		public Boolean filter(String s) {
 			return !s.contains("bad");
 		}
@@ -242,7 +243,7 @@ public class FilterAnnotationPostProcessorTests {
 	@MessageEndpoint
 	private static class TestFilterWithStringReturnType {
 
-		@Filter(inputChannel="input", outputChannel="output")
+		@Filter(inputChannel = "input", outputChannel = "output")
 		public String filter(String s) {
 			return s;
 		}
@@ -252,7 +253,7 @@ public class FilterAnnotationPostProcessorTests {
 	@MessageEndpoint
 	private static class TestFilterWithVoidReturnType {
 
-		@Filter(inputChannel="input", outputChannel="output")
+		@Filter(inputChannel = "input", outputChannel = "output")
 		public void filter(String s) {
 		}
 	}

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.jms.config;
 
 import static org.junit.Assert.assertTrue;
@@ -26,16 +27,16 @@ import org.mockito.Mockito;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
 
-import org.springframework.context.ApplicationContext;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
+import org.springframework.integration.history.MessageHistory;
+import org.springframework.integration.jms.SubscribableJmsChannel;
+import org.springframework.jms.core.JmsTemplate;
+import org.springframework.jms.listener.AbstractMessageListenerContainer;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.PollableChannel;
 import org.springframework.messaging.SubscribableChannel;
-import org.springframework.integration.history.MessageHistory;
-import org.springframework.integration.jms.SubscribableJmsChannel;
 import org.springframework.messaging.support.GenericMessage;
-import org.springframework.jms.core.JmsTemplate;
-import org.springframework.jms.listener.AbstractMessageListenerContainer;
 
 /**
  * @author Oleg Zhurakousky
@@ -46,7 +47,7 @@ public class JmsChannelHistoryTests {
 
 	@SuppressWarnings("rawtypes")
 	@Test
-	public void testMessageHistory() throws Exception{
+	public void testMessageHistory() throws Exception {
 		AbstractMessageListenerContainer mlContainer = mock(AbstractMessageListenerContainer.class);
 		JmsTemplate template = mock(JmsTemplate.class);
 		SubscribableJmsChannel channel = new SubscribableJmsChannel(mlContainer, template);
@@ -55,27 +56,32 @@ public class JmsChannelHistoryTests {
 		Message<String> message = new GenericMessage<String>("hello");
 
 		doAnswer(new Answer() {
-		      @SuppressWarnings("unchecked")
+			@Override
+			@SuppressWarnings("unchecked")
 			public Object answer(InvocationOnMock invocation) {
-		          Message<String> msg = (Message<String>) invocation.getArguments()[0];
-		          MessageHistory history = MessageHistory.read(msg);
-		  		  assertTrue(history.get(0).contains("jmsChannel"));
-		          return null;
-		      }})
-		  .when(template).convertAndSend(Mockito.any(Message.class));
+				Message<String> msg = (Message<String>) invocation.getArguments()[0];
+				MessageHistory history = MessageHistory.read(msg);
+				assertTrue(history.get(0).contains("jmsChannel"));
+				return null;
+			}
+		}).when(template).convertAndSend(Mockito.any(Message.class));
 		channel.send(message);
 		verify(template, times(1)).convertAndSend(Mockito.any(Message.class));
+		channel.stop();
 	}
 
 	@Test
-	public void testFullConfig() throws Exception{
+	public void testFullConfig() throws Exception {
 		ActiveMqTestUtils.prepare();
-		ApplicationContext ac = new ClassPathXmlApplicationContext("JmsChannelHistoryTests-context.xml", this.getClass());
+		ConfigurableApplicationContext ac =
+				new ClassPathXmlApplicationContext("JmsChannelHistoryTests-context.xml", this.getClass());
 		SubscribableChannel channel = ac.getBean("jmsChannel", SubscribableChannel.class);
 		PollableChannel resultChannel = ac.getBean("resultChannel", PollableChannel.class);
 		channel.send(new GenericMessage<String>("hello"));
-		Message<?> resultMessage = resultChannel.receive(5000);
+		Message<?> resultMessage = resultChannel.receive(10000);
 		MessageHistory history = MessageHistory.read(resultMessage);
  		assertTrue(history.get(0).contains("jmsChannel"));
+		ac.close();
 	}
+
 }

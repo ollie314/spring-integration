@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -39,6 +39,11 @@ public class PollerMetadata {
 	public static final String DEFAULT_POLLER_METADATA_BEAN_NAME =
 			"org.springframework.integration.context.defaultPollerMetadata";
 
+	/**
+	 *  A convenient short alias for the global default poller bean name.
+	 */
+	public static final String DEFAULT_POLLER = DEFAULT_POLLER_METADATA_BEAN_NAME;
+
 	private volatile Trigger trigger;
 
 	private volatile long maxMessagesPerPoll = MAX_MESSAGES_UNBOUNDED;
@@ -63,7 +68,7 @@ public class PollerMetadata {
 	}
 
 	public TransactionSynchronizationFactory getTransactionSynchronizationFactory() {
-		return transactionSynchronizationFactory;
+		return this.transactionSynchronizationFactory;
 	}
 
 	public void setTrigger(Trigger trigger) {
@@ -75,7 +80,7 @@ public class PollerMetadata {
 	}
 
 	public ErrorHandler getErrorHandler() {
-		return errorHandler;
+		return this.errorHandler;
 	}
 
 	public void setErrorHandler(ErrorHandler errorHandler) {
@@ -126,7 +131,7 @@ public class PollerMetadata {
 	}
 
 	public long getSendTimeout() {
-		return sendTimeout;
+		return this.sendTimeout;
 	}
 
 	public void setSendTimeout(long sendTimeout) {

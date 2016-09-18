@@ -1,5 +1,5 @@
 /*
- * Copyright 2013 the original author or authors.
+ * Copyright 2013-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.file.remote.session;
 
 import static org.hamcrest.Matchers.equalTo;
@@ -148,7 +149,16 @@ public class CachingSessionFactoryTests {
 		}
 
 		@Override
+		public void append(InputStream inputStream, String destination) throws IOException {
+		}
+
+		@Override
 		public boolean mkdir(String directory) throws IOException {
+			return false;
+		}
+
+		@Override
+		public boolean rmdir(String directory) throws IOException {
 			return false;
 		}
 
@@ -184,6 +194,11 @@ public class CachingSessionFactoryTests {
 		@Override
 		public boolean finalizeRaw() throws IOException {
 			return false;
+		}
+
+		@Override
+		public Object getClientInstance() {
+			return null;
 		}
 
 	}

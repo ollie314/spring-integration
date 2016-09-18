@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,13 @@
 
 package org.springframework.integration.transformer;
 
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.equalToIgnoringCase;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.mockito.Mockito.mock;
@@ -34,7 +37,6 @@ import org.springframework.beans.factory.BeanFactory;
 import org.springframework.expression.Expression;
 import org.springframework.expression.common.LiteralExpression;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
-import org.springframework.messaging.MessageHandlingException;
 import org.springframework.integration.channel.DirectChannel;
 import org.springframework.integration.channel.NullChannel;
 import org.springframework.integration.channel.QueueChannel;
@@ -47,6 +49,7 @@ import org.springframework.integration.handler.ReplyRequiredException;
 import org.springframework.integration.support.MessageBuilder;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageDeliveryException;
+import org.springframework.messaging.MessageHandlingException;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.scheduling.support.PeriodicTrigger;
 
@@ -55,6 +58,7 @@ import org.springframework.scheduling.support.PeriodicTrigger;
  * @author Gunnar Hillert
  * @author Artem Bilan
  * @author Gary Russell
+ * @author Kris Jacyna
  *
  * @since 2.1
  */
@@ -83,9 +87,9 @@ public class ContentEnricherTests {
 	public void replyChannelReplyTimingOut() throws Exception {
 
 		final long requestTimeout = 500L;
-		final long replyTimeout   = 700L;
+		final long replyTimeout = 700L;
 
-		final DirectChannel replyChannel   = new DirectChannel();
+		final DirectChannel replyChannel = new DirectChannel();
 		final QueueChannel requestChannel = new QueueChannel(1);
 
 		final ContentEnricher enricher = new ContentEnricher();
@@ -116,7 +120,8 @@ public class ContentEnricherTests {
 			protected Object handleRequestMessage(Message<?> requestMessage) {
 				try {
 					Thread.sleep(5000);
-				} catch (InterruptedException e) {
+				}
+				catch (InterruptedException e) {
 					fail(e.getMessage());
 				}
 				return new Target("child");
@@ -124,6 +129,7 @@ public class ContentEnricherTests {
 
 		};
 
+		handler.setBeanFactory(mock(BeanFactory.class));
 		handler.afterPropertiesSet();
 
 		final PollingConsumer consumer = new PollingConsumer(requestChannel, handler);
@@ -140,9 +146,11 @@ public class ContentEnricherTests {
 		Message<?> requestMessage = MessageBuilder.withPayload(target).setReplyChannel(replyChannel).build();
 
 		try {
-		    enricher.handleMessage(requestMessage);
-		} catch (ReplyRequiredException e) {
-			assertEquals("No reply produced by handler 'Enricher', and its 'requiresReply' property is set to true.", e.getMessage());
+			enricher.handleMessage(requestMessage);
+		}
+		catch (ReplyRequiredException e) {
+			assertEquals("No reply produced by handler 'Enricher', and its 'requiresReply' property is set to true.",
+					e.getMessage());
 			return;
 		}
 
@@ -156,7 +164,7 @@ public class ContentEnricherTests {
 		final String requestChannelName = "Request_Channel";
 		final long requestTimeout = 200L;
 
-		QueueChannel replyChannel   = new QueueChannel();
+		QueueChannel replyChannel = new QueueChannel();
 		QueueChannel requestChannel = new RendezvousChannel();
 		requestChannel.setBeanName(requestChannelName);
 
@@ -170,11 +178,11 @@ public class ContentEnricherTests {
 		Message<?> requestMessage = MessageBuilder.withPayload(target).setReplyChannel(replyChannel).build();
 
 		try {
-		    enricher.handleMessage(requestMessage);
-		} catch (MessageDeliveryException e) {
-			assertEquals("failed to send message to channel '" + requestChannelName
-					   + "' within timeout: " + requestTimeout, e.getMessage());
-			return;
+			enricher.handleMessage(requestMessage);
+		}
+		catch (MessageDeliveryException e) {
+			assertThat(e.getMessage(), equalToIgnoringCase("failed to send message to channel '" + requestChannelName
+					+ "' within timeout: " + requestTimeout));
 		}
 
 	}
@@ -210,15 +218,16 @@ public class ContentEnricherTests {
 	@Test
 	public void setReplyChannelWithoutRequestChannel() {
 
-		QueueChannel replyChannel   = new QueueChannel();
+		QueueChannel replyChannel = new QueueChannel();
 
 		ContentEnricher enricher = new ContentEnricher();
 		enricher.setReplyChannel(replyChannel);
 		enricher.setBeanFactory(mock(BeanFactory.class));
 
 		try {
-		    enricher.afterPropertiesSet();
-		} catch (IllegalArgumentException e) {
+			enricher.afterPropertiesSet();
+		}
+		catch (IllegalStateException e) {
 			assertEquals("If the replyChannel is set, then the requestChannel must not be null", e.getMessage());
 			return;
 		}
@@ -233,8 +242,9 @@ public class ContentEnricherTests {
 		enricher.setBeanFactory(mock(BeanFactory.class));
 
 		try {
-		    enricher.setReplyTimeout(null);
-		} catch (IllegalArgumentException e) {
+			enricher.setReplyTimeout(null);
+		}
+		catch (IllegalArgumentException e) {
 			assertEquals("replyTimeout must not be null", e.getMessage());
 			return;
 		}
@@ -249,8 +259,9 @@ public class ContentEnricherTests {
 		enricher.setBeanFactory(mock(BeanFactory.class));
 
 		try {
-		    enricher.setRequestTimeout(null);
-		} catch (IllegalArgumentException e) {
+			enricher.setRequestTimeout(null);
+		}
+		catch (IllegalArgumentException e) {
 			assertEquals("requestTimeout must not be null", e.getMessage());
 			return;
 		}
@@ -278,15 +289,16 @@ public class ContentEnricherTests {
 	@Test
 	public void testContentEnricherWithNullRequestChannel() {
 
-	    ContentEnricher enricher = new ContentEnricher();
-	    enricher.setReplyChannel(new QueueChannel());
+		ContentEnricher enricher = new ContentEnricher();
+		enricher.setReplyChannel(new QueueChannel());
 		enricher.setBeanFactory(mock(BeanFactory.class));
 
 		try {
-		    enricher.afterPropertiesSet();
-		} catch (IllegalArgumentException e) {
-            assertEquals("If the replyChannel is set, then the requestChannel must not be null", e.getMessage());
-            return;
+			enricher.afterPropertiesSet();
+		}
+		catch (IllegalStateException e) {
+			assertEquals("If the replyChannel is set, then the requestChannel must not be null", e.getMessage());
+			return;
 		}
 
 		fail("Expected an IllegalArgumentException to be thrown.");
@@ -373,7 +385,7 @@ public class ContentEnricherTests {
 		enricher.afterPropertiesSet();
 
 		TargetUser target = new TargetUser();
-        target.setName("replace me");
+		target.setName("replace me");
 
 		Message<?> requestMessage = MessageBuilder.withPayload(target).setReplyChannel(replyChannel).build();
 		enricher.handleMessage(requestMessage);
@@ -406,15 +418,16 @@ public class ContentEnricherTests {
 		enricher.afterPropertiesSet();
 
 		UncloneableTargetUser target = new UncloneableTargetUser();
-        target.setName("replace me");
+		target.setName("replace me");
 
 		Message<?> requestMessage = MessageBuilder.withPayload(target).setReplyChannel(replyChannel).build();
 
 		try {
-		    enricher.handleMessage(requestMessage);
-		} catch (MessageHandlingException e) {
-			assertEquals("Failed to clone payload object", e.getMessage());
-            return;
+			enricher.handleMessage(requestMessage);
+		}
+		catch (MessageHandlingException e) {
+			assertThat(e.getMessage(), containsString("Failed to clone payload object"));
+			return;
 		}
 
 		fail("Expected a MessageHandlingException to be thrown.");
@@ -458,10 +471,62 @@ public class ContentEnricherTests {
 		assertTrue(enricher.isRunning());
 	}
 
+	/**
+	 * In this test a {@link Target} message is passed into a {@link ContentEnricher}.
+	 * The Enricher passes the message to a "request-channel" to a handler which throws
+	 * an exception. The {@link ContentEnricher} then uses the error flow and consults
+	 * the "error-channel" which returns a alternative {@link Target}.
+	 */
+	@Test
+	public void testErrorChannel() throws Exception {
+
+		final DirectChannel requestChannel = new DirectChannel();
+		requestChannel.subscribe(new AbstractReplyProducingMessageHandler() {
+			@Override
+			protected Object handleRequestMessage(Message<?> requestMessage) {
+				throw new RuntimeException();
+			}
+
+		});
+
+		final DirectChannel errorChannel = new DirectChannel();
+		errorChannel.subscribe(new AbstractReplyProducingMessageHandler() {
+			@Override
+			protected Object handleRequestMessage(Message<?> requestMessage) {
+				return new Target("failed");
+			}
+
+		});
+
+		final QueueChannel replyChannel = new QueueChannel();
+
+		final ContentEnricher enricher = new ContentEnricher();
+		enricher.setRequestChannel(requestChannel);
+		enricher.setErrorChannel(errorChannel);
+
+		SpelExpressionParser parser = new SpelExpressionParser();
+		Map<String, Expression> propertyExpressions = new HashMap<String, Expression>();
+		propertyExpressions.put("name", parser.parseExpression("payload.name + ' target'"));
+
+		enricher.setPropertyExpressions(propertyExpressions);
+		enricher.setBeanFactory(mock(BeanFactory.class));
+		enricher.afterPropertiesSet();
+
+		final Target target = new Target("replace me");
+		Message<?> requestMessage = MessageBuilder.withPayload(target).setReplyChannel(replyChannel).build();
+
+		enricher.handleMessage(requestMessage);
+		Message<?> reply = replyChannel.receive(10000);
+		Target result = (Target) reply.getPayload();
+		assertEquals("failed target", result.getName());
+	}
+
 	@SuppressWarnings("unused")
 	private static final class Source {
 
-		private final String firstName, lastName;
+		private final String firstName;
+
+		private final String lastName;
 
 		Source(String firstName, String lastName) {
 			this.firstName = firstName;
@@ -475,6 +540,7 @@ public class ContentEnricherTests {
 		public String getLastName() {
 			return lastName;
 		}
+
 	}
 
 
@@ -514,6 +580,7 @@ public class ContentEnricherTests {
 			clone.setChild(this.child);
 			return clone;
 		}
+
 	}
 
 	public static final class TargetUser {
@@ -554,6 +621,7 @@ public class ContentEnricherTests {
 		public Object clone() {
 			throw new IllegalStateException("Cloning not possible");
 		}
+
 	}
 
 }

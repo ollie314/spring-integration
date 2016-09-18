@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.util;
 
 import static org.hamcrest.Matchers.instanceOf;
@@ -75,7 +76,7 @@ public class BeanFactoryTypeConverterTests {
 
 	@SuppressWarnings("unchecked")
 	@Test
-	public void testEmptyCollectionConversion(){
+	public void testEmptyCollectionConversion() {
 		BeanFactoryTypeConverter typeConverter = new BeanFactoryTypeConverter();
 		List<String> sourceObject = new ArrayList<String>();
 		ArrayList<BeanFactoryTypeConverterTests> convertedCollection =
@@ -84,7 +85,7 @@ public class BeanFactoryTypeConverterTests {
 	}
 
 	@Test
-	public void testToStringConversion(){
+	public void testToStringConversion() {
 		BeanFactoryTypeConverter typeConverter = new BeanFactoryTypeConverter();
 		typeConverter.setBeanFactory(new DefaultListableBeanFactory());
 		String converted = (String) typeConverter.convertValue(new Integer(1234), TypeDescriptor.valueOf(Integer.class), TypeDescriptor.valueOf(String.class));
@@ -92,7 +93,7 @@ public class BeanFactoryTypeConverterTests {
 	}
 
 	@Test
-	public void testToNonStringConversionNotSupportedByGenericConversionService(){
+	public void testToNonStringConversionNotSupportedByGenericConversionService() {
 		BeanFactoryTypeConverter typeConverter = new BeanFactoryTypeConverter();
 		typeConverter.setBeanFactory(new DefaultListableBeanFactory());
 		@SuppressWarnings("unchecked")
@@ -113,7 +114,7 @@ public class BeanFactoryTypeConverterTests {
 		BeanFactoryTypeConverter typeConverter = new BeanFactoryTypeConverter();
 		typeConverter.setBeanFactory(new DefaultListableBeanFactory());
 		Message<String> message = new GenericMessage<String>("foo");
-		message = MessageHistory.write(message, new NamedComponent(){
+		message = MessageHistory.write(message, new NamedComponent() {
 			@Override
 			public String getComponentName() {
 				return "bar";

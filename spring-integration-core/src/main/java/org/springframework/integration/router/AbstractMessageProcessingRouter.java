@@ -20,6 +20,7 @@ import java.util.Collections;
 import java.util.List;
 
 import org.springframework.beans.factory.BeanFactoryAware;
+import org.springframework.context.Lifecycle;
 import org.springframework.messaging.Message;
 import org.springframework.integration.handler.AbstractMessageProcessor;
 import org.springframework.integration.handler.MessageProcessor;
@@ -32,7 +33,8 @@ import org.springframework.util.Assert;
  * @author Mark Fisher
  * @since 2.0
  */
-class AbstractMessageProcessingRouter extends AbstractMappingMessageRouter {
+class AbstractMessageProcessingRouter extends AbstractMappingMessageRouter
+		implements Lifecycle {
 
 	private final MessageProcessor<?> messageProcessor;
 
@@ -44,14 +46,33 @@ class AbstractMessageProcessingRouter extends AbstractMappingMessageRouter {
 
 
 	@Override
-	public final void onInit() {
+	public final void onInit() throws Exception {
 		super.onInit();
 		if (this.messageProcessor instanceof AbstractMessageProcessor) {
 			((AbstractMessageProcessor<?>) this.messageProcessor).setConversionService(this.getConversionService());
 		}
-		if (this.messageProcessor instanceof BeanFactoryAware) {
+		if (this.messageProcessor instanceof BeanFactoryAware && this.getBeanFactory() != null) {
 			((BeanFactoryAware) this.messageProcessor).setBeanFactory(this.getBeanFactory());
 		}
+	}
+
+	@Override
+	public void start() {
+		if (this.messageProcessor instanceof Lifecycle) {
+			((Lifecycle) this.messageProcessor).start();
+		}
+	}
+
+	@Override
+	public void stop() {
+		if (this.messageProcessor instanceof Lifecycle) {
+			((Lifecycle) this.messageProcessor).stop();
+		}
+	}
+
+	@Override
+	public boolean isRunning() {
+		return !(this.messageProcessor instanceof Lifecycle) || ((Lifecycle) this.messageProcessor).isRunning();
 	}
 
 	@Override

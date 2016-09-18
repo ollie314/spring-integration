@@ -1,5 +1,5 @@
 /*
- * Copyright 2013 the original author or authors.
+ * Copyright 2013-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,9 +24,10 @@ import org.springframework.integration.endpoint.AbstractMessageSource;
  * {@linkplain #scriptMessageProcessor} for polling endpoints.
  *
  * @author Artem Bilan
+ * @author Gary Russell
  * @since 3.0
  */
-class ScriptExecutingMessageSource extends AbstractMessageSource<Object> {
+public class ScriptExecutingMessageSource extends AbstractMessageSource<Object> {
 
 	private final AbstractScriptExecutingMessageProcessor<?> scriptMessageProcessor;
 
@@ -35,7 +36,12 @@ class ScriptExecutingMessageSource extends AbstractMessageSource<Object> {
 	}
 
 	@Override
+	public String getComponentType() {
+		return "inbound-channel-adapter";
+	}
+
+	@Override
 	protected Object doReceive() {
-		return scriptMessageProcessor.processMessage(null);
+		return this.scriptMessageProcessor.processMessage(null);
 	}
 }

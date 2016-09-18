@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
 
 import org.springframework.integration.endpoint.MessageProducerSupport;
+import org.springframework.scheduling.SchedulingAwareRunnable;
 import org.springframework.util.Assert;
 
 /**
@@ -32,7 +33,7 @@ import org.springframework.util.Assert;
  * @since 2.0
  */
 public abstract class AbstractInternetProtocolReceivingChannelAdapter
-		extends MessageProducerSupport implements Runnable, CommonSocketOptions {
+		extends MessageProducerSupport implements SchedulingAwareRunnable, CommonSocketOptions {
 
 	private final int port;
 
@@ -64,7 +65,7 @@ public abstract class AbstractInternetProtocolReceivingChannelAdapter
 	 * @return The port on which this receiver is listening.
 	 */
 	public int getPort() {
-		return port;
+		return this.port;
 	}
 
 	@Override
@@ -76,7 +77,7 @@ public abstract class AbstractInternetProtocolReceivingChannelAdapter
 	 * @return the soTimeout
 	 */
 	public int getSoTimeout() {
-		return soTimeout;
+		return this.soTimeout;
 	}
 
 	@Override
@@ -88,7 +89,7 @@ public abstract class AbstractInternetProtocolReceivingChannelAdapter
 	 * @return the soReceiveBufferSize
 	 */
 	public int getSoReceiveBufferSize() {
-		return soReceiveBufferSize;
+		return this.soReceiveBufferSize;
 	}
 
 	public void setReceiveBufferSize(int receiveBufferSize) {
@@ -99,7 +100,7 @@ public abstract class AbstractInternetProtocolReceivingChannelAdapter
 	 * @return the receiveBufferSize
 	 */
 	public int getReceiveBufferSize() {
-		return receiveBufferSize;
+		return this.receiveBufferSize;
 	}
 
 	/**
@@ -145,7 +146,7 @@ public abstract class AbstractInternetProtocolReceivingChannelAdapter
 	}
 
 	public boolean isListening() {
-		return listening;
+		return this.listening;
 	}
 
 	/**
@@ -156,7 +157,7 @@ public abstract class AbstractInternetProtocolReceivingChannelAdapter
 	}
 
 	public String getLocalAddress() {
-		return localAddress;
+		return this.localAddress;
 	}
 
 	@Override
@@ -178,14 +179,14 @@ public abstract class AbstractInternetProtocolReceivingChannelAdapter
 	 * @return the taskExecutor
 	 */
 	public Executor getTaskExecutor() {
-		return taskExecutor;
+		return this.taskExecutor;
 	}
 
 	/**
 	 * @return the active
 	 */
 	public boolean isActive() {
-		return active;
+		return this.active;
 	}
 
 }

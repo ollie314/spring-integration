@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,14 +35,13 @@ import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
 
 import org.springframework.beans.factory.BeanFactory;
-import org.springframework.context.ApplicationContext;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
+import org.springframework.integration.handler.ReplyRequiredException;
+import org.springframework.integration.support.MessageBuilder;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.PollableChannel;
-import org.springframework.integration.handler.ReplyRequiredException;
 import org.springframework.messaging.support.GenericMessage;
-import org.springframework.integration.support.MessageBuilder;
 import org.springframework.ws.WebServiceMessage;
 import org.springframework.ws.WebServiceMessageFactory;
 import org.springframework.ws.client.core.WebServiceMessageCallback;
@@ -78,6 +77,7 @@ public class SimpleWebServiceOutboundGatewayTests {
 		SimpleWebServiceOutboundGateway gateway = new SimpleWebServiceOutboundGateway(new TestDestinationProvider(uri));
 		final AtomicReference<String> soapActionFromCallback = new AtomicReference<String>();
 		gateway.setRequestCallback(new WebServiceMessageCallback() {
+			@Override
 			public void doWithMessage(WebServiceMessage message) throws IOException, TransformerException {
 				SoapMessage soapMessage = (SoapMessage) message;
 				soapActionFromCallback.set(soapMessage.getSoapAction());
@@ -102,12 +102,14 @@ public class SimpleWebServiceOutboundGatewayTests {
 
 	@Test //INT-1029
 	public void testWsOutboundGatewayInsideChain() {
-		ApplicationContext context = new ClassPathXmlApplicationContext("WebServiceOutboundGatewayInsideChainTests-context.xml", this.getClass());
+		ClassPathXmlApplicationContext context = new ClassPathXmlApplicationContext(
+				"WebServiceOutboundGatewayInsideChainTests-context.xml", this.getClass());
 		MessageChannel channel = context.getBean("wsOutboundGatewayInsideChain", MessageChannel.class);
 		channel.send(MessageBuilder.withPayload("<test>foo</test>").build());
 		PollableChannel replyChannel = context.getBean("replyChannel", PollableChannel.class);
 		Message<?> replyMessage = replyChannel.receive();
 		assertThat(replyMessage.getPayload().toString(), Matchers.endsWith(response));
+		context.close();
 	}
 
 	@Test(expected = ReplyRequiredException.class)
@@ -126,11 +128,13 @@ public class SimpleWebServiceOutboundGatewayTests {
 		Mockito.when(messageSender.supports(Mockito.any(URI.class))).thenReturn(true);
 
 		Mockito.doAnswer(new Answer<Object>() {
-			public Object answer(InvocationOnMock invocation) throws Exception{
+			@Override
+			public Object answer(InvocationOnMock invocation) throws Exception {
 				Object[] args = invocation.getArguments();
 				WebServiceMessageFactory factory = (WebServiceMessageFactory) args[0];
 				return factory.createWebServiceMessage(new ByteArrayInputStream(mockResponseMessage.getBytes()));
-			}}).when(wsConnection).receive(Mockito.any(WebServiceMessageFactory.class));
+			}
+		}).when(wsConnection).receive(Mockito.any(WebServiceMessageFactory.class));
 
 		return messageSender;
 	}
@@ -143,6 +147,7 @@ public class SimpleWebServiceOutboundGatewayTests {
 			this.uri = URI.create(uri);
 		}
 
+		@Override
 		public URI getDestination() {
 			return this.uri;
 		}

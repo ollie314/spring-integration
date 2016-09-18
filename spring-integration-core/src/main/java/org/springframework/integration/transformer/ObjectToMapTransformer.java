@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,9 +19,10 @@ package org.springframework.integration.transformer;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Map.Entry;
 
-import org.springframework.integration.support.json.JacksonJsonObjectMapperProvider;
 import org.springframework.integration.support.json.JsonObjectMapper;
+import org.springframework.integration.support.json.JsonObjectMapperProvider;
 import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
@@ -50,11 +51,12 @@ import org.springframework.util.StringUtils;
  *
  * @author Oleg Zhurakousky
  * @author Artem Bilan
+ * @author Gary Russell
  * @since 2.0
  */
-public class ObjectToMapTransformer extends AbstractPayloadTransformer<Object, Map<?,?>> {
+public class ObjectToMapTransformer extends AbstractPayloadTransformer<Object, Map<?, ?>> {
 
-	private final JsonObjectMapper<?, ?> jsonObjectMapper = JacksonJsonObjectMapperProvider.newInstance();
+	private final JsonObjectMapper<?, ?> jsonObjectMapper = JsonObjectMapperProvider.newInstance();
 
 	private volatile boolean shouldFlattenKeys = true;
 
@@ -62,37 +64,19 @@ public class ObjectToMapTransformer extends AbstractPayloadTransformer<Object, M
 		this.shouldFlattenKeys = shouldFlattenKeys;
 	}
 
+	@Override
 	@SuppressWarnings("unchecked")
 	protected Map<String, Object> transformPayload(Object payload) throws Exception {
-		Map<String,Object> result = this.jsonObjectMapper.fromJson(this.jsonObjectMapper.toJson(payload), Map.class);
+		Map<String, Object> result = this.jsonObjectMapper.fromJson(this.jsonObjectMapper.toJson(payload), Map.class);
 		if (this.shouldFlattenKeys) {
 			result = this.flattenMap(result);
 		}
 		return result;
 	}
 
-	private Map<String, Object> flattenMap(Map<String,Object> result){
-		Map<String,Object> resultMap = new HashMap<String, Object>();
-		this.doFlatten("", result, resultMap);
-		return resultMap;
-	}
-
-	private void doFlatten(String propertyPrefix, Map<String,Object> inputMap, Map<String,Object> resultMap){
-		if (StringUtils.hasText(propertyPrefix)) {
-			propertyPrefix = propertyPrefix + ".";
-		}
-		for (String key : inputMap.keySet()) {
-			Object value = inputMap.get(key);
-			this.doProcessElement(propertyPrefix + key, value, resultMap);
-		}
-	}
-
-	private void doProcessCollection(String propertyPrefix,  Collection<?> list, Map<String, Object> resultMap) {
-		int counter = 0;
-		for (Object element : list) {
-			this.doProcessElement(propertyPrefix + "[" + counter + "]", element, resultMap);
-			counter ++;
-		}
+	@Override
+	public String getComponentType() {
+		return "object-to-map-transformer";
 	}
 
 	@SuppressWarnings("unchecked")
@@ -109,6 +93,29 @@ public class ObjectToMapTransformer extends AbstractPayloadTransformer<Object, M
 		}
 		else {
 			resultMap.put(propertyPrefix, element);
+		}
+	}
+
+	private Map<String, Object> flattenMap(Map<String, Object> result) {
+		Map<String, Object> resultMap = new HashMap<String, Object>();
+		this.doFlatten("", result, resultMap);
+		return resultMap;
+	}
+
+	private void doFlatten(String propertyPrefix, Map<String, Object> inputMap, Map<String, Object> resultMap) {
+		if (StringUtils.hasText(propertyPrefix)) {
+			propertyPrefix = propertyPrefix + ".";
+		}
+		for (Entry<String, Object> entry : inputMap.entrySet()) {
+			this.doProcessElement(propertyPrefix + entry.getKey(), entry.getValue(), resultMap);
+		}
+	}
+
+	private void doProcessCollection(String propertyPrefix,  Collection<?> list, Map<String, Object> resultMap) {
+		int counter = 0;
+		for (Object element : list) {
+			this.doProcessElement(propertyPrefix + "[" + counter + "]", element, resultMap);
+			counter++;
 		}
 	}
 

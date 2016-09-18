@@ -1,19 +1,20 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
- * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
- * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
- * specific language governing permissions and limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package org.springframework.integration.config.xml;
-
-import static org.springframework.beans.factory.xml.AbstractBeanDefinitionParser.ID_ATTRIBUTE;
 
 import java.util.List;
 import java.util.Map;
@@ -22,8 +23,10 @@ import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 
+import org.springframework.beans.BeanMetadataElement;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.config.BeanDefinitionHolder;
+import org.springframework.beans.factory.config.BeanReference;
 import org.springframework.beans.factory.config.ConstructorArgumentValues;
 import org.springframework.beans.factory.config.ConstructorArgumentValues.ValueHolder;
 import org.springframework.beans.factory.config.RuntimeBeanReference;
@@ -34,6 +37,7 @@ import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.beans.factory.support.ManagedList;
 import org.springframework.beans.factory.support.ManagedMap;
 import org.springframework.beans.factory.support.RootBeanDefinition;
+import org.springframework.beans.factory.xml.AbstractBeanDefinitionParser;
 import org.springframework.beans.factory.xml.BeanDefinitionParserDelegate;
 import org.springframework.beans.factory.xml.ParserContext;
 import org.springframework.core.Conventions;
@@ -72,6 +76,7 @@ public abstract class IntegrationNamespaceUtils {
 	public static final String REQUEST_HANDLER_ADVICE_CHAIN = "request-handler-advice-chain";
 	public static final String AUTO_STARTUP = "auto-startup";
 	public static final String PHASE = "phase";
+	public static final String ROLE = "role";
 
 	/**
 	 * Configures the provided bean definition builder with a property value corresponding to the attribute whose name
@@ -263,15 +268,16 @@ public abstract class IntegrationNamespaceUtils {
 	}
 
 	/**
-	 * Get a text value from a named attribute if it exists, otherwise check for a nested element of the same name. If
-	 * both are specified it is an error, but if neither is specified, just returns null.
+	 * Get a text value from a named attribute if it exists, otherwise check for a nested element of the same name.
+	 * If both are specified it is an error, but if neither is specified, just returns null.
 	 *
 	 * @param element a DOM node
 	 * @param name the name of the property (attribute or child element)
 	 * @param parserContext the current context
-	 * @return the text from the attribite or element or null
+	 * @return the text from the attribute or element or null
 	 */
-	public static String getTextFromAttributeOrNestedElement(Element element, String name, ParserContext parserContext) {
+	public static String getTextFromAttributeOrNestedElement(Element element, String name,
+	                                                         ParserContext parserContext) {
 		String attr = element.getAttribute(name);
 		Element childElement = DomUtils.getChildElementByTagName(element, name);
 		if (StringUtils.hasText(attr) && childElement != null) {
@@ -300,10 +306,10 @@ public abstract class IntegrationNamespaceUtils {
 		String ref = element.getAttribute(REF_ATTRIBUTE);
 		if (StringUtils.hasText(ref) && innerComponentDefinition != null) {
 			parserContext.getReaderContext().error(
-				"Ambiguous definition. Inner bean " + (innerComponentDefinition == null ? innerComponentDefinition
-						: innerComponentDefinition.getBeanDefinition().getBeanClassName())
+				"Ambiguous definition. Inner bean " + (innerComponentDefinition.getBeanDefinition().getBeanClassName())
 						+ " declaration and \"ref\" " + ref + " are not allowed together on element " +
-					IntegrationNamespaceUtils.createElementDescription(element) + ".", parserContext.extractSource(element));
+					IntegrationNamespaceUtils.createElementDescription(element) + ".",
+					parserContext.extractSource(element));
 		}
 		return innerComponentDefinition;
 	}
@@ -319,15 +325,30 @@ public abstract class IntegrationNamespaceUtils {
 	 */
 	public static void configureHeaderMapper(Element element, BeanDefinitionBuilder rootBuilder,
 								ParserContext parserContext, Class<?> headerMapperClass, String replyHeaderValue) {
+		configureHeaderMapper(element, rootBuilder, parserContext,
+				BeanDefinitionBuilder.genericBeanDefinition(headerMapperClass), replyHeaderValue);
+	}
+
+	/**
+	 * Utility method to configure a HeaderMapper for Inbound and Outbound channel adapters/gateway.
+	 *
+	 * @param element The element.
+	 * @param rootBuilder The root builder.
+	 * @param parserContext The parser context.
+	 * @param headerMapperBuilder The header mapper builder.
+	 * @param replyHeaderValue The reply header value.
+	 */
+	public static void configureHeaderMapper(Element element, BeanDefinitionBuilder rootBuilder,
+					ParserContext parserContext, BeanDefinitionBuilder headerMapperBuilder, String replyHeaderValue) {
 		String defaultMappedReplyHeadersAttributeName = "mapped-reply-headers";
-		if (!StringUtils.hasText(replyHeaderValue)){
+		if (!StringUtils.hasText(replyHeaderValue)) {
 			replyHeaderValue = defaultMappedReplyHeadersAttributeName;
 		}
 		boolean hasHeaderMapper = element.hasAttribute("header-mapper");
 		boolean hasMappedRequestHeaders = element.hasAttribute("mapped-request-headers");
 		boolean hasMappedReplyHeaders = element.hasAttribute(replyHeaderValue);
 
-		if (hasHeaderMapper && (hasMappedRequestHeaders || hasMappedReplyHeaders)){
+		if (hasHeaderMapper && (hasMappedRequestHeaders || hasMappedReplyHeaders)) {
 			parserContext.getReaderContext().error("The 'header-mapper' attribute is mutually exclusive with" +
 					" 'mapped-request-headers' or 'mapped-reply-headers'. " +
 					"You can only use one or the others", element);
@@ -335,8 +356,7 @@ public abstract class IntegrationNamespaceUtils {
 
 		IntegrationNamespaceUtils.setReferenceIfAttributeDefined(rootBuilder, element, "header-mapper");
 
-		if (hasMappedRequestHeaders || hasMappedReplyHeaders){
-			BeanDefinitionBuilder headerMapperBuilder = BeanDefinitionBuilder.genericBeanDefinition(headerMapperClass);
+		if (hasMappedRequestHeaders || hasMappedReplyHeaders) {
 
 			if (hasMappedRequestHeaders) {
 				headerMapperBuilder.addPropertyValue("requestHeaderNames", element.getAttribute("mapped-request-headers"));
@@ -348,7 +368,6 @@ public abstract class IntegrationNamespaceUtils {
 			rootBuilder.addPropertyValue("headerMapper", headerMapperBuilder.getBeanDefinition());
 		}
 	}
-
 	/**
 	 * Parse a "transactional" element and configure a {@link TransactionInterceptor}
 	 * with "transactionManager" and other "transactionDefinition" properties.
@@ -387,7 +406,7 @@ public abstract class IntegrationNamespaceUtils {
 
 	public static String[] generateAlias(Element element) {
 		String[] handlerAlias = null;
-		String id = element.getAttribute(ID_ATTRIBUTE);
+		String id = element.getAttribute(AbstractBeanDefinitionParser.ID_ATTRIBUTE);
 		if (StringUtils.hasText(id)) {
 			handlerAlias = new String[] {id + IntegrationConfigUtils.HANDLER_ALIAS_SUFFIX};
 		}
@@ -462,12 +481,12 @@ public abstract class IntegrationNamespaceUtils {
 		boolean hasAttributeValue = StringUtils.hasText(valueElementValue);
 		boolean hasAttributeExpression = StringUtils.hasText(expressionElementValue);
 
-		if (hasAttributeValue && hasAttributeExpression){
+		if (hasAttributeValue && hasAttributeExpression) {
 			parserContext.getReaderContext().error("Only one of '" + valueElementName + "' or '"
 						+ expressionElementName + "' is allowed", element);
 		}
 
-		if (oneRequired && (!hasAttributeValue && !hasAttributeExpression)){
+		if (oneRequired && (!hasAttributeValue && !hasAttributeExpression)) {
 			parserContext.getReaderContext().error("One of '" + valueElementName + "' or '"
 					+ expressionElementName + "' is required", element);
 		}
@@ -488,7 +507,7 @@ public abstract class IntegrationNamespaceUtils {
 
 		String expressionElementValue = element.getAttribute(expressionElementName);
 
-		if (StringUtils.hasText(expressionElementValue)){
+		if (StringUtils.hasText(expressionElementValue)) {
 			BeanDefinitionBuilder expressionDefBuilder = BeanDefinitionBuilder.genericBeanDefinition(ExpressionFactoryBean.class);
 			expressionDefBuilder.addConstructorArgValue(expressionElementValue);
 			return expressionDefBuilder.getRawBeanDefinition();
@@ -497,7 +516,7 @@ public abstract class IntegrationNamespaceUtils {
 	}
 
 	public static String createDirectChannel(Element element, ParserContext parserContext) {
-		String channelId = element.getAttribute(ID_ATTRIBUTE);
+		String channelId = element.getAttribute(AbstractBeanDefinitionParser.ID_ATTRIBUTE);
 		if (!StringUtils.hasText(channelId)) {
 			parserContext.getReaderContext().error("The channel-adapter's 'id' attribute is required when no 'channel' "
 					+ "reference has been provided, because that 'id' would be used for the created channel.", element);
@@ -546,6 +565,84 @@ public abstract class IntegrationNamespaceUtils {
 			}
 			candidates.put(handlerBeanName, channelName);
 		}
+	}
+
+	public static void putLifecycleInRole(String role, String beanName, ParserContext parserContext) {
+		BeanDefinitionRegistry registry = parserContext.getRegistry();
+		IntegrationConfigUtils.registerRoleControllerDefinitionIfNecessary(registry);
+		BeanDefinition controllerDef = registry.getBeanDefinition(
+				IntegrationContextUtils.INTEGRATION_LIFECYCLE_ROLE_CONTROLLER);
+		@SuppressWarnings("unchecked")
+		ManagedList<String> roles = (ManagedList<String>) controllerDef.getConstructorArgumentValues()
+				.getArgumentValue(0, ManagedList.class).getValue();
+		@SuppressWarnings("unchecked")
+		ManagedList<BeanReference> lifecycles = (ManagedList<BeanReference>) controllerDef.getConstructorArgumentValues()
+				.getArgumentValue(1, ManagedList.class).getValue();
+		roles.add(role);
+		lifecycles.add(new RuntimeBeanReference(beanName));
+	}
+
+	public static void injectPropertyWithAdapter(String beanRefAttribute, String methodRefAttribute,
+			String expressionAttribute, String beanProperty, String adapterClass, Element element,
+			BeanDefinitionBuilder builder, BeanMetadataElement processor, ParserContext parserContext) {
+		BeanMetadataElement adapter = constructAdapter(beanRefAttribute, methodRefAttribute, expressionAttribute,
+				adapterClass, element, processor, parserContext);
+		builder.addPropertyValue(beanProperty, adapter);
+	}
+
+	public static void injectConstructorWithAdapter(String beanRefAttribute, String methodRefAttribute,
+			String expressionAttribute, String adapterClass, Element element,
+			BeanDefinitionBuilder builder, BeanMetadataElement processor, ParserContext parserContext) {
+		BeanMetadataElement adapter = constructAdapter(beanRefAttribute, methodRefAttribute, expressionAttribute,
+				adapterClass, element, processor, parserContext);
+		builder.addConstructorArgValue(adapter);
+	}
+
+	private static BeanMetadataElement constructAdapter(String beanRefAttribute, String methodRefAttribute,
+			String expressionAttribute, String adapterClass, Element element, BeanMetadataElement processor,
+			ParserContext parserContext) {
+		final String beanRef = element.getAttribute(beanRefAttribute);
+		final String beanMethod = element.getAttribute(methodRefAttribute);
+		final String expression = element.getAttribute(expressionAttribute);
+
+		final boolean hasBeanRef = StringUtils.hasText(beanRef);
+		final boolean hasExpression = StringUtils.hasText(expression);
+
+		if (hasBeanRef && hasExpression) {
+			parserContext.getReaderContext().error("Exactly one of the '" + beanRefAttribute + "' or '"
+					+ expressionAttribute + "' attribute is allowed.", element);
+		}
+
+		BeanMetadataElement adapter = null;
+		if (hasBeanRef) {
+			adapter = createAdapter(new RuntimeBeanReference(beanRef), beanMethod, adapterClass);
+		}
+		else if (hasExpression) {
+			BeanDefinitionBuilder adapterBuilder = BeanDefinitionBuilder
+					.genericBeanDefinition(IntegrationConfigUtils.BASE_PACKAGE + ".aggregator.ExpressionEvaluating"
+							+ adapterClass);
+			adapterBuilder.addConstructorArgValue(expression);
+			adapter = adapterBuilder.getBeanDefinition();
+		}
+		else if (processor != null) {
+			adapter = createAdapter(processor, beanMethod, adapterClass);
+		}
+		else {
+			adapter = createAdapter(null, beanMethod, adapterClass);
+		}
+		return adapter;
+	}
+
+	private static BeanMetadataElement createAdapter(BeanMetadataElement ref, String method,
+	                                                 String unqualifiedClassName) {
+		BeanDefinitionBuilder builder = BeanDefinitionBuilder
+				.genericBeanDefinition(IntegrationConfigUtils.BASE_PACKAGE + ".config." + unqualifiedClassName
+						+ "FactoryBean");
+		builder.addPropertyValue("target", ref);
+		if (StringUtils.hasText(method)) {
+			builder.addPropertyValue("methodName", method);
+		}
+		return builder.getBeanDefinition();
 	}
 
 }

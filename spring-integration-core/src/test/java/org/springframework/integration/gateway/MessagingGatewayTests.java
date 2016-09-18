@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,18 +19,19 @@ package org.springframework.integration.gateway;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
+import static org.mockito.Mockito.mock;
 
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
 import org.junit.Before;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.mockito.Mockito;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
 
+import org.springframework.beans.factory.BeanFactory;
 import org.springframework.integration.channel.DirectChannel;
 import org.springframework.integration.channel.PublishSubscribeChannel;
 import org.springframework.integration.handler.ServiceActivatingHandler;
@@ -48,6 +49,7 @@ import org.springframework.messaging.PollableChannel;
  * @author Iwein Fuld
  * @author Mark Fisher
  * @author Artem Bilan
+ * @author Gary Russell
  */
 @SuppressWarnings("unchecked")
 public class MessagingGatewayTests {
@@ -63,11 +65,12 @@ public class MessagingGatewayTests {
 
 	@Before
 	public void initializeSample() {
-		this.messagingGateway = new MessagingGatewaySupport() {};
+		this.messagingGateway = new MessagingGatewaySupport() { };
 		this.messagingGateway.setRequestChannel(requestChannel);
 		this.messagingGateway.setReplyChannel(replyChannel);
 		TestApplicationContext applicationContext = TestUtils.createTestApplicationContext();
 		this.messagingGateway.setBeanFactory(applicationContext);
+		this.messagingGateway.setCountsEnabled(true);
 		this.messagingGateway.afterPropertiesSet();
 		this.messagingGateway.start();
 		applicationContext.refresh();
@@ -81,9 +84,10 @@ public class MessagingGatewayTests {
 		Mockito.when(requestChannel.send(messageMock, 1000L)).thenReturn(true);
 		this.messagingGateway.send(messageMock);
 		Mockito.verify(requestChannel).send(messageMock, 1000L);
+		assertEquals(1, this.messagingGateway.getMessageCount());
 	}
 
-	@Test(expected=MessageDeliveryException.class)
+	@Test(expected = MessageDeliveryException.class)
 	public void sendMessage_failure() {
 		Mockito.when(messageMock.getHeaders()).thenReturn(new MessageHeaders(null));
 		Mockito.when(requestChannel.send(messageMock, 1000L)).thenReturn(false);
@@ -105,7 +109,7 @@ public class MessagingGatewayTests {
 		Mockito.verify(requestChannel).send(Mockito.any(Message.class), Mockito.eq(1000L));
 	}
 
-	@Test(expected=MessageDeliveryException.class)
+	@Test(expected = MessageDeliveryException.class)
 	public void sendObject_failure() {
 		Mockito.doAnswer(new Answer<Boolean>() {
 
@@ -209,7 +213,6 @@ public class MessagingGatewayTests {
 			}
 		}).when(requestChannel).send(Mockito.any(Message.class), Mockito.anyLong());
 
-		// TODO: commenting the next line causes the test to hang
 		this.messagingGateway.setReplyTimeout(100L);
 		Message<?> receiveMessage = this.messagingGateway.sendAndReceiveMessage("test");
 		assertSame(messageMock, receiveMessage);
@@ -245,24 +248,27 @@ public class MessagingGatewayTests {
 	}
 
 	// should fail but it doesn't now
-	@Test(expected=MessagingException.class)
+	@Test(expected = MessagingException.class)
 	public void validateErroMessageCanNotBeReplyMessage() {
 		DirectChannel reqChannel = new DirectChannel();
 		reqChannel.subscribe(new MessageHandler() {
+			@Override
 			public void handleMessage(Message<?> message) throws MessagingException {
 				throw new RuntimeException("ooops");
 			}
 		});
 		PublishSubscribeChannel errorChannel = new PublishSubscribeChannel();
 		ServiceActivatingHandler handler  = new ServiceActivatingHandler(new MyErrorService());
+		handler.setBeanFactory(mock(BeanFactory.class));
 		handler.afterPropertiesSet();
 		errorChannel.subscribe(handler);
 
-		this.messagingGateway = new MessagingGatewaySupport() {};
+		this.messagingGateway = new MessagingGatewaySupport() { };
 
 		this.messagingGateway.setRequestChannel(reqChannel);
 		this.messagingGateway.setErrorChannel(errorChannel);
 		this.messagingGateway.setReplyChannel(null);
+		this.messagingGateway.setBeanFactory(mock(BeanFactory.class));
 		this.messagingGateway.afterPropertiesSet();
 		this.messagingGateway.start();
 
@@ -274,33 +280,36 @@ public class MessagingGatewayTests {
 	public void validateErrorChannelWithSuccessfulReply() {
 		DirectChannel reqChannel = new DirectChannel();
 		reqChannel.subscribe(new MessageHandler() {
+			@Override
 			public void handleMessage(Message<?> message) throws MessagingException {
 				throw new RuntimeException("ooops");
 			}
 		});
 		PublishSubscribeChannel errorChannel = new PublishSubscribeChannel();
 		ServiceActivatingHandler handler  = new ServiceActivatingHandler(new MyOneWayErrorService());
+		handler.setBeanFactory(mock(BeanFactory.class));
 		handler.afterPropertiesSet();
 		errorChannel.subscribe(handler);
 
-		this.messagingGateway = new MessagingGatewaySupport() {};
+		this.messagingGateway = new MessagingGatewaySupport() { };
 
 		this.messagingGateway.setRequestChannel(reqChannel);
 		this.messagingGateway.setErrorChannel(errorChannel);
 		this.messagingGateway.setReplyChannel(null);
+		this.messagingGateway.setBeanFactory(mock(BeanFactory.class));
 		this.messagingGateway.afterPropertiesSet();
 		this.messagingGateway.start();
 
 		this.messagingGateway.send("hello");
 	}
 	public static class MyErrorService {
-		public Message<?> handleErrorMessage(Message<?> errorMessage){
+		public Message<?> handleErrorMessage(Message<?> errorMessage) {
 			return errorMessage;
 		}
 	}
 
 	public static class MyOneWayErrorService {
-		public void handleErrorMessage(Message<?> errorMessage){
+		public void handleErrorMessage(Message<?> errorMessage) {
 		}
 	}
 

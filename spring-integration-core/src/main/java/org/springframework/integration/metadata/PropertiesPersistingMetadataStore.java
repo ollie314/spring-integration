@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,34 +18,42 @@ package org.springframework.integration.metadata;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
+import java.io.Closeable;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.Flushable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.Properties;
+import java.util.concurrent.locks.Lock;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.beans.factory.InitializingBean;
+import org.springframework.integration.support.locks.DefaultLockRegistry;
+import org.springframework.integration.support.locks.LockRegistry;
 import org.springframework.util.Assert;
 import org.springframework.util.DefaultPropertiesPersister;
 
 /**
  * Properties file-based implementation of {@link MetadataStore}. To avoid conflicts
  * each instance should be constructed with the unique key from which unique file name
- * will be generated. The file name will be 'persistentKey' + ".last.entry".
- * Files will be written to the 'java.io.tmpdir' +  "/spring-integration/".
+ * will be generated.
+ * By default, the properties file will be
+ * {@code 'java.io.tmpdir' +  "/spring-integration/metadata-store.properties"},
+ * but the directory and filename are settable.
  *
  * @author Oleg Zhurakousky
  * @author Mark Fisher
  * @author Gary Russell
  * @since 2.0
  */
-public class PropertiesPersistingMetadataStore implements MetadataStore, InitializingBean, DisposableBean {
+public class PropertiesPersistingMetadataStore implements ConcurrentMetadataStore, InitializingBean, DisposableBean,
+		Closeable, Flushable {
 
 	private final Log logger = LogFactory.getLog(getClass());
 
@@ -53,21 +61,40 @@ public class PropertiesPersistingMetadataStore implements MetadataStore, Initial
 
 	private final DefaultPropertiesPersister persister = new DefaultPropertiesPersister();
 
-	private volatile File file;
+	private final LockRegistry lockRegistry = new DefaultLockRegistry();
 
-	private volatile String baseDirectory = System.getProperty("java.io.tmpdir") + "/spring-integration/";
+	private String baseDirectory = System.getProperty("java.io.tmpdir") + "/spring-integration/";
 
+	private String fileName = "metadata-store.properties";
 
+	private File file;
+
+	private volatile boolean dirty;
+
+	/**
+	 * Set the location for the properties file. Defaults to
+	 * {@code 'java.io.tmpdir' +  "/spring-integration/"}.
+	 * @param baseDirectory the directory.
+	 */
 	public void setBaseDirectory(String baseDirectory) {
 		Assert.hasText(baseDirectory, "'baseDirectory' must be non-empty");
 		this.baseDirectory = baseDirectory;
 	}
 
+	/**
+	 * Set the name of the properties file in {@link #setBaseDirectory(String)}.
+	 * Defaults to {@code metadata-store.properties},
+	 * @param fileName the properties file name.
+	 */
+	public void setFileName(String fileName) {
+		this.fileName = fileName;
+	}
+
 	@Override
 	public void afterPropertiesSet() throws Exception {
-		File baseDir = new File(baseDirectory);
+		File baseDir = new File(this.baseDirectory);
 		baseDir.mkdirs();
-		this.file = new File(baseDir, "metadata-store.properties");
+		this.file = new File(baseDir, this.fileName);
 		try {
 			if (!this.file.exists()) {
 				this.file.createNewFile();
@@ -82,25 +109,111 @@ public class PropertiesPersistingMetadataStore implements MetadataStore, Initial
 
 	@Override
 	public void put(String key, String value) {
-		this.metadata.setProperty(key, value);
+		Assert.notNull(key, "'key' cannot be null");
+		Assert.notNull(value, "'value' cannot be null");
+		Lock lock = this.lockRegistry.obtain(key);
+		lock.lock();
+		try {
+			this.metadata.setProperty(key, value);
+		}
+		finally {
+			this.dirty = true;
+			lock.unlock();
+		}
 	}
 
 	@Override
 	public String get(String key) {
-		return this.metadata.getProperty(key);
+		Assert.notNull(key, "'key' cannot be null");
+		Lock lock = this.lockRegistry.obtain(key);
+		lock.lock();
+		try {
+			return this.metadata.getProperty(key);
+		}
+		finally {
+			lock.unlock();
+		}
 	}
 
 	@Override
 	public String remove(String key) {
-		return (String) this.metadata.remove(key);
+		Assert.notNull(key, "'key' cannot be null");
+		Lock lock = this.lockRegistry.obtain(key);
+		lock.lock();
+		try {
+			return (String) this.metadata.remove(key);
+		}
+		finally {
+			this.dirty = true;
+			lock.unlock();
+		}
+	}
+
+	@Override
+	public String putIfAbsent(String key, String value) {
+		Assert.notNull(key, "'key' cannot be null");
+		Assert.notNull(value, "'value' cannot be null");
+		Lock lock = this.lockRegistry.obtain(key);
+		lock.lock();
+		try {
+			String property = this.metadata.getProperty(key);
+			if (property == null) {
+				this.metadata.setProperty(key, value);
+				this.dirty = true;
+				return null;
+			}
+			else {
+				return property;
+			}
+		}
+		finally {
+			lock.unlock();
+		}
+	}
+
+	@Override
+	public boolean replace(String key, String oldValue, String newValue) {
+		Assert.notNull(key, "'key' cannot be null");
+		Assert.notNull(oldValue, "'oldValue' cannot be null");
+		Assert.notNull(newValue, "'newValue' cannot be null");
+		Lock lock = this.lockRegistry.obtain(key);
+		lock.lock();
+		try {
+			String property = this.metadata.getProperty(key);
+			if (oldValue.equals(property)) {
+				this.metadata.setProperty(key, newValue);
+				this.dirty = true;
+				return true;
+			}
+			else {
+				return false;
+			}
+		}
+		finally {
+			lock.unlock();
+		}
+	}
+
+	@Override
+	public void close() throws IOException {
+		flush();
+	}
+
+	@Override
+	public void flush() {
+		saveMetadata();
 	}
 
 	@Override
 	public void destroy() throws Exception {
-		this.saveMetadata();
+		flush();
 	}
 
 	private void saveMetadata() {
+		if (this.file == null || !this.dirty) {
+			return;
+		}
+		this.dirty = false;
 		OutputStream outputStream = null;
 		try {
 			outputStream = new BufferedOutputStream(new FileOutputStream(this.file));
@@ -108,7 +221,7 @@ public class PropertiesPersistingMetadataStore implements MetadataStore, Initial
 		}
 		catch (IOException e) {
 			// not fatal for the functionality of the component
-			logger.warn("Failed to persist entry. This may result in a duplicate "
+			this.logger.warn("Failed to persist entry. This may result in a duplicate "
 					+ "entry after this component is restarted.", e);
 		}
 		finally {
@@ -119,7 +232,7 @@ public class PropertiesPersistingMetadataStore implements MetadataStore, Initial
 			}
 			catch (IOException e) {
 				// not fatal for the functionality of the component
-				logger.warn("Failed to close OutputStream to " + this.file.getAbsolutePath(), e);
+				this.logger.warn("Failed to close OutputStream to " + this.file.getAbsolutePath(), e);
 			}
 		}
 	}
@@ -132,7 +245,7 @@ public class PropertiesPersistingMetadataStore implements MetadataStore, Initial
 		}
 		catch (Exception e) {
 			// not fatal for the functionality of the component
-			logger.warn("Failed to load entry from the persistent store. This may result in a duplicate " +
+			this.logger.warn("Failed to load entry from the persistent store. This may result in a duplicate " +
 					"entry after this component is restarted", e);
 		}
 		finally {
@@ -143,7 +256,7 @@ public class PropertiesPersistingMetadataStore implements MetadataStore, Initial
 			}
 			catch (Exception e2) {
 				// non fatal
-				logger.warn("Failed to close InputStream for: " + this.file.getAbsolutePath());
+				this.logger.warn("Failed to close InputStream for: " + this.file.getAbsolutePath());
 			}
 		}
 	}

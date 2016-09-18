@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.mqtt.config.xml;
 
 import org.w3c.dom.Element;
@@ -21,12 +22,14 @@ import org.springframework.beans.factory.support.AbstractBeanDefinition;
 import org.springframework.beans.factory.support.BeanDefinitionBuilder;
 import org.springframework.beans.factory.xml.ParserContext;
 import org.springframework.integration.config.xml.AbstractChannelAdapterParser;
+import org.springframework.integration.config.xml.IntegrationNamespaceUtils;
 import org.springframework.integration.mqtt.inbound.MqttPahoMessageDrivenChannelAdapter;
 
 /**
  * The MqttAdapter Message Driven Channel adapter parser
  *
  * @author Gary Russell
+ * @author Artem Bilan
  * @since 4.0
  *
  */
@@ -39,9 +42,12 @@ public class MqttMessageDrivenChannelAdapterParser extends AbstractChannelAdapte
 		BeanDefinitionBuilder builder = BeanDefinitionBuilder
 				.genericBeanDefinition(MqttPahoMessageDrivenChannelAdapter.class);
 
-		MqttParserUtils.parseCommon(element, builder);
+		MqttParserUtils.parseCommon(element, builder, parserContext);
 		builder.addConstructorArgValue(element.getAttribute("topics"));
 		builder.addPropertyReference("outputChannel", channelName);
+		IntegrationNamespaceUtils.setReferenceIfAttributeDefined(builder, element, "error-channel");
+		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "qos");
+		IntegrationNamespaceUtils.setValueIfAttributeDefined(builder, element, "recovery-interval");
 
 		return builder.getBeanDefinition();
 	}

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.syslog;
 
 import org.springframework.integration.transformer.SyslogToMapTransformer;
@@ -24,7 +25,11 @@ import org.springframework.integration.transformer.SyslogToMapTransformer;
  * @since 3.0
  *
  */
-public class SyslogHeaders {
+public final class SyslogHeaders {
+
+	private SyslogHeaders() {
+		super();
+	}
 
 	public static String PREFIX = "syslog_";
 
@@ -37,5 +42,34 @@ public class SyslogHeaders {
 	public static final String HOST = PREFIX + SyslogToMapTransformer.HOST;
 
 	public static final String TAG = PREFIX + SyslogToMapTransformer.TAG;
+
+	//// RFC 5424 Parser:
+
+	public static final String MESSAGE = PREFIX + "MESSAGE";
+
+	public static final String APP_NAME = PREFIX + "APP_NAME";
+
+	public static final String PROCID = PREFIX + "PROCID";
+
+	public static final String MSGID = PREFIX + "MSGID";
+
+	public static final String VERSION = PREFIX + "VERSION";
+
+	public static final String STRUCTURED_DATA = PREFIX + "STRUCTURED_DATA";
+
+	// Text versions of syslog numeric values
+	public static final String SEVERITY_TEXT = PREFIX + "SEVERITY_TEXT";
+
+	// Additional fields
+	public static final String SOURCE_TYPE = PREFIX + "SOURCE_TYPE";
+
+	public static final String SOURCE = PREFIX + "SOURCE";
+
+	// full line when parse errors or retained original
+	public static final String UNDECODED = PREFIX + "UNDECODED";
+
+	public static final String DECODE_ERRORS = PREFIX + "DECODE_ERRORS";
+
+	public static final String ERRORS = PREFIX + "ERRORS";
 
 }

@@ -1,18 +1,19 @@
 /*
- * Copyright 2007-2013 the original author or authors
+ * Copyright 2007-2016 the original author or authors.
  *
- *     Licensed under the Apache License, Version 2.0 (the "License");
- *     you may not use this file except in compliance with the License.
- *     You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
- *     Unless required by applicable law or agreed to in writing, software
- *     distributed under the License is distributed on an "AS IS" BASIS,
- *     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *     See the License for the specific language governing permissions and
- *     limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
+
 package org.springframework.integration.redis.store;
 
 import static org.junit.Assert.assertEquals;
@@ -21,28 +22,43 @@ import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertNull;
 
 import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Properties;
 import java.util.UUID;
 
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 
 import org.springframework.data.redis.connection.RedisConnectionFactory;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.integration.channel.DirectChannel;
 import org.springframework.integration.history.MessageHistory;
-import org.springframework.messaging.support.GenericMessage;
 import org.springframework.integration.redis.rules.RedisAvailable;
 import org.springframework.integration.redis.rules.RedisAvailableTests;
+import org.springframework.integration.store.MessageGroup;
+import org.springframework.integration.support.MessageBuilder;
 import org.springframework.messaging.Message;
+import org.springframework.messaging.support.GenericMessage;
 
 /**
  * @author Oleg Zhurakousky
+ * @author Gary Russell
  *
  */
 public class RedisMessageStoreTests extends RedisAvailableTests {
 
+	@Before
+	@After
+	public void setUpTearDown() {
+		StringRedisTemplate template = this.createStringRedisTemplate(this.getConnectionFactoryForTest());
+		template.delete(template.keys("MESSAGE_*"));
+	}
+
 	@Test
 	@RedisAvailable
-	public void testGetNonExistingMessage(){
+	public void testGetNonExistingMessage() {
 		RedisConnectionFactory jcf = this.getConnectionFactoryForTest();
 		RedisMessageStore store = new RedisMessageStore(jcf);
 		Message<?> message = store.getMessage(UUID.randomUUID());
@@ -51,7 +67,7 @@ public class RedisMessageStoreTests extends RedisAvailableTests {
 
 	@Test
 	@RedisAvailable
-	public void testGetMessageCountWhenEmpty(){
+	public void testGetMessageCountWhenEmpty() {
 		RedisConnectionFactory jcf = this.getConnectionFactoryForTest();
 		RedisMessageStore store = new RedisMessageStore(jcf);
 		assertEquals(0, store.getMessageCount());
@@ -59,7 +75,7 @@ public class RedisMessageStoreTests extends RedisAvailableTests {
 
 	@Test
 	@RedisAvailable
-	public void testAddStringMessage(){
+	public void testAddStringMessage() {
 		RedisConnectionFactory jcf = this.getConnectionFactoryForTest();
 		RedisMessageStore store = new RedisMessageStore(jcf);
 		Message<String> stringMessage = new GenericMessage<String>("Hello Redis");
@@ -70,7 +86,7 @@ public class RedisMessageStoreTests extends RedisAvailableTests {
 
 	@Test
 	@RedisAvailable
-	public void testAddSerializableObjectMessage(){
+	public void testAddSerializableObjectMessage() {
 		RedisConnectionFactory jcf = this.getConnectionFactoryForTest();
 		RedisMessageStore store = new RedisMessageStore(jcf);
 		Address address = new Address();
@@ -83,9 +99,9 @@ public class RedisMessageStoreTests extends RedisAvailableTests {
 		assertEquals("Barak Obama", storedMessage.getPayload().getName());
 	}
 
-	@Test(expected=IllegalArgumentException.class)
+	@Test(expected = IllegalArgumentException.class)
 	@RedisAvailable
-	public void testAddNonSerializableObjectMessage(){
+	public void testAddNonSerializableObjectMessage() {
 		RedisConnectionFactory jcf = this.getConnectionFactoryForTest();
 		RedisMessageStore store = new RedisMessageStore(jcf);
 
@@ -96,7 +112,7 @@ public class RedisMessageStoreTests extends RedisAvailableTests {
 	@SuppressWarnings("unchecked")
 	@Test
 	@RedisAvailable
-	public void testAddAndGetStringMessage(){
+	public void testAddAndGetStringMessage() {
 		RedisConnectionFactory jcf = this.getConnectionFactoryForTest();
 		RedisMessageStore store = new RedisMessageStore(jcf);
 		Message<String> stringMessage = new GenericMessage<String>("Hello Redis");
@@ -105,10 +121,11 @@ public class RedisMessageStoreTests extends RedisAvailableTests {
 		assertNotNull(retrievedMessage);
 		assertEquals("Hello Redis", retrievedMessage.getPayload());
 	}
+
 	@SuppressWarnings("unchecked")
 	@Test
 	@RedisAvailable
-	public void testAddAndRemoveStringMessage(){
+	public void testAddAndRemoveStringMessage() {
 		RedisConnectionFactory jcf = this.getConnectionFactoryForTest();
 		RedisMessageStore store = new RedisMessageStore(jcf);
 		Message<String> stringMessage = new GenericMessage<String>("Hello Redis");
@@ -121,7 +138,7 @@ public class RedisMessageStoreTests extends RedisAvailableTests {
 
 	@Test
 	@RedisAvailable
-	public void testWithMessageHistory() throws Exception{
+	public void testWithMessageHistory() throws Exception {
 		RedisConnectionFactory jcf = this.getConnectionFactoryForTest();
 		RedisMessageStore store = new RedisMessageStore(jcf);
 
@@ -143,29 +160,57 @@ public class RedisMessageStoreTests extends RedisAvailableTests {
 		assertEquals("channel", fooChannelHistory.get("type"));
 	}
 
+	@Test
+	@RedisAvailable
+	public void testAddAndRemoveMessagesFromMessageGroup() throws Exception {
+		RedisConnectionFactory jcf = this.getConnectionFactoryForTest();
+		RedisMessageStore messageStore = new RedisMessageStore(jcf);
+		String groupId = "X";
+		List<Message<?>> messages = new ArrayList<Message<?>>();
+		for (int i = 0; i < 25; i++) {
+			Message<String> message = MessageBuilder.withPayload("foo").setCorrelationId(groupId).build();
+			messageStore.addMessagesToGroup(groupId, message);
+			messages.add(message);
+		}
+		messageStore.removeMessagesFromGroup(groupId, messages);
+		MessageGroup group = messageStore.getMessageGroup(groupId);
+		assertEquals(0, group.size());
+		messageStore.removeMessageGroup("X");
+	}
+
 	@SuppressWarnings("serial")
-	public static class Person implements Serializable{
+	public static class Person implements Serializable {
+
 		private Address address;
+
+		private String name;
+
+		public Person(Address address, String name) {
+			this.address = address;
+			this.name = name;
+		}
+
 		public Address getAddress() {
 			return address;
 		}
+
 		public void setAddress(Address address) {
 			this.address = address;
 		}
+
 		public String getName() {
 			return name;
 		}
+
 		public void setName(String name) {
 			this.name = name;
 		}
-		private String name;
-		public Person(Address address, String name){
-			this.address = address;
-			this.name = name;
-		}
+
 	}
+
 	@SuppressWarnings("serial")
-	public static class Address implements Serializable{
+	public static class Address implements Serializable {
+
 		private String address;
 
 		public String getAddress() {
@@ -175,9 +220,11 @@ public class RedisMessageStoreTests extends RedisAvailableTests {
 		public void setAddress(String address) {
 			this.address = address;
 		}
-	}
-
-	public static class Foo{
 
 	}
+
+	public static class Foo {
+
+	}
+
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -46,29 +46,33 @@ import org.springframework.messaging.PollableChannel;
 public class JmsMessageHistoryTests {
 
 	@Test
-	public void testInboundAdapter() throws Exception{
+	public void testInboundAdapter() throws Exception {
 		ActiveMqTestUtils.prepare();
-		ConfigurableApplicationContext applicationContext = new ClassPathXmlApplicationContext("MessageHistoryTests-context.xml", JmsMessageHistoryTests.class);
+		ConfigurableApplicationContext applicationContext =
+				new ClassPathXmlApplicationContext("MessageHistoryTests-context.xml", JmsMessageHistoryTests.class);
 		SampleGateway gateway = applicationContext.getBean("sampleGateway", SampleGateway.class);
 		PollableChannel jmsInputChannel = applicationContext.getBean("jmsInputChannel", PollableChannel.class);
 		gateway.send("hello");
 		Message<?> message = jmsInputChannel.receive(5000);
-		Iterator<Properties> historyIterator = message.getHeaders().get(MessageHistory.HEADER_NAME, MessageHistory.class).iterator();
+		Iterator<Properties> historyIterator = message.getHeaders()
+				.get(MessageHistory.HEADER_NAME, MessageHistory.class)
+				.iterator();
 		Properties event1 = historyIterator.next();
 		assertEquals("jms:inbound-channel-adapter", event1.getProperty(MessageHistory.TYPE_PROPERTY));
 		assertEquals("sampleJmsInboundAdapter", event1.getProperty(MessageHistory.NAME_PROPERTY));
 		Properties event2 = historyIterator.next();
 		assertEquals("channel", event2.getProperty(MessageHistory.TYPE_PROPERTY));
 		assertEquals("jmsInputChannel", event2.getProperty(MessageHistory.NAME_PROPERTY));
+		applicationContext.close();
 	}
 
 
 
-	public static interface SampleGateway {
+	public interface SampleGateway {
 
-		public void send(String value);
+		void send(String value);
 
-		public Message<?> echo(String value);
+		Message<?> echo(String value);
 
 	}
 
@@ -115,16 +119,17 @@ public class JmsMessageHistoryTests {
 			headers.remove("outbound_history");
 			return headers;
 		}
+
 	}
 
 
-	public static class SampleComponent implements NamedComponent{
+	public static class SampleComponent implements NamedComponent {
 
 		private String name;
 
 		private String type;
 
-		public SampleComponent(String name, String type){
+		public SampleComponent(String name, String type) {
 			this.name = name;
 			this.type = type;
 		}
@@ -136,6 +141,7 @@ public class JmsMessageHistoryTests {
 		public String getComponentType() {
 			return type;
 		}
+
 	}
 
 }

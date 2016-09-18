@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,7 +32,6 @@ import org.junit.Test;
 
 import org.springframework.core.task.SimpleAsyncTaskExecutor;
 import org.springframework.core.task.TaskExecutor;
-import org.springframework.messaging.MessageHandlingException;
 import org.springframework.integration.channel.QueueChannel;
 import org.springframework.integration.store.MessageGroup;
 import org.springframework.integration.store.MessageGroupStore;
@@ -41,6 +40,7 @@ import org.springframework.integration.support.MessageBuilder;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.MessageHandler;
+import org.springframework.messaging.MessageHandlingException;
 import org.springframework.messaging.MessageHeaders;
 
 /**
@@ -80,7 +80,7 @@ public class ConcurrentAggregatorTests {
 
 		assertTrue(latch.await(10, TimeUnit.SECONDS));
 
-		assertThat(latch.getCount(), is(0l));
+		assertThat(latch.getCount(), is(0L));
 		Message<?> reply = replyChannel.receive(2000);
 		assertNotNull(reply);
 		assertEquals(reply.getPayload(), 105);
@@ -319,13 +319,16 @@ public class ConcurrentAggregatorTests {
 			return this.exception;
 		}
 
+		@Override
 		public void run() {
 			try {
 				this.aggregator.handleMessage(message);
-			} catch (Exception e) {
+			}
+			catch (Exception e) {
 				e.printStackTrace();
 				this.exception = e;
-			} finally {
+			}
+			finally {
 				this.latch.countDown();
 			}
 		}
@@ -333,6 +336,7 @@ public class ConcurrentAggregatorTests {
 
 
 	private class MultiplyingProcessor implements MessageGroupProcessor {
+		@Override
 		public Object processMessageGroup(MessageGroup group) {
 			Integer product = 1;
 			for (Message<?> message : group.getMessages()) {
@@ -343,7 +347,9 @@ public class ConcurrentAggregatorTests {
 	}
 
 
+	@SuppressWarnings("unused")
 	private class NullReturningMessageProcessor implements MessageGroupProcessor {
+		@Override
 		public Object processMessageGroup(MessageGroup group) {
 			return null;
 		}

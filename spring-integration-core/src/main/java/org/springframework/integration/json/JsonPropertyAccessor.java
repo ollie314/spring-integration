@@ -1,5 +1,5 @@
 /*
- * Copyright 2013 the original author or authors.
+ * Copyright 2013-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,6 +35,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
  * A SpEL {@link PropertyAccessor} that knows how to read on Jackson JSON objects.
  *
  * @author Eric Bottard
+ * @author Artem Bilan
+ * @since 3.0
  */
 public class JsonPropertyAccessor implements PropertyAccessor {
 
@@ -64,8 +66,8 @@ public class JsonPropertyAccessor implements PropertyAccessor {
 			return (ContainerNode<?>) json;
 		}
 		else {
-			throw new AccessException("Can not act on json that is not a ContainerNode: "
-					+ json.getClass().getSimpleName());
+			throw new AccessException(
+					"Can not act on json that is not a ContainerNode: " + json.getClass().getSimpleName());
 		}
 	}
 
@@ -114,7 +116,13 @@ public class JsonPropertyAccessor implements PropertyAccessor {
 			return new TypedValue(wrap(container.get(index)));
 		}
 		else {
-			return new TypedValue(wrap(container.get(name)));
+			JsonNode json = container.get(name);
+			if (json != null) {
+				return new TypedValue(wrap(json));
+			}
+			else {
+				return TypedValue.NULL;
+			}
 		}
 	}
 
@@ -138,6 +146,7 @@ public class JsonPropertyAccessor implements PropertyAccessor {
 	}
 
 	public static class ToStringFriendlyJsonNode {
+
 		private final JsonNode node;
 
 		public ToStringFriendlyJsonNode(JsonNode node) {
@@ -146,15 +155,35 @@ public class JsonPropertyAccessor implements PropertyAccessor {
 
 		@Override
 		public String toString() {
-			if (node.isValueNode()) {
+			if (this.node == null) {
+				return "null";
+			}
+			if (this.node.isValueNode()) {
 				// This is to avoid quotes around a TextNode for example
-				return node.asText();
+				return this.node.asText();
 			}
 			else {
-				return node.toString();
+				return this.node.toString();
 			}
-
 		}
+
+		@Override
+		public boolean equals(Object o) {
+			if (this == o) {
+				return true;
+			}
+			if (o == null || getClass() != o.getClass()) {
+				return false;
+			}
+			ToStringFriendlyJsonNode that = (ToStringFriendlyJsonNode) o;
+			return (this.node == that.node) || (this.node != null && this.node.equals(that.node));
+		}
+
+		@Override
+		public int hashCode() {
+			return this.node != null ? this.node.toString().hashCode() : 0;
+		}
+
 	}
 
 }

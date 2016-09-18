@@ -1,5 +1,5 @@
 /*
- * Copyright 2013 the original author or authors.
+ * Copyright 2013-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,9 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.util.Properties;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+
 import com.gemstone.gemfire.cache.Cache;
 import com.gemstone.gemfire.cache.CacheFactory;
 import com.gemstone.gemfire.cache.Region;
@@ -32,11 +35,18 @@ import com.gemstone.gemfire.cache.server.CacheServer;
  * @author David Turanski
  * @author Gunnar Hillert
  * @author Soby Chacko
+ * @author Gary Russell
  *
  * Runs as a standalone Java app.
  * Modified from SGF implementation for testing client/server CQ features
  */
 public class CacheServerProcess {
+
+	private static final Log logger = LogFactory.getLog(CacheServerProcess.class);
+
+	private CacheServerProcess() {
+		super();
+	}
 
 	public static void main(String[] args) throws Exception {
 
@@ -44,24 +54,24 @@ public class CacheServerProcess {
 		props.setProperty("name", "CacheServer");
 		props.setProperty("log-level", "info");
 
-		System.out.println("\nConnecting to the distributed system and creating the cache.");
+		logger.info("Connecting to the distributed system and creating the cache.");
 
 		Cache cache = new CacheFactory(props).create();
 
 		// Create region.
-		Region<?,?> region = cache.createRegionFactory(RegionShortcut.REPLICATE)
+		Region<?, ?> region = cache.createRegionFactory(RegionShortcut.REPLICATE)
 				.setScope(Scope.DISTRIBUTED_ACK)
 				.create("test");
 
-		System.out.println("Test region, " + region.getFullPath() + ", created in cache.");
+		logger.info("Test region, " + region.getFullPath() + ", created in cache.");
 
 		// Start Cache Server.
 		CacheServer server = cache.addCacheServer();
 		server.setPort(40404);
-		System.out.println("Starting server");
+		logger.info("Starting server");
 		server.start();
 		ForkUtil.createControlFile(CacheServerProcess.class.getName());
-		System.out.println("Waiting for shutdown");
+		logger.info("Waiting for shutdown");
 
 		BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(System.in));
 		bufferedReader.readLine();

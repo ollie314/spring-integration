@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,22 @@
 
 package org.springframework.integration.endpoint;
 
+import java.util.Collection;
+
+import org.aopalliance.aop.Advice;
+
+import org.springframework.aop.framework.Advised;
+import org.springframework.aop.framework.ProxyFactory;
+import org.springframework.aop.support.AopUtils;
+import org.springframework.aop.support.NameMatchMethodPointcutAdvisor;
+import org.springframework.context.Lifecycle;
+import org.springframework.integration.aop.AbstractMessageSourceAdvice;
+import org.springframework.integration.context.ExpressionCapable;
 import org.springframework.integration.core.MessageSource;
 import org.springframework.integration.core.MessagingTemplate;
 import org.springframework.integration.history.MessageHistory;
-import org.springframework.integration.history.TrackableComponent;
 import org.springframework.integration.support.context.NamedComponent;
+import org.springframework.integration.support.management.TrackableComponent;
 import org.springframework.integration.transaction.IntegrationResourceHolder;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
@@ -43,6 +54,8 @@ public class SourcePollingChannelAdapter extends AbstractPollingEndpoint
 
 	private volatile MessageChannel outputChannel;
 
+	private volatile String outputChannelName;
+
 	private volatile boolean shouldTrack;
 
 	private final MessagingTemplate messagingTemplate = new MessagingTemplate();
@@ -54,6 +67,9 @@ public class SourcePollingChannelAdapter extends AbstractPollingEndpoint
 	 */
 	public void setSource(MessageSource<?> source) {
 		this.source = source;
+		if (source instanceof ExpressionCapable) {
+			setPrimaryExpression(((ExpressionCapable) source).getExpression());
+		}
 	}
 
 	/**
@@ -63,6 +79,20 @@ public class SourcePollingChannelAdapter extends AbstractPollingEndpoint
 	 */
 	public void setOutputChannel(MessageChannel outputChannel) {
 		this.outputChannel = outputChannel;
+	}
+
+	/**
+	 * Return this endpoint's source.
+	 * @return the source.
+	 * @since 4.3
+	 */
+	public MessageSource<?> getMessageSource() {
+		return this.source;
+	}
+
+	public void setOutputChannelName(String outputChannelName) {
+		Assert.hasText(outputChannelName, "'outputChannelName' must not be empty");
+		this.outputChannelName = outputChannelName;
 	}
 
 	/**
@@ -92,13 +122,68 @@ public class SourcePollingChannelAdapter extends AbstractPollingEndpoint
 	}
 
 	@Override
+	protected boolean isReceiveOnlyAdvice(Advice advice) {
+		return advice instanceof AbstractMessageSourceAdvice;
+	}
+
+	@Override
+	protected void applyReceiveOnlyAdviceChain(Collection<Advice> chain) {
+		if (AopUtils.isAopProxy(this.source)) {
+			for (Advice advice : chain) {
+				NameMatchMethodPointcutAdvisor sourceAdvice = new NameMatchMethodPointcutAdvisor(advice);
+				sourceAdvice.addMethodName("receive");
+				((Advised) this.source).addAdvice(advice);
+			}
+		}
+		else {
+			ProxyFactory proxyFactory = new ProxyFactory(this.source);
+			for (Advice advice : chain) {
+				proxyFactory.addAdvice(advice);
+			}
+			this.source = (MessageSource<?>) proxyFactory.getProxy(getBeanClassLoader());
+		}
+	}
+
+	@Override
+	protected void doStart() {
+		if (this.source instanceof Lifecycle) {
+			((Lifecycle) this.source).start();
+		}
+		super.doStart();
+	}
+
+
+	@Override
+	protected void doStop() {
+		if (this.source instanceof Lifecycle) {
+			((Lifecycle) this.source).stop();
+		}
+		super.doStop();
+	}
+
+
+	@Override
 	protected void onInit() {
 		Assert.notNull(this.source, "source must not be null");
-		Assert.notNull(this.outputChannel, "outputChannel must not be null");
+		Assert.state((this.outputChannelName == null && this.outputChannel != null)
+				|| (this.outputChannelName != null && this.outputChannel == null),
+				"One and only one of 'outputChannelName' or 'outputChannel' is required.");
 		super.onInit();
 		if (this.getBeanFactory() != null) {
 			this.messagingTemplate.setBeanFactory(this.getBeanFactory());
 		}
+	}
+
+	public MessageChannel getOutputChannel() {
+		if (this.outputChannelName != null) {
+			synchronized (this) {
+				if (this.outputChannelName != null) {
+					this.outputChannel = getChannelResolver().resolveDestination(this.outputChannelName);
+					this.outputChannelName = null;
+				}
+			}
+		}
+		return this.outputChannel;
 	}
 
 	@Override
@@ -107,14 +192,14 @@ public class SourcePollingChannelAdapter extends AbstractPollingEndpoint
 			message = MessageHistory.write(message, this, this.getMessageBuilderFactory());
 		}
 		try {
-			this.messagingTemplate.send(this.outputChannel, message);
+			this.messagingTemplate.send(getOutputChannel(), message);
 		}
 		catch (Exception e) {
 			if (e instanceof MessagingException) {
 				throw (MessagingException) e;
 			}
 			else {
-				throw new MessagingException(message, e);
+				throw new MessagingException(message, "Failed to send Message", e);
 			}
 		}
 	}

@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2014 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,20 +13,21 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.ip.tcp.connection;
 
-import java.io.IOException;
 import java.util.Iterator;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
+
+import javax.net.ssl.SSLSession;
 
 import org.springframework.core.serializer.Deserializer;
 import org.springframework.core.serializer.Serializer;
 import org.springframework.integration.ip.IpHeaders;
 import org.springframework.integration.support.AbstractIntegrationMessageBuilder;
 import org.springframework.messaging.Message;
-import org.springframework.messaging.support.ErrorMessage;
 import org.springframework.util.Assert;
 
 /**
@@ -50,9 +51,10 @@ public class FailoverClientConnectionFactory extends AbstractClientConnectionFac
 	@Override
 	protected void onInit() throws Exception {
 		super.onInit();
-		for (AbstractClientConnectionFactory factory : factories) {
+		for (AbstractClientConnectionFactory factory : this.factories) {
 			Assert.state(!(this.isSingleUse() ^ factory.isSingleUse()),
 				"Inconsistent singleUse - delegate factories must match this one");
+			factory.enableManualListenerRegistration();
 		}
 	}
 
@@ -80,17 +82,6 @@ public class FailoverClientConnectionFactory extends AbstractClientConnectionFac
 	@Override
 	public void registerListener(TcpListener listener) {
 		super.registerListener(listener);
-		for (AbstractClientConnectionFactory factory : this.factories) {
-			factory.registerListener(new TcpListener() {
-				@Override
-				public boolean onMessage(Message<?> message) {
-					if (!(message instanceof ErrorMessage)) {
-						throw new UnsupportedOperationException("This should never be called");
-					}
-					return false;
-				}
-			});
-		}
 	}
 
 	@Override
@@ -108,7 +99,9 @@ public class FailoverClientConnectionFactory extends AbstractClientConnectionFac
 			return connection;
 		}
 		FailoverTcpConnection failoverTcpConnection = new FailoverTcpConnection(this.factories);
-		failoverTcpConnection.registerListener(this.getListener());
+		if (getListener() != null) {
+			failoverTcpConnection.registerListener(getListener());
+		}
 		failoverTcpConnection.incrementEpoch();
 		return failoverTcpConnection;
 	}
@@ -117,6 +110,7 @@ public class FailoverClientConnectionFactory extends AbstractClientConnectionFac
 	@Override
 	public void start() {
 		for (AbstractClientConnectionFactory factory : this.factories) {
+			factory.enableManualListenerRegistration();
 			factory.start();
 		}
 		this.setActive(true);
@@ -150,7 +144,7 @@ public class FailoverClientConnectionFactory extends AbstractClientConnectionFac
 	 * @since 2.2
 	 *
 	 */
-	private class FailoverTcpConnection extends TcpConnectionSupport implements TcpListener {
+	private final class FailoverTcpConnection extends TcpConnectionSupport implements TcpListener {
 
 		private final List<AbstractClientConnectionFactory> factories;
 
@@ -166,7 +160,7 @@ public class FailoverClientConnectionFactory extends AbstractClientConnectionFac
 
 		private final AtomicLong epoch = new AtomicLong();
 
-		public FailoverTcpConnection(List<AbstractClientConnectionFactory> factories) throws Exception {
+		private FailoverTcpConnection(List<AbstractClientConnectionFactory> factories) throws Exception {
 			this.factories = factories;
 			this.factoryIterator = factories.iterator();
 			findAConnection();
@@ -183,7 +177,7 @@ public class FailoverClientConnectionFactory extends AbstractClientConnectionFac
 		 * This allows for the condition where the current connection is closed,
 		 * the current factory can serve up a new connection, but all other
 		 * factories are down.
-		 * @throws Exception
+		 * @throws Exception if an exception occurs
 		 */
 		private synchronized void findAConnection() throws Exception {
 			boolean success = false;
@@ -197,11 +191,19 @@ public class FailoverClientConnectionFactory extends AbstractClientConnectionFac
 				try {
 					nextFactory = this.factoryIterator.next();
 					this.delegate = nextFactory.getConnection();
+					if (logger.isDebugEnabled()) {
+						logger.debug("Got " + this.delegate.getConnectionId() + " from " + nextFactory);
+					}
 					this.delegate.registerListener(this);
 					this.currentFactory = nextFactory;
 					success = this.delegate.isOpen();
 				}
-				catch (IOException e) {
+				catch (Exception e) {
+					if (logger.isDebugEnabled()) {
+						logger.debug(nextFactory + " failed with "
+								+ e.toString()
+								+ ", trying another");
+					}
 					if (!this.factoryIterator.hasNext()) {
 						if (retried && lastFactoryToTry == null || lastFactoryToTry == nextFactory) {
 							/*
@@ -246,7 +248,7 @@ public class FailoverClientConnectionFactory extends AbstractClientConnectionFac
 					this.delegate.send(message);
 					success = true;
 				}
-				catch (IOException e) {
+				catch (Exception e) {
 					if (retried && lastFactoryTried == lastFactoryToTry) {
 						logger.error("All connection factories exhausted", e);
 						this.open = false;
@@ -302,17 +304,12 @@ public class FailoverClientConnectionFactory extends AbstractClientConnectionFac
 
 		@Override
 		public String getConnectionId() {
-			return this.connectionId + ":" + epoch;
+			return this.connectionId + ":" + this.epoch;
 		}
 
 		@Override
-		public void setSingleUse(boolean singleUse) {
-			this.delegate.setSingleUse(singleUse);
-		}
-
-		@Override
-		public boolean isSingleUse() {
-			return this.delegate.isSingleUse();
+		public SocketInfo getSocketInfo() {
+			return this.delegate.getSocketInfo();
 		}
 
 		@Override
@@ -343,6 +340,11 @@ public class FailoverClientConnectionFactory extends AbstractClientConnectionFac
 		@Override
 		public void setSerializer(Serializer<?> serializer) {
 			this.delegate.setSerializer(serializer);
+		}
+
+		@Override
+		public SSLSession getSslSession() {
+			return this.delegate.getSslSession();
 		}
 
 		/**

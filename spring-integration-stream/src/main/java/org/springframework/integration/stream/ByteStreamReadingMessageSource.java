@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2010 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 
+import org.springframework.integration.context.IntegrationObjectSupport;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessagingException;
 import org.springframework.integration.core.MessageSource;
@@ -27,10 +28,11 @@ import org.springframework.messaging.support.GenericMessage;
 
 /**
  * A pollable source for receiving bytes from an {@link InputStream}.
- * 
+ *
  * @author Mark Fisher
+ * @author Artem Bilan
  */
-public class ByteStreamReadingMessageSource implements MessageSource<byte[]> {
+public class ByteStreamReadingMessageSource extends IntegrationObjectSupport implements MessageSource<byte[]> {
 
 	private BufferedInputStream stream;
 
@@ -67,16 +69,21 @@ public class ByteStreamReadingMessageSource implements MessageSource<byte[]> {
 		this.shouldTruncate = shouldTruncate;
 	}
 
+	@Override
+	public String getComponentType() {
+		return "stream:stdin-channel-adapter(byte)";
+	}
+
 	public Message<byte[]> receive() {
 		try {
 			byte[] bytes;
 			int bytesRead = 0;
 			synchronized (this.streamMonitor) {
-				if (stream.available() == 0) {
+				if (this.stream.available() == 0) {
 					return null;
 				}
-				bytes = new byte[bytesPerMessage];
-				bytesRead = stream.read(bytes, 0, bytes.length);
+				bytes = new byte[this.bytesPerMessage];
+				bytesRead = this.stream.read(bytes, 0, bytes.length);
 			}
 			if (bytesRead <= 0) {
 				return null;

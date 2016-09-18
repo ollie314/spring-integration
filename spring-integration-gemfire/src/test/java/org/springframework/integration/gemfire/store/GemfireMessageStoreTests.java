@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,35 +20,45 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertSame;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Properties;
 
-import org.junit.After;
+import org.junit.AfterClass;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
+
 import org.springframework.data.gemfire.CacheFactoryBean;
 import org.springframework.data.gemfire.RegionFactoryBean;
-import org.springframework.messaging.Message;
 import org.springframework.integration.channel.DirectChannel;
 import org.springframework.integration.history.MessageHistory;
-import org.springframework.messaging.support.GenericMessage;
+import org.springframework.integration.store.MessageGroup;
 import org.springframework.integration.support.MessageBuilder;
 import org.springframework.integration.test.util.TestUtils;
-import org.springframework.util.Assert;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.support.GenericMessage;
 
 import com.gemstone.gemfire.cache.Cache;
+import com.gemstone.gemfire.cache.Region;
+import com.gemstone.gemfire.cache.Scope;
 
 /**
  * @author Mark Fisher
  * @author David Turanski
+ * @author Gary Russell
+ * @author Artem Bilan
  * @since 2.1
  */
 public class GemfireMessageStoreTests {
 
-	private Cache cache;
+	private static CacheFactoryBean cacheFactoryBean;
+
+	private static Region<Object, Object> region;
 
 	@Test
 	public void addAndGetMessage() throws Exception {
-		GemfireMessageStore store = new GemfireMessageStore(this.cache);
+		GemfireMessageStore store = new GemfireMessageStore(region);
 		store.afterPropertiesSet();
 
 		Message<?> message = MessageBuilder.withPayload("test").build();
@@ -59,19 +69,21 @@ public class GemfireMessageStoreTests {
 
 	@Test
 	public void testRegionConstructor() throws Exception {
-		RegionFactoryBean<Object, Object> region = new RegionFactoryBean<Object, Object>();
+		RegionFactoryBean<Object, Object> region = new RegionFactoryBean<Object, Object>() { };
 		region.setName("someRegion");
-		region.setCache(this.cache);
+		region.setCache(cacheFactoryBean.getObject());
 		region.afterPropertiesSet();
 
 		GemfireMessageStore store = new GemfireMessageStore(region.getObject());
 		store.afterPropertiesSet();
 		assertSame(region.getObject(), TestUtils.getPropertyValue(store, "messageStoreRegion"));
+
+		region.destroy();
 	}
 
 	@Test
 	public void testWithMessageHistory() throws Exception {
-		GemfireMessageStore store = new GemfireMessageStore(this.cache);
+		GemfireMessageStore store = new GemfireMessageStore(region);
 		store.afterPropertiesSet();
 
 		Message<?> message = new GenericMessage<String>("Hello");
@@ -92,15 +104,47 @@ public class GemfireMessageStoreTests {
 		assertEquals("channel", fooChannelHistory.get("type"));
 	}
 
-	@Before
-	public void init() throws Exception {
-		CacheFactoryBean cacheFactoryBean = new CacheFactoryBean();
-		this.cache = cacheFactoryBean.getObject();
+	@Test
+	public void testAddAndRemoveMessagesFromMessageGroup() throws Exception {
+		GemfireMessageStore messageStore = new GemfireMessageStore(region);
+		messageStore.afterPropertiesSet();
+
+		String groupId = "X";
+		List<Message<?>> messages = new ArrayList<Message<?>>();
+		for (int i = 0; i < 25; i++) {
+			Message<String> message = MessageBuilder.withPayload("foo").setCorrelationId(groupId).build();
+			messageStore.addMessagesToGroup(groupId, message);
+			messages.add(message);
+		}
+		MessageGroup group = messageStore.getMessageGroup(groupId);
+		assertEquals(25, group.size());
+		messageStore.removeMessagesFromGroup(groupId, messages);
+		group = messageStore.getMessageGroup(groupId);
+		assertEquals(0, group.size());
 	}
 
-	@After
-	public void cleanup() {
-		this.cache.close();
-		Assert.isTrue(this.cache.isClosed(), "Cache did not close after close() call");
+	@Before
+	public void prepare() {
+		if (region != null) {
+			region.clear();
+		}
 	}
+
+	@BeforeClass
+	public static void init() throws Exception {
+		cacheFactoryBean = new CacheFactoryBean();
+		Cache cache = cacheFactoryBean.getObject();
+		region = cache.createRegionFactory().setScope(Scope.LOCAL).create("sig-tests");
+	}
+
+	@AfterClass
+	public static void cleanup() throws Exception {
+		if (region != null) {
+			region.close();
+		}
+		if (cacheFactoryBean != null) {
+			cacheFactoryBean.destroy();
+		}
+	}
+
 }

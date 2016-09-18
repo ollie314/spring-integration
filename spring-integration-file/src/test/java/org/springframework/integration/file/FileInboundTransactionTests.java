@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,28 +13,34 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.file;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 
 import java.io.File;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import org.junit.ClassRule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 import org.junit.runner.RunWith;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.integration.endpoint.SourcePollingChannelAdapter;
+import org.springframework.integration.test.util.TestUtils;
 import org.springframework.messaging.Message;
-import org.springframework.messaging.MessagingException;
 import org.springframework.messaging.MessageHandler;
+import org.springframework.messaging.MessagingException;
 import org.springframework.messaging.PollableChannel;
 import org.springframework.messaging.SubscribableChannel;
-import org.springframework.integration.endpoint.SourcePollingChannelAdapter;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
 import org.springframework.transaction.TransactionDefinition;
@@ -44,12 +50,17 @@ import org.springframework.transaction.support.DefaultTransactionStatus;
 
 /**
  * @author Gary Russell
+ * @author Artem Bilan
  * @since 2.2
  *
  */
 @ContextConfiguration
 @RunWith(SpringJUnit4ClassRunner.class)
+@DirtiesContext
 public class FileInboundTransactionTests {
+
+	@ClassRule
+	public static TemporaryFolder tmpDir = new TemporaryFolder();
 
 	@Autowired
 	private SourcePollingChannelAdapter pseudoTx;
@@ -72,17 +83,14 @@ public class FileInboundTransactionTests {
 	@Autowired
 	private DummyTxManager transactionManager;
 
-	@Value("${java.io.tmpdir}")
-	private String tmpDir;
-
 	@Test
 	public void testNoTx() throws Exception {
 		final CountDownLatch latch = new CountDownLatch(1);
 		final AtomicBoolean crash = new AtomicBoolean();
 		input.subscribe(new MessageHandler() {
 
+			@Override
 			public void handleMessage(Message<?> message) throws MessagingException {
-				System.out.println(message);
 				if (crash.get()) {
 					throw new MessagingException("eek");
 				}
@@ -90,25 +98,25 @@ public class FileInboundTransactionTests {
 			}
 		});
 		pseudoTx.start();
-		new File(tmpDir + "/si-test1").mkdir();
-		File file = new File(tmpDir + "/si-test1/foo");
+		File file = new File(tmpDir.getRoot(), "si-test1/foo");
 		file.createNewFile();
-		Message<?> result = successChannel.receive(10000);
+		Message<?> result = successChannel.receive(60000);
 		assertNotNull(result);
 		assertEquals(Boolean.TRUE, result.getPayload());
-		System.out.println(result);
 		assertFalse(file.delete());
 		crash.set(true);
-		file = new File(tmpDir + "/si-test1/bar");
+		file = new File(tmpDir.getRoot(), "si-test1/bar");
 		file.createNewFile();
-		result = failureChannel.receive(10000);
+		result = failureChannel.receive(60000);
 		assertNotNull(result);
-		System.out.println(result);
 		assertTrue(file.delete());
 		assertEquals("foo", result.getPayload());
 		pseudoTx.stop();
 		assertFalse(transactionManager.getCommitted());
 		assertFalse(transactionManager.getRolledBack());
+
+		Object scanner = TestUtils.getPropertyValue(pseudoTx.getMessageSource(), "scanner");
+		assertThat(scanner.getClass().getName(), containsString("FileReadingMessageSource$WatchServiceDirectoryScanner"));
 	}
 
 	@Test
@@ -117,8 +125,8 @@ public class FileInboundTransactionTests {
 		final AtomicBoolean crash = new AtomicBoolean();
 		txInput.subscribe(new MessageHandler() {
 
+			@Override
 			public void handleMessage(Message<?> message) throws MessagingException {
-				System.out.println(message);
 				if (crash.get()) {
 					throw new MessagingException("eek");
 				}
@@ -126,21 +134,18 @@ public class FileInboundTransactionTests {
 			}
 		});
 		realTx.start();
-		new File(tmpDir + "/si-test2").mkdir();
-		File file = new File(tmpDir + "/si-test2/baz");
+		File file = new File(tmpDir.getRoot(), "si-test2/baz");
 		file.createNewFile();
-		Message<?> result = successChannel.receive(10000);
+		Message<?> result = successChannel.receive(60000);
 		assertNotNull(result);
 		assertEquals(Boolean.TRUE, result.getPayload());
 		assertTrue(file.delete());
-		System.out.println(result);
 		assertTrue(transactionManager.getCommitted());
 		crash.set(true);
-		file = new File(tmpDir + "/si-test2/qux");
+		file = new File(tmpDir.getRoot(), "si-test2/qux");
 		file.createNewFile();
-		result = failureChannel.receive(10000);
+		result = failureChannel.receive(60000);
 		assertNotNull(result);
-		System.out.println(result);
 		assertTrue(file.delete());
 		assertEquals(Boolean.TRUE, result.getPayload());
 		realTx.stop();
@@ -189,6 +194,7 @@ public class FileInboundTransactionTests {
 		public boolean getRolledBack() {
 			return rolledBack;
 		}
+
 	}
 
 }

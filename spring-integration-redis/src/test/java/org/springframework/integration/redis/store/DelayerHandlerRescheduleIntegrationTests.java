@@ -1,14 +1,17 @@
 /*
- * Copyright 2013 the original author or authors.
+ * Copyright 2013-2016 the original author or authors.
  *
- * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
- * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
- * specific language governing permissions and limitations under the License.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 package org.springframework.integration.redis.store;
@@ -21,17 +24,14 @@ import static org.junit.Assert.fail;
 
 import java.util.concurrent.TimeUnit;
 
-import org.junit.BeforeClass;
 import org.junit.Rule;
 import org.junit.Test;
 
 import org.springframework.context.support.AbstractApplicationContext;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
-import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.integration.context.IntegrationContextUtils;
 import org.springframework.integration.handler.DelayHandler;
 import org.springframework.integration.redis.rules.RedisAvailable;
-import org.springframework.integration.redis.rules.RedisAvailableRule;
 import org.springframework.integration.redis.rules.RedisAvailableTests;
 import org.springframework.integration.store.MessageGroup;
 import org.springframework.integration.store.MessageGroupStore;
@@ -44,27 +44,15 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 
 /**
  * @author Artem Bilan
+ * @author Gary Russell
  * @since 3.0
  */
 public class DelayerHandlerRescheduleIntegrationTests extends RedisAvailableTests {
 
 	public static final String DELAYER_ID = "delayerWithRedisMS";
 
-	public static LettuceConnectionFactory  connectionFactory;
-
 	@Rule
 	public LongRunningIntegrationTest longTests = new LongRunningIntegrationTest();
-
-	@BeforeClass
-	public static void setup() {
-		connectionFactory = new LettuceConnectionFactory();
-		connectionFactory.setPort(RedisAvailableRule.REDIS_PORT);
-		connectionFactory.afterPropertiesSet();
-	}
-
-	public static void tearDown() {
-		connectionFactory.destroy();
-	}
 
 	@Test
 	@RedisAvailable
@@ -80,6 +68,7 @@ public class DelayerHandlerRescheduleIntegrationTests extends RedisAvailableTest
 
 		Message<String> message1 = MessageBuilder.withPayload("test1").build();
 		input.send(message1);
+		Thread.sleep(10);
 		input.send(MessageBuilder.withPayload("test2").build());
 
 		// Emulate restart and check DB state before next start
@@ -125,7 +114,13 @@ public class DelayerHandlerRescheduleIntegrationTests extends RedisAvailableTest
 		assertNotSame(payload1, payload2);
 
 		assertEquals(1, messageStore.getMessageGroupCount());
+		int n = 0;
+		while (n++ < 100 && messageStore.messageGroupSize(delayerMessageGroupId) > 0) {
+			Thread.sleep(100);
+		}
 		assertEquals(0, messageStore.messageGroupSize(delayerMessageGroupId));
+
+		messageStore.removeMessageGroup(delayerMessageGroupId);
 
 	}
 

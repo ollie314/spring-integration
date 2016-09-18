@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2012 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.ip.tcp.connection;
 
 import java.io.IOException;
@@ -52,7 +53,7 @@ public class DefaultTcpSSLContextSupport implements TcpSSLContextSupport {
 	 * key/trust stores and passwords.
 	 * @param keyStore A {@link Resource} pattern pointing to the keyStore.
 	 * @param trustStore A {@link Resource} pattern pointing to the trustStore.
-	 * @param keyStorePassword The passowrd for the keyStore.
+	 * @param keyStorePassword The password for the keyStore.
 	 * @param trustStorePassword The password for the trustStore.
 	 */
 	public DefaultTcpSSLContextSupport(String keyStore, String trustStore,
@@ -72,16 +73,16 @@ public class DefaultTcpSSLContextSupport implements TcpSSLContextSupport {
 		KeyStore ks = KeyStore.getInstance("JKS");
 		KeyStore ts = KeyStore.getInstance("JKS");
 
-		ks.load(keyStore.getInputStream(), keyStorePassword);
-		ts.load(trustStore.getInputStream(), trustStorePassword);
+		ks.load(this.keyStore.getInputStream(), this.keyStorePassword);
+		ts.load(this.trustStore.getInputStream(), this.trustStorePassword);
 
 		KeyManagerFactory kmf = KeyManagerFactory.getInstance("SunX509");
-		kmf.init(ks, keyStorePassword);
+		kmf.init(ks, this.keyStorePassword);
 
 		TrustManagerFactory tmf = TrustManagerFactory.getInstance("SunX509");
 		tmf.init(ts);
 
-		SSLContext sslContext = SSLContext.getInstance(protocol);
+		SSLContext sslContext = SSLContext.getInstance(this.protocol);
 
 		sslContext.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);
 

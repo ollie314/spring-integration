@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2013 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.integration.util;
 
 import java.util.Collections;
@@ -34,6 +35,7 @@ import org.springframework.util.Assert;
  * Implementation of {@link Pool} supporting dynamic resizing and a variable
  * timeout when attempting to obtain an item from the pool. Pool grows on
  * demand up to the limit.
+ *
  * @author Gary Russell
  * @since 2.2
  *
@@ -88,8 +90,8 @@ public class SimplePool<T> implements Pool<T> {
 	public synchronized void setPoolSize(int poolSize) {
 		int delta = poolSize - this.poolSize.get();
 		this.targetPoolSize.addAndGet(delta);
-		if (logger.isDebugEnabled()) {
-			logger.debug(String.format("Target pool size changed by %d, now %d", delta, this.targetPoolSize.get()));
+		if (this.logger.isDebugEnabled()) {
+			this.logger.debug(String.format("Target pool size changed by %d, now %d", delta, this.targetPoolSize.get()));
 		}
 		if (delta > 0) {
 			this.poolSize.addAndGet(delta);
@@ -110,8 +112,8 @@ public class SimplePool<T> implements Pool<T> {
 				delta++;
 			}
 		}
-		if (delta < 0 && logger.isDebugEnabled()) {
-			logger.debug(String.format("Pool is overcommitted by %d; items will be removed when returned", -delta));
+		if (delta < 0 && this.logger.isDebugEnabled()) {
+			this.logger.debug(String.format("Pool is overcommitted by %d; items will be removed when returned", -delta));
 		}
 	}
 
@@ -162,10 +164,9 @@ public class SimplePool<T> implements Pool<T> {
 				throw new MessagingException("Interrupted awaiting a pooled resource", e);
 			}
 			if (!permitted) {
-				throw new IllegalStateException("Timed out while waiting to aquire a pool entry.");
+				throw new IllegalStateException("Timed out while waiting to acquire a pool entry.");
 			}
-			T item = doGetItem();
-			return item;
+			return doGetItem();
 		}
 		catch (Exception e) {
 			if (permitted) {
@@ -180,19 +181,19 @@ public class SimplePool<T> implements Pool<T> {
 
 	private T doGetItem() {
 		T item = this.available.poll();
-		if (item != null && logger.isDebugEnabled()) {
-			logger.debug("Obtained " + item + " from pool.");
+		if (item != null && this.logger.isDebugEnabled()) {
+			this.logger.debug("Obtained " + item + " from pool.");
 		}
 		if (item == null) {
 			item = this.callback.createForPool();
-			if (logger.isDebugEnabled()) {
-				logger.debug("Obtained new " + item + ".");
+			if (this.logger.isDebugEnabled()) {
+				this.logger.debug("Obtained new " + item + ".");
 			}
-			allocated.add(item);
+			this.allocated.add(item);
 		}
 		else if (this.callback.isStale(item)) {
-			if (logger.isDebugEnabled()) {
-				logger.debug("Received a stale item " + item + ", will attempt to get a new one.");
+			if (this.logger.isDebugEnabled()) {
+				this.logger.debug("Received a stale item " + item + ", will attempt to get a new one.");
 			}
 			doRemoveItem(item);
 			item = doGetItem();
@@ -209,26 +210,26 @@ public class SimplePool<T> implements Pool<T> {
 		Assert.isTrue(this.allocated.contains(item),
 				"You can only release items that were obtained from the pool");
 		if (this.inUse.contains(item)) {
-			if (this.poolSize.get() > targetPoolSize.get()) {
-				poolSize.decrementAndGet();
+			if (this.poolSize.get() > this.targetPoolSize.get()) {
+				this.poolSize.decrementAndGet();
 				if (item != null) {
 					doRemoveItem(item);
 				}
 			}
 			else {
-				if (logger.isDebugEnabled()){
-					logger.debug("Releasing " + item + " back to the pool");
+				if (this.logger.isDebugEnabled()) {
+					this.logger.debug("Releasing " + item + " back to the pool");
 				}
 				if (item != null) {
 					this.available.add(item);
 					this.inUse.remove(item);
 				}
-				permits.release();
+				this.permits.release();
 			}
 		}
 		else {
-			if (logger.isDebugEnabled()){
-				logger.debug("Ignoring release of " + item + " back to the pool - not in use");
+			if (this.logger.isDebugEnabled()) {
+				this.logger.debug("Ignoring release of " + item + " back to the pool - not in use");
 			}
 		}
 	}
@@ -241,8 +242,8 @@ public class SimplePool<T> implements Pool<T> {
 	}
 
 	private void doRemoveItem(T item) {
-		if (logger.isDebugEnabled()){
-			logger.debug("Removing " + item + " from the pool");
+		if (this.logger.isDebugEnabled()) {
+			this.logger.debug("Removing " + item + " from the pool");
 		}
 		this.allocated.remove(item);
 		this.inUse.remove(item);
@@ -254,7 +255,7 @@ public class SimplePool<T> implements Pool<T> {
 	 * various pool operations.
 	 *
 	 */
-	public static interface PoolItemCallback<T> {
+	public interface PoolItemCallback<T> {
 
 		/**
 		 * Called by the pool when a new instance is required to populate the pool. Only
